@@ -2,130 +2,232 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-<title>Lion Patrol</title>
-<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Lion%20Patrol%22,%22short_name%22:%22Lion%20Patrol%22,%22display%22:%22standalone%22,%22background_color%22:%22%230a0b0a%22,%22theme_color%22:%22%230a0b0a%22}" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Lion Command</title>
+<meta name="theme-color" content="#0a0b0a" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
   :root{
-    --bg:#0a0b0a; --surface:#141513; --raised:#1c1d1a; --border:#2a2b27;
-    --fg:#f2efe6; --muted:#8d8b82; --faint:#5a594f;
-    --gold:#c9a86a; --success:#4c9a6a; --danger:#c85c4a; --warn:#d9a441;
+    --bg:#0a0b0a; --surface:#121412; --raised:#1a1c1a;
+    --fg:#eceae3; --muted:#8d8b82; --faint:#5e5d57;
+    --accent:#d8d2c4; --accent-fg:#0a0b0a;
+    --success:#7d9a7e; --warning:#b9a06a; --danger:#b07064;
+    --border:#262826; --ring:#d8d2c4;
+    --r-sm:6px; --r-md:10px; --r-lg:16px; --r-xl:22px; --r-2xl:28px;
+    --font-display:"Cormorant Garamond","Times New Roman",serif;
+    --font-sans:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+    --font-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{margin:0; height:100%; background:var(--bg); color:var(--fg);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
-  #app{min-height:100dvh; display:flex; flex-direction:column;}
-  .screen{flex:1; display:flex; flex-direction:column; padding:24px 20px calc(24px + env(safe-area-inset-bottom));}
-  .brand{display:flex; align-items:center; gap:10px; margin-bottom:28px;}
-  .brand svg{width:30px; height:30px; color:var(--gold);}
-  .brand-text{line-height:1;}
-  .brand-text .l{font-size:22px; font-weight:600; letter-spacing:.02em;}
-  .brand-text .s{font-size:10px; letter-spacing:.22em; color:var(--muted); text-transform:uppercase; margin-top:2px;}
-  h1{font-size:20px; font-weight:600; margin:0 0 4px;}
-  p.sub{color:var(--muted); font-size:14px; margin:0 0 20px;}
-  label{display:block; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin:16px 0 6px;}
-  select, input[type=text], input[type=password], input[type=tel], textarea{
-    width:100%; background:var(--raised); border:1px solid var(--border); color:var(--fg);
-    border-radius:10px; padding:14px 14px; font-size:16px; outline:none;
+  html,body{margin:0; min-height:100%; background:var(--bg); color:var(--fg); font-family:var(--font-sans);}
+  a{color:inherit;}
+  .app{min-height:100dvh;}
+
+  /* ---- Sidebar (desktop) ---- */
+  .sidebar{position:fixed; inset:0 auto 0 0; z-index:30; width:236px; display:none; flex-direction:column;
+    border-right:1px solid var(--border); background:var(--surface); padding:22px 14px;}
+  .brand{display:flex; align-items:center; gap:10px; padding:0 8px; margin-bottom:30px;}
+  .brand svg{width:30px; height:30px; color:var(--accent);}
+  .brand .l{font-family:var(--font-display); font-size:23px; line-height:1; font-weight:600;}
+  .brand .s{font-size:10px; letter-spacing:.22em; color:var(--muted); text-transform:uppercase; margin-top:3px;}
+  .navlist{display:flex; flex-direction:column; gap:2px;}
+  .navlink{display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:var(--r-md);
+    font-size:14px; color:var(--muted); cursor:pointer; border:none; background:none; text-align:left; width:100%;
+    font-family:inherit;}
+  .navlink svg{width:16px; height:16px; flex-shrink:0;}
+  .navlink.active{background:var(--raised); color:var(--fg);}
+  .side-foot{margin-top:auto; padding:14px 12px 0; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted);}
+  .livedot{width:7px; height:7px; border-radius:50%; background:var(--success); box-shadow:0 0 0 3px rgba(125,154,126,.22);}
+
+  /* ---- Topbar ---- */
+  .topbar{position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between;
+    gap:12px; border-bottom:1px solid var(--border); background:rgba(10,11,10,.92); backdrop-filter:blur(6px);
+    padding:14px 18px;}
+  .topbar h1{font-family:var(--font-display); font-size:22px; font-weight:600; margin:0;}
+  .clock{font-family:var(--font-mono); font-size:12px; color:var(--muted);}
+  .refresh-pill{display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.06em; border:1px solid var(--border); border-radius:999px; padding:5px 10px;}
+
+  main{padding:20px 18px 90px;}
+  @media(min-width:860px){
+    .sidebar{display:flex;}
+    .topbar, main{margin-left:236px;}
+    main{padding:26px 32px 40px;}
+    .bottomnav{display:none;}
   }
-  select:focus, input:focus, textarea:focus{border-color:var(--gold);}
-  textarea{min-height:90px; resize:vertical; font-family:inherit;}
-  .pin-dots{display:flex; gap:12px; justify-content:center; margin:20px 0;}
-  .pin-dot{width:16px; height:16px; border-radius:50%; border:1.5px solid var(--faint);}
-  .pin-dot.filled{background:var(--gold); border-color:var(--gold);}
-  .keypad{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:auto;}
-  .key{background:var(--raised); border:1px solid var(--border); border-radius:14px; color:var(--fg);
-    font-size:22px; padding:18px 0; text-align:center;}
-  .key:active{background:var(--border);}
-  .key.ghost{background:transparent; border:none; color:var(--muted); font-size:14px;}
-  .btn{display:block; width:100%; text-align:center; border:none; border-radius:12px; padding:16px;
-    font-size:16px; font-weight:600; margin-top:10px;}
-  .btn-primary{background:var(--gold); color:#141311;}
-  .btn-primary:active{opacity:.85;}
+
+  /* ---- Bottom nav (mobile) ---- */
+  .bottomnav{position:fixed; inset:auto 0 0 0; z-index:20; display:grid; grid-template-columns:repeat(6,1fr);
+    border-top:1px solid var(--border); background:rgba(18,20,18,.96); backdrop-filter:blur(6px);
+    padding:6px 2px calc(6px + env(safe-area-inset-bottom));}
+  .navlink.bottom{flex-direction:column; gap:3px; padding:8px 2px; font-size:9px; text-transform:uppercase;
+    letter-spacing:.04em; text-align:center; border-radius:10px;}
+  .navlink.bottom svg{width:18px; height:18px;}
+
+  /* ---- Shared bits ---- */
+  .kpi-row{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:18px;}
+  @media(min-width:640px){ .kpi-row{grid-template-columns:repeat(4,1fr);} }
+  .kpi{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:16px;}
+  .kpi .n{font-family:var(--font-display); font-size:32px; font-weight:600; line-height:1;}
+  .kpi .l{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-top:6px;}
+
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px; margin-bottom:16px;}
+  .card-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .card-head h2{font-family:var(--font-display); font-size:18px; font-weight:600; margin:0;}
+  .card-head .meta{font-size:12px; color:var(--muted);}
+
+  .grid2{display:grid; grid-template-columns:1fr; gap:16px;}
+  @media(min-width:1024px){ .grid2{grid-template-columns:1.3fr 1fr;} }
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--faint);
+    font-weight:500; padding:0 10px 10px 0;}
+  td{padding:11px 10px 11px 0; border-top:1px solid var(--border); vertical-align:middle;}
+  tr:first-child td{border-top:none;}
+  .row-click{cursor:pointer;}
+  .row-click:active{opacity:.7;}
+
+  .badge{display:inline-flex; align-items:center; gap:5px; font-size:10px; text-transform:uppercase;
+    letter-spacing:.05em; padding:4px 9px; border-radius:999px; white-space:nowrap;}
+  .badge.on{color:var(--success); background:rgba(125,154,126,.14);}
+  .badge.off{color:var(--faint); background:var(--raised);}
+  .badge.warn{color:var(--warning); background:rgba(185,160,106,.14);}
+  .badge.danger{color:var(--danger); background:rgba(176,112,100,.14);}
+  .badge .dot{width:6px; height:6px; border-radius:50%; background:currentColor;}
+
+  .empty{color:var(--muted); font-size:13px; padding:24px 0; text-align:center;}
+
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; border:none; border-radius:var(--r-md);
+    padding:10px 16px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;}
+  .btn-primary{background:var(--accent); color:var(--accent-fg);}
   .btn-secondary{background:var(--raised); color:var(--fg); border:1px solid var(--border);}
   .btn-danger{background:var(--danger); color:#fff;}
-  .btn:disabled{opacity:.4;}
-  .err{color:var(--danger); font-size:13px; margin-top:10px; min-height:16px;}
-  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:22px;}
-  .status-pill{display:inline-flex; align-items:center; gap:6px; font-size:11px; text-transform:uppercase;
-    letter-spacing:.08em; padding:5px 10px; border-radius:999px; background:var(--raised); border:1px solid var(--border);}
-  .status-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--faint);}
-  .status-pill.on .dot{background:var(--success); box-shadow:0 0 0 3px rgba(76,154,106,.2);}
-  .card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:14px;}
-  .card h3{margin:0 0 4px; font-size:15px;}
-  .card p{margin:0; color:var(--muted); font-size:13px;}
-  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
-  .action-tile{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px 14px;
-    text-align:center; color:var(--fg);}
-  .action-tile svg{width:26px; height:26px; margin-bottom:8px; color:var(--gold);}
-  .action-tile div{font-size:13px; font-weight:600;}
-  .backbar{display:flex; align-items:center; gap:10px; margin-bottom:18px; color:var(--muted); font-size:14px;}
-  #qr-reader{border-radius:14px; overflow:hidden; border:1px solid var(--border);}
-  .checkpoint-row{display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border);}
-  .checkpoint-row:last-child{border-bottom:none;}
-  .cp-status{font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:4px 8px; border-radius:6px;}
-  .cp-status.pending{color:var(--faint); background:var(--raised);}
-  .cp-status.done{color:var(--success); background:rgba(76,154,106,.12);}
-  .cp-status.unverified{color:var(--warn); background:rgba(217,164,65,.12);}
-  .toast{position:fixed; left:20px; right:20px; bottom:calc(20px + env(safe-area-inset-bottom));
-    background:var(--raised); border:1px solid var(--border); color:var(--fg); padding:14px 16px;
-    border-radius:12px; font-size:14px; text-align:center; z-index:50;}
-  .toast.success{border-color:var(--success);}
-  .toast.danger{border-color:var(--danger);}
-  .chip-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
-  .chip{background:var(--raised); border:1px solid var(--border); border-radius:999px; padding:8px 14px; font-size:13px;}
-  .chip.active{background:var(--gold); color:#141311; border-color:var(--gold);}
-  .photo-preview{width:100%; border-radius:12px; margin-top:10px; border:1px solid var(--border);}
-  .muted-link{color:var(--muted); font-size:13px; text-align:center; margin-top:14px;}
+  .btn:disabled{opacity:.45;}
+  .btn-sm{padding:7px 12px; font-size:12px;}
+
+  label{display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:12px 0 6px;}
+  input[type=text], input[type=tel], input[type=number], select, textarea{
+    width:100%; background:var(--raised); border:1px solid var(--border); color:var(--fg);
+    border-radius:var(--r-md); padding:10px 12px; font-size:14px; font-family:inherit; outline:none;}
+  input:focus, select:focus, textarea:focus{border-color:var(--ring);}
+  textarea{min-height:80px; resize:vertical;}
+  .field-row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+
+  .modal-backdrop{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.6); display:flex;
+    align-items:flex-end; justify-content:center;}
+  @media(min-width:640px){ .modal-backdrop{align-items:center;} }
+  .modal{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-xl) var(--r-xl) 0 0;
+    width:100%; max-width:480px; max-height:88vh; overflow-y:auto; padding:22px; position:relative;}
+  @media(min-width:640px){ .modal{border-radius:var(--r-xl);} }
+  .modal h3{font-family:var(--font-display); font-size:20px; margin:0 0 4px; padding-right:24px;}
+  .modal-close{position:absolute; top:18px; right:18px; color:var(--muted); cursor:pointer; line-height:1;}
+  .modal-close svg{width:18px; height:18px; display:block;}
+
+  .map-wrap{position:relative; border-radius:var(--r-lg); overflow:hidden; background:var(--raised); border:1px solid var(--border);}
+  .map-wrap svg{display:block; width:100%; height:auto;}
+  .officer-photo{width:34px; height:34px; border-radius:50%; background:var(--raised); border:1px solid var(--border);
+    display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:var(--muted); overflow:hidden;}
+  .officer-photo img{width:100%; height:100%; object-fit:cover;}
+
+  .toast{position:fixed; left:20px; right:20px; bottom:calc(80px + env(safe-area-inset-bottom)); z-index:60;
+    background:var(--raised); border:1px solid var(--border); color:var(--fg); padding:13px 16px;
+    border-radius:var(--r-md); font-size:13px; text-align:center;}
+  @media(min-width:860px){ .toast{left:auto; right:32px; bottom:32px; max-width:320px;} }
+  .toast.success{border-color:var(--success);} .toast.danger{border-color:var(--danger);}
+
+  .photo-grid{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .photo-grid img{width:64px; height:64px; object-fit:cover; border-radius:var(--r-sm); border:1px solid var(--border);}
+  .err{color:var(--danger); font-size:12px; margin-top:8px;}
+  .subtle-link{color:var(--muted); font-size:12px; cursor:pointer;}
+  .qr-box{display:flex; flex-direction:column; align-items:center; gap:8px; padding:14px; background:var(--raised);
+    border-radius:var(--r-md); margin-top:10px;}
+  .qr-box canvas{border-radius:8px;}
+  .checkpoint-row{display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-top:1px solid var(--border);}
+  .checkpoint-row:first-child{border-top:none;}
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="app" class="app"></div>
 
 <script>
 // =========================================================
-// CONFIG — replace with your Supabase project values
+// CONFIG
 // =========================================================
 const SUPABASE_URL = "https://raedwcoztdpwvvmzvdmz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZWR3Y296dGRwd3Z2bXp2ZG16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMTU5MDgsImV4cCI6MjEwMjY5MTkwOH0.FSCVAzugN5hfAeruGjytgsjOGegLmR3fdWYHlrqs5sg";
 const STORAGE_BUCKET = "lion-patrol";
+const REFRESH_MS = 12000;
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // =========================================================
-// State
+// Icons (inline, stroke-based, no external icon deps)
 // =========================================================
-let state = {
-  officer: null,      // {id, name, callsign, photo_url}
-  pin: null,           // kept in memory only, re-sent per write for verification
-  site: null,
-  shift: null,
-  patrol: null,
-  checkpoints: [],
-  scans: [],
-  watchId: null,
+const ic = {
+  command: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`,
+  officers: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  sites: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5z"/></svg>`,
+  patrols: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`,
+  incidents: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 1 21h22L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>`,
+  dispatch: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.4M16.2 7.8c2.3 2.3 2.3 6.1 0 8.4M19.1 4.9c3.9 3.9 3.9 10.3 0 14.2"/><circle cx="12" cy="12" r="2"/></svg>`,
+  lion: `<svg viewBox="0 0 64 64" fill="currentColor"><path d="M14 50c3.2-7.4 7.1-12.4 12.4-16.2-.5-3.6.3-7.7 3.2-10.4 2.5-2.3 6-3 9.2-2 .9-3 3.7-5.5 7.4-6 .7 3.2-.3 6.4-2.6 8.4 2.8 1.6 4.6 4.6 4.6 8 0 2.4-.9 4.6-2.4 6.3 3.6 3.6 6.1 8.1 7.6 11.9H14zm17.2-21c-1.6 1.3-2.2 3.5-1.7 5.5l7.5-2.4c-.4-2.6-3-4.5-5.8-3.1z"/></svg>`,
+  x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
+  plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>`,
 };
 
-function loadSession(){
-  const raw = sessionStorage.getItem("lp_session");
-  if(!raw) return;
+const NAV = [
+  {id:"command", label:"Command", icon:ic.command},
+  {id:"officers", label:"Officers", icon:ic.officers},
+  {id:"sites", label:"Sites", icon:ic.sites},
+  {id:"patrols", label:"Patrols", icon:ic.patrols},
+  {id:"incidents", label:"Incidents", icon:ic.incidents},
+  {id:"dispatch", label:"Dispatch", icon:ic.dispatch},
+];
+
+// =========================================================
+// State
+// =========================================================
+let DATA = {sites:[], officers:[], shifts:[], patrols:[], checkpoints:[], scans:[], incidents:[], dispatches:[], pings:{}};
+let currentTab = "command";
+let loadError = null;
+let signedUrlCache = {}; // path -> signed url
+
+function byId(arr){ const m={}; (arr||[]).forEach(x=>m[x.id]=x); return m; }
+
+async function fetchAll(){
   try{
-    const s = JSON.parse(raw);
-    state.officer = s.officer; state.pin = s.pin; state.site = s.site; state.shift = s.shift;
-  }catch(e){}
-}
-function saveSession(){
-  sessionStorage.setItem("lp_session", JSON.stringify({
-    officer: state.officer, pin: state.pin, site: state.site, shift: state.shift
-  }));
-}
-function clearSession(){
-  sessionStorage.removeItem("lp_session");
-  state = {officer:null, pin:null, site:null, shift:null, patrol:null, checkpoints:[], scans:[], watchId:null};
+    const [sites, officers, shifts, patrols, checkpoints, scans, incidents, dispatches, pings] = await Promise.all([
+      sb.from("sites").select("*").order("name"),
+      sb.from("officers").select("*").order("name"),
+      sb.from("shifts").select("*").order("starts_at", {ascending:false}).limit(200),
+      sb.from("patrols").select("*").order("started_at", {ascending:false}).limit(100),
+      sb.from("checkpoints").select("*").order("seq"),
+      sb.from("checkpoint_scans").select("*").order("scanned_at", {ascending:false}).limit(300),
+      sb.from("incidents").select("*").order("occurred_at", {ascending:false}).limit(150),
+      sb.from("dispatches").select("*").order("created_at", {ascending:false}).limit(150),
+      sb.from("location_pings").select("*").order("recorded_at", {ascending:false}).limit(500),
+    ]);
+    for(const r of [sites,officers,shifts,patrols,checkpoints,scans,incidents,dispatches,pings]){
+      if(r.error) throw r.error;
+    }
+    // Reduce pings to latest per officer
+    const latest = {};
+    for(const p of (pings.data||[])){
+      if(!latest[p.officer_id]) latest[p.officer_id] = p;
+    }
+    DATA = {
+      sites: sites.data||[], officers: officers.data||[], shifts: shifts.data||[],
+      patrols: patrols.data||[], checkpoints: checkpoints.data||[], scans: scans.data||[],
+      incidents: incidents.data||[], dispatches: dispatches.data||[], pings: latest,
+    };
+    loadError = null;
+  }catch(e){
+    loadError = e.message || "Failed to load data";
+  }
 }
 
 function toast(msg, kind="default"){
@@ -133,330 +235,684 @@ function toast(msg, kind="default"){
   el.className = "toast " + kind;
   el.textContent = msg;
   document.body.appendChild(el);
-  setTimeout(()=>el.remove(), 3200);
+  setTimeout(()=>el.remove(), 3400);
 }
 
-function getLocation(){
-  return new Promise((resolve)=>{
-    if(!navigator.geolocation){ resolve({lat:null,lng:null}); return; }
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}),
-      err => resolve({lat:null, lng:null}),
-      {enableHighAccuracy:true, timeout:8000}
-    );
-  });
+async function getSignedUrl(path){
+  if(!path) return null;
+  if(signedUrlCache[path]) return signedUrlCache[path];
+  const {data, error} = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(path, 3600);
+  if(error || !data) return null;
+  signedUrlCache[path] = data.signedUrl;
+  return data.signedUrl;
 }
 
-function startLocationPings(){
-  if(!navigator.geolocation) return;
-  state.watchId = navigator.geolocation.watchPosition(async (pos)=>{
-    if(!state.officer || !state.shift) return;
-    await sb.rpc("officer_ping", {
-      p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id,
-      p_lat: pos.coords.latitude, p_lng: pos.coords.longitude
-    });
-  }, ()=>{}, {enableHighAccuracy:true, maximumAge:60000});
+function fmtTime(iso){ if(!iso) return "—"; return new Date(iso).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}); }
+function fmtDateTime(iso){ if(!iso) return "—"; return new Date(iso).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}); }
+function timeAgo(iso){
+  if(!iso) return "—";
+  const s = Math.floor((Date.now() - new Date(iso).getTime())/1000);
+  if(s<60) return s+"s ago";
+  if(s<3600) return Math.floor(s/60)+"m ago";
+  if(s<86400) return Math.floor(s/3600)+"h ago";
+  return Math.floor(s/86400)+"d ago";
 }
-function stopLocationPings(){
-  if(state.watchId!=null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
-  state.watchId = null;
-}
-
-const icons = {
-  clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
-  qr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M20 14v3h-3M17 21h3v-3"/></svg>`,
-  warning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 1 21h22L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>`,
-  logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>`,
-  lion: `<svg viewBox="0 0 64 64" fill="currentColor"><path d="M14 50c3.2-7.4 7.1-12.4 12.4-16.2-.5-3.6.3-7.7 3.2-10.4 2.5-2.3 6-3 9.2-2 .9-3 3.7-5.5 7.4-6 .7 3.2-.3 6.4-2.6 8.4 2.8 1.6 4.6 4.6 4.6 8 0 2.4-.9 4.6-2.4 6.3 3.6 3.6 6.1 8.1 7.6 11.9H14zm17.2-21c-1.6 1.3-2.2 3.5-1.7 5.5l7.5-2.4c-.4-2.6-3-4.5-5.8-3.1z"/></svg>`,
-};
 
 // =========================================================
-// Screens
+// Shell
 // =========================================================
 const app = document.getElementById("app");
 
-async function renderLogin(){
-  const {data: officers} = await sb.from("officer_directory").select("*").order("name");
-  let selected = null, pin = "";
+function renderShell(){
+  const activeItem = NAV.find(n=>n.id===currentTab);
+  app.innerHTML = `
+    <aside class="sidebar">
+      <div class="brand">${ic.lion}<div><div class="l">Lion</div><div class="s">Command</div></div></div>
+      <nav class="navlist">
+        ${NAV.map(n=>`<button class="navlink ${n.id===currentTab?"active":""}" data-tab="${n.id}">${n.icon}<span>${n.label}</span></button>`).join("")}
+      </nav>
+      <div class="side-foot"><span class="livedot"></span> Live · updates every ${REFRESH_MS/1000}s</div>
+    </aside>
 
-  function draw(){
-    app.innerHTML = `
-      <div class="screen">
-        <div class="brand">${icons.lion}<div class="brand-text"><div class="l">Lion Patrol</div><div class="s">Field Sign-in</div></div></div>
-        <label>Officer</label>
-        <select id="officerSelect">
-          <option value="">Select your name</option>
-          ${(officers||[]).map(o=>`<option value="${o.id}" ${selected===o.id?"selected":""}>${o.name} — ${o.callsign}</option>`).join("")}
-        </select>
-        <label>PIN</label>
-        <div class="pin-dots">${[0,1,2,3].map(i=>`<div class="pin-dot ${pin.length>i?"filled":""}"></div>`).join("")}</div>
-        <div class="err" id="loginErr"></div>
-        <div class="keypad">
-          ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="key" data-n="${n}">${n}</button>`).join("")}
-          <button class="key ghost" id="clearPin">Clear</button>
-          <button class="key" data-n="0">0</button>
-          <button class="key ghost" id="delPin">⌫</button>
-        </div>
-        <button class="btn btn-primary" id="loginBtn" style="margin-top:16px;" ${(!selected||pin.length<4)?"disabled":""}>Sign in</button>
-      </div>`;
+    <header class="topbar">
+      <h1>${activeItem?.label || "Command"}</h1>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="refresh-pill"><span class="livedot" style="width:6px;height:6px;"></span>Live</span>
+        <span class="clock" id="clockEl"></span>
+      </div>
+    </header>
 
-    document.getElementById("officerSelect").onchange = (e)=>{ selected = e.target.value || null; draw(); };
-    document.querySelectorAll(".key[data-n]").forEach(b=>{
-      b.onclick = ()=>{ if(pin.length<6){ pin += b.dataset.n; draw(); } };
-    });
-    document.getElementById("clearPin").onclick = ()=>{ pin=""; draw(); };
-    document.getElementById("delPin").onclick = ()=>{ pin = pin.slice(0,-1); draw(); };
-    document.getElementById("loginBtn").onclick = doLogin;
-  }
+    <main id="mainEl"></main>
 
-  async function doLogin(){
-    const officer = (officers||[]).find(o=>o.id===selected);
-    if(!officer) return;
-    document.getElementById("loginErr").textContent = "";
-    const {data, error} = await sb.rpc("verify_officer_pin", {p_callsign: officer.callsign, p_pin: pin});
-    if(error || !data){
-      document.getElementById("loginErr").textContent = "Incorrect PIN. Try again.";
-      pin = ""; draw();
-      return;
-    }
-    state.officer = {id:data.id, name:data.name, callsign:data.callsign, photo_url:data.photo_url};
-    state.pin = pin;
-    saveSession();
-    renderHome();
-  }
+    <nav class="bottomnav">
+      ${NAV.map(n=>`<button class="navlink bottom ${n.id===currentTab?"active":""}" data-tab="${n.id}">${n.icon}<span>${n.label}</span></button>`).join("")}
+    </nav>
+  `;
 
-  draw();
+  document.querySelectorAll("[data-tab]").forEach(btn=>{
+    btn.onclick = ()=>{ currentTab = btn.dataset.tab; renderShell(); };
+  });
+
+  tickClock();
+  renderMain();
 }
 
-async function renderHome(){
-  const {data: sites} = await sb.from("sites").select("*").order("name");
-  const onDuty = !!state.shift;
+function tickClock(){
+  const el = document.getElementById("clockEl");
+  if(!el) return;
+  el.textContent = new Date().toLocaleString([], {weekday:"short", hour:"2-digit", minute:"2-digit", second:"2-digit"});
+}
+setInterval(()=>{ const el=document.getElementById("clockEl"); if(el) tickClock(); }, 1000);
 
-  app.innerHTML = `
-    <div class="screen">
-      <div class="topbar">
-        <div class="brand">${icons.lion}<div class="brand-text"><div class="l">${state.officer.name}</div><div class="s">${state.officer.callsign}</div></div></div>
-        <div class="status-pill ${onDuty?"on":""}"><span class="dot"></span>${onDuty?"On Duty":"Off Duty"}</div>
-      </div>
+function renderMain(){
+  const main = document.getElementById("mainEl");
+  if(!main) return;
+  if(loadError){
+    main.innerHTML = `<div class="card"><div class="empty">Couldn't load data — ${loadError}</div></div>`;
+    return;
+  }
+  const renderers = {
+    command: renderCommand, officers: renderOfficers, sites: renderSites,
+    patrols: renderPatrols, incidents: renderIncidents, dispatch: renderDispatch,
+  };
+  (renderers[currentTab] || renderCommand)(main);
+}
 
-      ${onDuty ? `
+// =========================================================
+// COMMAND
+// =========================================================
+function renderCommand(main){
+  const onDuty = DATA.officers.filter(o=>o.status==="on_duty").length;
+  const openIncidents = DATA.incidents.filter(i=>i.status!=="resolved").length;
+  const activePatrols = DATA.patrols.filter(p=>p.status==="active").length;
+  const sitesAlert = DATA.sites.filter(s=>s.status==="alert").length;
+
+  const recentIncidents = DATA.incidents.slice(0,5);
+  const recentDispatches = DATA.dispatches.slice(0,5);
+  const officerById = byId(DATA.officers);
+  const siteById = byId(DATA.sites);
+
+  main.innerHTML = `
+    <div class="kpi-row">
+      <div class="kpi"><div class="n">${onDuty}</div><div class="l">On Duty</div></div>
+      <div class="kpi"><div class="n">${activePatrols}</div><div class="l">Active Patrols</div></div>
+      <div class="kpi"><div class="n" style="${openIncidents>0?"color:var(--warning)":""}">${openIncidents}</div><div class="l">Open Incidents</div></div>
+      <div class="kpi"><div class="n" style="${sitesAlert>0?"color:var(--danger)":""}">${sitesAlert}</div><div class="l">Sites on Alert</div></div>
+    </div>
+
+    <div class="grid2">
+      <div>
         <div class="card">
-          <h3>${state.site?.name || "Assigned site"}</h3>
-          <p>Clocked in ${new Date(state.shift.clock_in_at).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</p>
+          <div class="card-head"><h2>Field Map</h2><span class="meta">${DATA.sites.length} sites</span></div>
+          <div id="mapHolder"></div>
         </div>
-        <div class="grid2">
-          <div class="action-tile" id="tilePatrol">${icons.qr}<div>Scan Checkpoint</div></div>
-          <div class="action-tile" id="tileIncident">${icons.warning}<div>Report Incident</div></div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-head"><h2>Recent Incidents</h2></div>
+          ${recentIncidents.length ? recentIncidents.map(i=>`
+            <div style="padding:10px 0; border-top:1px solid var(--border);" class="first-none">
+              <div style="display:flex; justify-content:space-between; gap:8px;">
+                <span style="font-size:13px;">${escapeHtml(i.title)}</span>
+                <span class="badge ${i.severity==='high'?'danger':i.severity==='medium'?'warn':'off'}">${i.severity}</span>
+              </div>
+              <div style="font-size:11px; color:var(--muted); margin-top:3px;">${siteById[i.site_id]?.name||"—"} · ${timeAgo(i.occurred_at)}</div>
+            </div>
+          `).join("") : `<div class="empty">No incidents yet</div>`}
         </div>
-        <button class="btn btn-danger" id="clockOutBtn" style="margin-top:20px;">Clock Out</button>
-      ` : `
-        <label>Site</label>
-        <select id="siteSelect">
-          <option value="">Select site</option>
-          ${(sites||[]).map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}
-        </select>
-        <button class="btn btn-primary" id="clockInBtn" style="margin-top:18px;" disabled>Clock In</button>
-        <div class="err" id="homeErr"></div>
-      `}
+        <div class="card">
+          <div class="card-head"><h2>Recent Dispatches</h2></div>
+          ${recentDispatches.length ? recentDispatches.map(d=>`
+            <div style="padding:10px 0; border-top:1px solid var(--border);">
+              <div style="font-size:13px;">${escapeHtml(d.message)}</div>
+              <div style="font-size:11px; color:var(--muted); margin-top:3px;">to ${officerById[d.officer_id]?.name||"—"} · ${timeAgo(d.created_at)} · ${d.status}</div>
+            </div>
+          `).join("") : `<div class="empty">No dispatches yet</div>`}
+        </div>
+      </div>
+    </div>
+  `;
+  renderMap(document.getElementById("mapHolder"));
+}
 
-      <div class="muted-link" id="signOutLink">Sign out</div>
-    </div>`;
+function renderMap(holder){
+  if(!holder) return;
+  const points = [
+    ...DATA.sites.map(s=>({lat:s.lat, lng:s.lng})),
+    ...Object.values(DATA.pings).map(p=>({lat:p.lat, lng:p.lng})),
+  ];
+  if(points.length === 0){
+    holder.innerHTML = `<div class="empty">Add a site to see the map</div>`;
+    return;
+  }
+  let minLat=Math.min(...points.map(p=>p.lat)), maxLat=Math.max(...points.map(p=>p.lat));
+  let minLng=Math.min(...points.map(p=>p.lng)), maxLng=Math.max(...points.map(p=>p.lng));
+  const padLat = Math.max((maxLat-minLat)*0.25, 0.01);
+  const padLng = Math.max((maxLng-minLng)*0.25, 0.01);
+  minLat-=padLat; maxLat+=padLat; minLng-=padLng; maxLng+=padLng;
 
-  if(!onDuty){
-    const sel = document.getElementById("siteSelect");
-    const btn = document.getElementById("clockInBtn");
-    sel.onchange = ()=>{ btn.disabled = !sel.value; };
-    btn.onclick = async ()=>{
-      btn.disabled = true; btn.textContent = "Getting location…";
-      const loc = await getLocation();
-      const {data, error} = await sb.rpc("officer_clock_in", {
-        p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: sel.value,
-        p_lat: loc.lat, p_lng: loc.lng
-      });
-      if(error){ document.getElementById("homeErr").textContent = "Couldn't clock in — try again."; btn.disabled=false; btn.textContent="Clock In"; return; }
-      state.shift = data;
-      state.site = (sites||[]).find(s=>s.id===sel.value);
-      saveSession();
-      startLocationPings();
-      toast("Clocked in", "success");
-      renderHome();
-    };
-  } else {
-    document.getElementById("tilePatrol").onclick = renderPatrol;
-    document.getElementById("tileIncident").onclick = renderIncident;
-    document.getElementById("clockOutBtn").onclick = async ()=>{
-      const loc = await getLocation();
-      const {error} = await sb.rpc("officer_clock_out", {
-        p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id,
-        p_lat: loc.lat, p_lng: loc.lng
-      });
-      if(error){ toast("Couldn't clock out — try again.", "danger"); return; }
-      stopLocationPings();
-      state.shift = null; state.site = null;
-      saveSession();
-      toast("Clocked out", "success");
-      renderHome();
-    };
+  function project(lat,lng){
+    const x = ((lng-minLng)/(maxLng-minLng))*100;
+    const y = ((maxLat-lat)/(maxLat-minLat))*72;
+    return {x,y};
   }
 
-  document.getElementById("signOutLink").onclick = ()=>{
-    stopLocationPings();
-    clearSession();
-    renderLogin();
+  const officerById = byId(DATA.officers);
+  const now = Date.now();
+
+  const siteMarkers = DATA.sites.map(s=>{
+    const p = project(s.lat, s.lng);
+    const color = s.status==="alert" ? "var(--danger)" : s.status==="unmanned" ? "var(--faint)" : "var(--accent)";
+    return `<g transform="translate(${p.x} ${p.y})">
+      <circle r="1.6" fill="${color}" opacity="0.35"/>
+      <circle r="0.8" fill="${color}"/>
+      <text x="1.6" y="0.5" font-size="2.4" fill="var(--muted)" font-family="var(--font-mono)">${escapeHtml(s.code)}</text>
+    </g>`;
+  }).join("");
+
+  const officerMarkers = Object.entries(DATA.pings).map(([officerId,ping])=>{
+    const o = officerById[officerId];
+    if(!o || o.status !== "on_duty") return "";
+    const p = project(ping.lat, ping.lng);
+    const fresh = (now - new Date(ping.recorded_at).getTime()) < 5*60*1000;
+    return `<g transform="translate(${p.x} ${p.y})">
+      <circle r="1.3" fill="${fresh?'var(--success)':'var(--faint)'}" opacity="0.9"/>
+      <text x="0" y="-2" font-size="2.2" fill="var(--fg)" font-family="var(--font-mono)" text-anchor="middle">${escapeHtml(o.callsign)}</text>
+    </g>`;
+  }).join("");
+
+  holder.innerHTML = `
+    <div class="map-wrap">
+      <svg viewBox="0 0 100 72" role="img" aria-label="Field map">
+        <rect width="100" height="72" fill="var(--raised)"/>
+        ${Array.from({length:9}).map((_,i)=>`<line x1="${i*12.5}" y1="0" x2="${i*12.5}" y2="72" stroke="var(--border)" stroke-width="0.15"/>`).join("")}
+        ${Array.from({length:7}).map((_,i)=>`<line x1="0" y1="${i*12}" x2="100" y2="${i*12}" stroke="var(--border)" stroke-width="0.15"/>`).join("")}
+        ${siteMarkers}
+        ${officerMarkers}
+      </svg>
+    </div>
+    <div style="display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--muted);">
+      <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;"></span>Site</span>
+      <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--success);display:inline-block;"></span>Officer (live)</span>
+      <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--faint);display:inline-block;"></span>Officer (stale)</span>
+    </div>
+  `;
+}
+
+// =========================================================
+// OFFICERS
+// =========================================================
+function renderOfficers(main){
+  const siteById = byId(DATA.sites);
+  main.innerHTML = `
+    <div class="card">
+      <div class="card-head">
+        <h2>Officers</h2>
+        <button class="btn btn-primary btn-sm" id="addOfficerBtn">${ic.plus} Add Officer</button>
+      </div>
+      ${DATA.officers.length ? `
+        <table>
+          <thead><tr><th></th><th>Name</th><th>Callsign</th><th>Status</th><th>Site</th><th>Phone</th></tr></thead>
+          <tbody>
+            ${DATA.officers.map(o=>{
+              const ping = DATA.pings[o.id];
+              return `<tr class="row-click" data-officer="${o.id}">
+                <td><div class="officer-photo">${o.name.split(" ").map(x=>x[0]).slice(0,2).join("")}</div></td>
+                <td>${escapeHtml(o.name)}</td>
+                <td style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(o.callsign)}</td>
+                <td><span class="badge ${o.status==='on_duty'?'on':'off'}"><span class="dot"></span>${o.status.replace('_',' ')}</span></td>
+                <td>${siteById[o.site_id]?.name || "—"}</td>
+                <td>${o.phone || "—"}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      ` : `<div class="empty">No officers yet — add your first one</div>`}
+    </div>
+  `;
+  document.getElementById("addOfficerBtn").onclick = openAddOfficerModal;
+  document.querySelectorAll("[data-officer]").forEach(row=>{
+    row.onclick = ()=> openOfficerDetail(row.dataset.officer);
+  });
+}
+
+function openOfficerDetail(officerId){
+  const o = DATA.officers.find(x=>x.id===officerId);
+  if(!o) return;
+  const siteById = byId(DATA.sites);
+  const ping = DATA.pings[o.id];
+  const recentShifts = DATA.shifts.filter(s=>s.officer_id===o.id).slice(0,5);
+
+  showModal(`
+    <h3>${escapeHtml(o.name)}</h3>
+    <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">${escapeHtml(o.callsign)} · ${escapeHtml(o.rank)}</div>
+    <label>Status</label>
+    <div>${o.status.replace('_',' ')} ${o.site_id ? "at "+escapeHtml(siteById[o.site_id]?.name||"") : ""}</div>
+    <label>Last known location</label>
+    <div style="font-size:13px;">${ping ? timeAgo(ping.recorded_at) : "No location data yet"}</div>
+    <label>Recent shifts</label>
+    ${recentShifts.length ? recentShifts.map(s=>`
+      <div style="font-size:12px; padding:6px 0; border-top:1px solid var(--border);">
+        ${fmtDateTime(s.clock_in_at)} → ${s.clock_out_at ? fmtTime(s.clock_out_at) : "active"}
+      </div>
+    `).join("") : `<div class="empty" style="padding:8px 0;">No shifts yet</div>`}
+
+    <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--border);">
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">
+        PIN reset requires the SQL editor (no admin login is set up yet, so this stays out of the app on purpose).
+      </div>
+      <div class="qr-box" style="align-items:flex-start;">
+        <code style="font-size:11px; word-break:break-all;" id="pinSqlText">select set_officer_pin('${o.id}', '<new-pin>');</code>
+        <span class="subtle-link" id="copyPinSql">Copy</span>
+      </div>
+    </div>
+  `);
+  document.getElementById("copyPinSql").onclick = ()=>{
+    navigator.clipboard?.writeText(document.getElementById("pinSqlText").textContent);
+    toast("Copied to clipboard", "success");
   };
 }
 
-async function renderPatrol(){
-  const {data: checkpoints} = await sb.from("checkpoints").select("*").eq("site_id", state.site.id).order("seq");
-  let {data: activePatrol} = await sb.from("patrols").select("*")
-    .eq("site_id", state.site.id).eq("officer_id", state.officer.id).eq("status","active").maybeSingle();
-
-  if(!activePatrol){
-    const {data: created} = await sb.from("patrols").insert({
-      site_id: state.site.id, officer_id: state.officer.id, name:"Patrol", status:"active", started_at:new Date().toISOString()
-    }).select().single();
-    activePatrol = created;
-  }
-  state.patrol = activePatrol;
-
-  const {data: scans} = await sb.from("checkpoint_scans").select("*").eq("patrol_id", state.patrol.id);
-  state.scans = scans || [];
-
-  function scanStatusFor(cpId){
-    const s = state.scans.find(s=>s.checkpoint_id===cpId);
-    if(!s) return "pending";
-    return s.verified ? "done" : "unverified";
-  }
-
-  app.innerHTML = `
-    <div class="screen">
-      <div class="backbar" id="backBtn">‹ Back</div>
-      <h1>${state.site.name} — Checkpoints</h1>
-      <p class="sub">Scan each checkpoint's QR code in order.</p>
-      <div id="qr-reader" style="display:none; margin-bottom:16px;"></div>
-      <button class="btn btn-primary" id="startScanBtn">${icons.qr} Scan Next Checkpoint</button>
-      <div class="card" style="margin-top:18px;">
-        ${(checkpoints||[]).map(cp=>{
-          const st = scanStatusFor(cp.id);
-          return `<div class="checkpoint-row"><span>${cp.seq}. ${cp.name}</span><span class="cp-status ${st}">${st==="pending"?"Pending":st==="done"?"Verified":"Too far"}</span></div>`;
-        }).join("")}
-      </div>
-    </div>`;
-
-  document.getElementById("backBtn").onclick = renderHome;
-  document.getElementById("startScanBtn").onclick = ()=>startQrScan(checkpoints||[]);
-}
-
-function startQrScan(checkpoints){
-  const reader = document.getElementById("qr-reader");
-  reader.style.display = "block";
-  const qr = new Html5Qrcode("qr-reader");
-  let handled = false;
-
-  qr.start({facingMode:"environment"}, {fps:10, qrbox:220}, async (decodedText)=>{
-    if(handled) return;
-    const cp = checkpoints.find(c=>c.qr_token===decodedText.trim());
-    if(!cp){ toast("Unrecognized checkpoint code", "danger"); return; }
-    handled = true;
-    await qr.stop(); reader.style.display="none";
-
-    const loc = await getLocation();
-    const {data, error} = await sb.rpc("officer_scan_checkpoint", {
-      p_officer_id: state.officer.id, p_pin: state.pin, p_patrol_id: state.patrol.id,
-      p_checkpoint_id: cp.id, p_lat: loc.lat, p_lng: loc.lng, p_photo_url: null
-    });
-    if(error){ toast("Scan failed — try again.", "danger"); }
-    else if(data.verified){ toast(`${cp.name} verified ✓`, "success"); }
-    else { toast(`${cp.name} scanned, but you're too far from the checkpoint`, "danger"); }
-    renderPatrol();
-  }, ()=>{});
-}
-
-async function renderIncident(){
-  let category = "general", severity = "low", photoFile = null, photoPreview = null;
-
-  function draw(){
-    app.innerHTML = `
-      <div class="screen">
-        <div class="backbar" id="backBtn">‹ Back</div>
-        <h1>Report Incident</h1>
-        <p class="sub">${state.site.name}</p>
-
-        <label>Title</label>
-        <input type="text" id="title" placeholder="Brief summary" />
-
-        <label>Category</label>
-        <div class="chip-row" id="catRow">
-          ${["general","access","safety","property","medical"].map(c=>`<div class="chip ${category===c?"active":""}" data-c="${c}">${c}</div>`).join("")}
-        </div>
-
-        <label>Severity</label>
-        <div class="chip-row" id="sevRow">
-          ${["low","medium","high"].map(s=>`<div class="chip ${severity===s?"active":""}" data-s="${s}">${s}</div>`).join("")}
-        </div>
-
-        <label>Description</label>
-        <textarea id="desc" placeholder="What happened?"></textarea>
-
-        <label>Photo</label>
-        <input type="file" id="photoInput" accept="image/*" capture="environment" />
-        ${photoPreview ? `<img class="photo-preview" src="${photoPreview}" />` : ""}
-
-        <div class="err" id="incErr"></div>
-        <button class="btn btn-primary" id="submitBtn" style="margin-top:18px;">Submit Report</button>
-      </div>`;
-
-    document.getElementById("backBtn").onclick = renderPatrol;
-    document.querySelectorAll("#catRow .chip").forEach(c=>c.onclick=()=>{category=c.dataset.c; draw();});
-    document.querySelectorAll("#sevRow .chip").forEach(c=>c.onclick=()=>{severity=c.dataset.s; draw();});
-    document.getElementById("photoInput").onchange = (e)=>{
-      photoFile = e.target.files[0] || null;
-      if(photoFile) photoPreview = URL.createObjectURL(photoFile);
-      draw();
-    };
-    document.getElementById("submitBtn").onclick = submit;
-  }
-
-  async function submit(){
-    const title = document.getElementById("title").value.trim();
-    const desc = document.getElementById("desc").value.trim();
-    if(!title){ document.getElementById("incErr").textContent = "Title is required."; return; }
-
-    const btn = document.getElementById("submitBtn");
-    btn.disabled = true; btn.textContent = "Submitting…";
-
-    let photoUrls = [];
-    if(photoFile){
-      const path = `incidents/${state.officer.id}/${Date.now()}-${photoFile.name}`;
-      const {error: upErr} = await sb.storage.from(STORAGE_BUCKET).upload(path, photoFile);
-      if(!upErr) photoUrls = [path];
-    }
-
-    const loc = await getLocation();
-    const {error} = await sb.rpc("officer_submit_incident", {
-      p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
-      p_title: title, p_category: category, p_severity: severity, p_description: desc,
-      p_lat: loc.lat, p_lng: loc.lng, p_photo_urls: photoUrls
-    });
-
+function openAddOfficerModal(){
+  showModal(`
+    <h3>Add Officer</h3>
+    <label>Full name</label><input type="text" id="f_name" />
+    <div class="field-row">
+      <div><label>Callsign</label><input type="text" id="f_callsign" placeholder="L1-01" /></div>
+      <div><label>Rank</label><input type="text" id="f_rank" placeholder="Officer" /></div>
+    </div>
+    <label>Phone</label><input type="tel" id="f_phone" />
+    <label>Certifications</label><input type="text" id="f_certs" placeholder="Unarmed, De-escalation" />
+    <div class="err" id="f_err"></div>
+    <button class="btn btn-primary" id="f_submit" style="width:100%; margin-top:16px;">Add Officer</button>
+    <div style="font-size:11px; color:var(--muted); margin-top:10px;">
+      After adding, set their PIN from the Supabase SQL editor using <code>set_officer_pin(id, pin)</code> — shown on their profile.
+    </div>
+  `);
+  document.getElementById("f_submit").onclick = async ()=>{
+    const name = document.getElementById("f_name").value.trim();
+    const callsign = document.getElementById("f_callsign").value.trim();
+    const rank = document.getElementById("f_rank").value.trim() || "Officer";
+    const phone = document.getElementById("f_phone").value.trim();
+    const certs = document.getElementById("f_certs").value.trim();
+    if(!name || !callsign){ document.getElementById("f_err").textContent = "Name and callsign are required."; return; }
+    const btn = document.getElementById("f_submit"); btn.disabled = true; btn.textContent = "Adding…";
+    const {error} = await sb.from("officers").insert({name, callsign, rank, phone, certifications: certs, active:true});
     if(error){
-      document.getElementById("incErr").textContent = "Couldn't submit — try again.";
-      btn.disabled = false; btn.textContent = "Submit Report";
+      document.getElementById("f_err").textContent = error.message.includes("duplicate") ? "That callsign is already taken." : "Couldn't add officer.";
+      btn.disabled = false; btn.textContent = "Add Officer";
       return;
     }
-    toast("Incident report submitted", "success");
-    renderHome();
+    closeModal();
+    toast("Officer added", "success");
+    await fetchAll(); renderMain();
+  };
+}
+
+// =========================================================
+// SITES
+// =========================================================
+function renderSites(main){
+  main.innerHTML = `
+    <div class="card">
+      <div class="card-head">
+        <h2>Sites</h2>
+        <button class="btn btn-primary btn-sm" id="addSiteBtn">${ic.plus} Add Site</button>
+      </div>
+      ${DATA.sites.length ? `
+        <table>
+          <thead><tr><th>Name</th><th>Code</th><th>Status</th><th>Address</th><th>Checkpoints</th></tr></thead>
+          <tbody>
+            ${DATA.sites.map(s=>{
+              const cpCount = DATA.checkpoints.filter(c=>c.site_id===s.id).length;
+              return `<tr class="row-click" data-site="${s.id}">
+                <td>${escapeHtml(s.name)}</td>
+                <td style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(s.code)}</td>
+                <td><span class="badge ${s.status==='alert'?'danger':s.status==='secure'?'on':'off'}"><span class="dot"></span>${s.status}</span></td>
+                <td style="font-size:12px; color:var(--muted);">${escapeHtml(s.address)}</td>
+                <td>${cpCount}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      ` : `<div class="empty">No sites yet — add your first one</div>`}
+    </div>
+  `;
+  document.getElementById("addSiteBtn").onclick = openAddSiteModal;
+  document.querySelectorAll("[data-site]").forEach(row=>{
+    row.onclick = ()=> openSiteDetail(row.dataset.site);
+  });
+}
+
+function openAddSiteModal(){
+  showModal(`
+    <h3>Add Site</h3>
+    <label>Name</label><input type="text" id="f_name" />
+    <div class="field-row">
+      <div><label>Code</label><input type="text" id="f_code" placeholder="SEA-02" /></div>
+      <div><label>Kind</label>
+        <select id="f_kind">
+          <option value="commercial">Commercial</option>
+          <option value="event">Event</option>
+          <option value="residential">Residential</option>
+          <option value="construction">Construction</option>
+        </select>
+      </div>
+    </div>
+    <label>Address</label><input type="text" id="f_address" />
+    <label>City</label><input type="text" id="f_city" value="Seattle" />
+    <div class="field-row">
+      <div><label>Latitude</label><input type="number" step="0.000001" id="f_lat" /></div>
+      <div><label>Longitude</label><input type="number" step="0.000001" id="f_lng" /></div>
+    </div>
+    <label>Required officers</label><input type="number" id="f_required" value="1" min="1" />
+    <div class="err" id="f_err"></div>
+    <button class="btn btn-primary" id="f_submit" style="width:100%; margin-top:16px;">Add Site</button>
+  `);
+  document.getElementById("f_submit").onclick = async ()=>{
+    const name = document.getElementById("f_name").value.trim();
+    const code = document.getElementById("f_code").value.trim();
+    const kind = document.getElementById("f_kind").value;
+    const address = document.getElementById("f_address").value.trim();
+    const city = document.getElementById("f_city").value.trim() || "Seattle";
+    const lat = parseFloat(document.getElementById("f_lat").value);
+    const lng = parseFloat(document.getElementById("f_lng").value);
+    const required = parseInt(document.getElementById("f_required").value) || 1;
+    if(!name || !code || !address || isNaN(lat) || isNaN(lng)){
+      document.getElementById("f_err").textContent = "Fill in name, code, address, and coordinates.";
+      return;
+    }
+    const btn = document.getElementById("f_submit"); btn.disabled = true; btn.textContent = "Adding…";
+    const {error} = await sb.from("sites").insert({name, code, kind, address, city, lat, lng, required_officers: required});
+    if(error){
+      document.getElementById("f_err").textContent = error.message.includes("duplicate") ? "That code is already taken." : "Couldn't add site.";
+      btn.disabled = false; btn.textContent = "Add Site";
+      return;
+    }
+    closeModal();
+    toast("Site added", "success");
+    await fetchAll(); renderMain();
+  };
+}
+
+function openSiteDetail(siteId){
+  const s = DATA.sites.find(x=>x.id===siteId);
+  if(!s) return;
+  const checkpoints = DATA.checkpoints.filter(c=>c.site_id===siteId).sort((a,b)=>a.seq-b.seq);
+
+  showModal(`
+    <h3>${escapeHtml(s.name)}</h3>
+    <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">${escapeHtml(s.code)} · ${escapeHtml(s.address)}</div>
+    <label>Checkpoints</label>
+    <div id="cpList">
+      ${checkpoints.length ? checkpoints.map(c=>`
+        <div class="checkpoint-row">
+          <span>${c.seq}. ${escapeHtml(c.name)}</span>
+          <span class="subtle-link" data-qr="${c.id}">Show QR</span>
+        </div>
+      `).join("") : `<div class="empty" style="padding:10px 0;">No checkpoints yet</div>`}
+    </div>
+    <button class="btn btn-secondary btn-sm" id="addCpBtn" style="margin-top:12px;">${ic.plus} Add Checkpoint</button>
+    <div id="cpFormHolder"></div>
+  `);
+
+  document.querySelectorAll("[data-qr]").forEach(el=>{
+    el.onclick = ()=>{
+      const cp = checkpoints.find(c=>c.id===el.dataset.qr);
+      showQrFor(cp);
+    };
+  });
+
+  document.getElementById("addCpBtn").onclick = ()=>{
+    const holder = document.getElementById("cpFormHolder");
+    holder.innerHTML = `
+      <label>Checkpoint name</label><input type="text" id="cp_name" placeholder="Back Entrance" />
+      <div class="field-row">
+        <div><label>Sequence #</label><input type="number" id="cp_seq" value="${checkpoints.length+1}" /></div>
+        <div><label>Radius (m)</label><input type="number" id="cp_radius" value="30" /></div>
+      </div>
+      <div class="field-row">
+        <div><label>Latitude</label><input type="number" step="0.000001" id="cp_lat" value="${s.lat}" /></div>
+        <div><label>Longitude</label><input type="number" step="0.000001" id="cp_lng" value="${s.lng}" /></div>
+      </div>
+      <div class="err" id="cp_err"></div>
+      <button class="btn btn-primary" id="cp_submit" style="width:100%; margin-top:12px;">Save Checkpoint</button>
+    `;
+    document.getElementById("cp_submit").onclick = async ()=>{
+      const name = document.getElementById("cp_name").value.trim();
+      const seq = parseInt(document.getElementById("cp_seq").value) || 1;
+      const radius = parseInt(document.getElementById("cp_radius").value) || 30;
+      const lat = parseFloat(document.getElementById("cp_lat").value);
+      const lng = parseFloat(document.getElementById("cp_lng").value);
+      if(!name || isNaN(lat) || isNaN(lng)){
+        document.getElementById("cp_err").textContent = "Name and coordinates are required.";
+        return;
+      }
+      const {error} = await sb.from("checkpoints").insert({site_id: siteId, name, seq, radius_m: radius, lat, lng});
+      if(error){ document.getElementById("cp_err").textContent = "Couldn't save checkpoint."; return; }
+      closeModal();
+      toast("Checkpoint added", "success");
+      await fetchAll(); renderMain();
+    };
+  };
+}
+
+function showQrFor(cp){
+  if(!cp) return;
+  showModal(`
+    <h3>${escapeHtml(cp.name)}</h3>
+    <div style="color:var(--muted); font-size:13px; margin-bottom:6px;">Checkpoint ${cp.seq}</div>
+    <div class="qr-box"><canvas id="qrCanvas"></canvas></div>
+  `);
+  setTimeout(()=>{
+    const canvas = document.getElementById("qrCanvas");
+    if(canvas && window.QRCode) QRCode.toCanvas(canvas, cp.qr_token, {width:220, margin:2});
+  }, 30);
+}
+
+// =========================================================
+// PATROLS
+// =========================================================
+function renderPatrols(main){
+  const siteById = byId(DATA.sites);
+  const officerById = byId(DATA.officers);
+
+  main.innerHTML = `
+    <div class="card">
+      <div class="card-head"><h2>Patrols</h2></div>
+      ${DATA.patrols.length ? `
+        <table>
+          <thead><tr><th>Site</th><th>Officer</th><th>Status</th><th>Started</th><th>Checkpoints</th></tr></thead>
+          <tbody>
+            ${DATA.patrols.slice(0,30).map(p=>{
+              const cps = DATA.checkpoints.filter(c=>c.site_id===p.site_id);
+              const scansForPatrol = DATA.scans.filter(s=>s.patrol_id===p.id);
+              const verified = scansForPatrol.filter(s=>s.verified).length;
+              const unverified = scansForPatrol.filter(s=>!s.verified).length;
+              return `<tr>
+                <td>${siteById[p.site_id]?.name || "—"}</td>
+                <td>${officerById[p.officer_id]?.name || "—"}</td>
+                <td><span class="badge ${p.status==='active'?'on':'off'}"><span class="dot"></span>${p.status}</span></td>
+                <td style="font-size:12px; color:var(--muted);">${fmtDateTime(p.started_at)}</td>
+                <td style="font-size:12px;">
+                  <span style="color:var(--success);">${verified} verified</span>${unverified?` · <span style="color:var(--warning);">${unverified} flagged</span>`:""}
+                  ${cps.length ? ` / ${cps.length}` : ""}
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      ` : `<div class="empty">No patrols yet</div>`}
+    </div>
+  `;
+}
+
+// =========================================================
+// INCIDENTS
+// =========================================================
+function renderIncidents(main){
+  const siteById = byId(DATA.sites);
+  const officerById = byId(DATA.officers);
+
+  main.innerHTML = `
+    <div class="card">
+      <div class="card-head"><h2>Incidents</h2><span class="meta">${DATA.incidents.length} total</span></div>
+      ${DATA.incidents.length ? DATA.incidents.map(i=>`
+        <div class="row-click" data-incident="${i.id}" style="padding:14px 0; border-top:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+            <div>
+              <div style="font-size:14px; font-weight:500;">${escapeHtml(i.title)}</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:3px;">
+                ${siteById[i.site_id]?.name || "—"} · ${officerById[i.officer_id]?.name || "Unknown"} · ${timeAgo(i.occurred_at)}
+              </div>
+            </div>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <span class="badge ${i.severity==='high'?'danger':i.severity==='medium'?'warn':'off'}">${i.severity}</span>
+              <span class="badge ${i.status==='resolved'?'on':i.status==='investigating'?'warn':'off'}">${i.status}</span>
+            </div>
+          </div>
+        </div>
+      `).join("") : `<div class="empty">No incidents reported</div>`}
+    </div>
+  `;
+  document.querySelectorAll("[data-incident]").forEach(row=>{
+    row.onclick = ()=> openIncidentDetail(row.dataset.incident);
+  });
+}
+
+async function openIncidentDetail(incidentId){
+  const i = DATA.incidents.find(x=>x.id===incidentId);
+  if(!i) return;
+  const siteById = byId(DATA.sites);
+  const officerById = byId(DATA.officers);
+
+  showModal(`
+    <h3>${escapeHtml(i.title)}</h3>
+    <div style="color:var(--muted); font-size:13px; margin-bottom:14px;">
+      ${siteById[i.site_id]?.name || "—"} · ${officerById[i.officer_id]?.name || "Unknown"} · ${fmtDateTime(i.occurred_at)}
+    </div>
+    <div style="display:flex; gap:6px; margin-bottom:14px;">
+      <span class="badge ${i.severity==='high'?'danger':i.severity==='medium'?'warn':'off'}">${i.severity}</span>
+      <span class="badge off">${i.category}</span>
+    </div>
+    <div style="font-size:14px; line-height:1.5;">${escapeHtml(i.description) || "<em style='color:var(--muted)'>No description provided</em>"}</div>
+    <div class="photo-grid" id="incidentPhotos"></div>
+    <label>Status</label>
+    <select id="statusSelect">
+      <option value="open" ${i.status==='open'?'selected':''}>Open</option>
+      <option value="investigating" ${i.status==='investigating'?'selected':''}>Investigating</option>
+      <option value="resolved" ${i.status==='resolved'?'selected':''}>Resolved</option>
+    </select>
+    <button class="btn btn-primary" id="statusSave" style="width:100%; margin-top:14px;">Update Status</button>
+  `);
+
+  const photosEl = document.getElementById("incidentPhotos");
+  for(const path of (i.photo_urls||[])){
+    const url = await getSignedUrl(path);
+    if(url){
+      const img = document.createElement("img");
+      img.src = url;
+      photosEl.appendChild(img);
+    }
   }
 
-  draw();
+  document.getElementById("statusSave").onclick = async ()=>{
+    const newStatus = document.getElementById("statusSelect").value;
+    const btn = document.getElementById("statusSave"); btn.disabled = true; btn.textContent = "Saving…";
+    const {error} = await sb.from("incidents").update({status:newStatus}).eq("id", i.id);
+    if(error){ toast("Couldn't update status", "danger"); btn.disabled=false; btn.textContent="Update Status"; return; }
+    closeModal();
+    toast("Status updated", "success");
+    await fetchAll(); renderMain();
+  };
+}
+
+// =========================================================
+// DISPATCH
+// =========================================================
+function renderDispatch(main){
+  const onDuty = DATA.officers.filter(o=>o.status==="on_duty");
+  const officerById = byId(DATA.officers);
+
+  main.innerHTML = `
+    <div class="grid2">
+      <div class="card">
+        <div class="card-head"><h2>Send Dispatch</h2></div>
+        <label>Officer</label>
+        <select id="d_officer">
+          <option value="">Select on-duty officer</option>
+          ${onDuty.map(o=>`<option value="${o.id}">${escapeHtml(o.name)} — ${escapeHtml(o.callsign)}</option>`).join("")}
+        </select>
+        <label>Message</label>
+        <textarea id="d_message" placeholder="Check the loading dock, client reported noise complaint…"></textarea>
+        <div class="err" id="d_err"></div>
+        <button class="btn btn-primary" id="d_send" style="width:100%; margin-top:12px;">Send</button>
+        ${onDuty.length===0 ? `<div class="empty" style="margin-top:6px;">No officers currently on duty</div>` : ""}
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Dispatch Log</h2></div>
+        ${DATA.dispatches.length ? DATA.dispatches.slice(0,20).map(d=>`
+          <div style="padding:10px 0; border-top:1px solid var(--border);">
+            <div style="font-size:13px;">${escapeHtml(d.message)}</div>
+            <div style="font-size:11px; color:var(--muted); margin-top:3px; display:flex; justify-content:space-between;">
+              <span>${officerById[d.officer_id]?.name || "—"}</span>
+              <span class="badge ${d.status==='acknowledged'?'on':'off'}">${d.status}</span>
+            </div>
+          </div>
+        `).join("") : `<div class="empty">No dispatches sent yet</div>`}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("d_send").onclick = async ()=>{
+    const officerId = document.getElementById("d_officer").value;
+    const message = document.getElementById("d_message").value.trim();
+    if(!officerId || !message){ document.getElementById("d_err").textContent = "Select an officer and write a message."; return; }
+    const officer = officerById[officerId];
+    const btn = document.getElementById("d_send"); btn.disabled = true; btn.textContent = "Sending…";
+    const {error} = await sb.from("dispatches").insert({officer_id: officerId, site_id: officer?.site_id || null, message});
+    if(error){ document.getElementById("d_err").textContent = "Couldn't send — try again."; btn.disabled=false; btn.textContent="Send"; return; }
+    toast("Dispatch sent", "success");
+    await fetchAll(); renderMain();
+  };
+}
+
+// =========================================================
+// Modal helpers
+// =========================================================
+function showModal(innerHtml){
+  const existing = document.getElementById("modalBackdrop");
+  if(existing) existing.remove();
+  const backdrop = document.createElement("div");
+  backdrop.id = "modalBackdrop";
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `<div class="modal"><span class="modal-close" id="modalCloseBtn">${ic.x}</span>${innerHtml}</div>`;
+  backdrop.onclick = (e)=>{ if(e.target === backdrop) closeModal(); };
+  document.body.appendChild(backdrop);
+  document.getElementById("modalCloseBtn").onclick = closeModal;
+}
+function closeModal(){
+  const el = document.getElementById("modalBackdrop");
+  if(el) el.remove();
+}
+
+function escapeHtml(str){
+  if(str===null || str===undefined) return "";
+  return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 // =========================================================
 // Boot
 // =========================================================
-loadSession();
-if(state.officer && state.shift) startLocationPings();
-if(state.officer) renderHome(); else renderLogin();
+async function boot(){
+  await fetchAll();
+  renderShell();
+  setInterval(async ()=>{
+    await fetchAll();
+    renderMain();
+  }, REFRESH_MS);
+}
+boot();
 </script>
 </body>
 </html>
