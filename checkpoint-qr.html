@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Checkpoint QR — Front Entrance</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+  body{margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:#0a0b0a; color:#f2efe6; font-family:-apple-system,sans-serif; padding:20px; text-align:center;}
+  h1{font-size:16px; font-weight:600; margin:0 0 4px;}
+  p{color:#8d8b82; font-size:13px; margin:0 0 24px;}
+  canvas{border-radius:16px;}
+  .token{margin-top:20px; font-size:11px; color:#5a594f; word-break:break-all; max-width:280px;}
+</style>
+</head>
+<body>
+  <h1>Front Entrance</h1>
+  <p>Test Site — SEA-01</p>
+  <canvas id="qr"></canvas>
+  <div class="token">71d2145c82733c477ac0443f</div>
+  <script>
+    QRCode.toCanvas(document.getElementById('qr'), "71d2145c82733c477ac0443f", {width: 260, margin: 2});
+  </script>
+</body>
+</html>
