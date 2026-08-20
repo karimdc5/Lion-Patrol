@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
   :root{
     --bg:#0a0b0a; --surface:#141513; --raised:#1c1d1a; --border:#2a2b27;
@@ -103,6 +104,17 @@ const SUPABASE_URL = "https://raedwcoztdpwvvmzvdmz.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZWR3Y296dGRwd3Z2bXp2ZG16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMTU5MDgsImV4cCI6MjEwMjY5MTkwOH0.FSCVAzugN5hfAeruGjytgsjOGegLmR3fdWYHlrqs5sg";
 const STORAGE_BUCKET = "lion-patrol";
 
+// EmailJS — end-of-shift report emails. Set these up at emailjs.com:
+// create a template with variables: to_email, officer_name, callsign, site_name,
+// clock_in, clock_out, summary — then paste your IDs below.
+const EMAILJS_PUBLIC_KEY = "nwtsiZispHGMJGhoj";
+const EMAILJS_SERVICE_ID = "service_6g8we6b";
+const EMAILJS_TEMPLATE_ID = "template_zu0uf0o";
+const SHIFT_REPORT_EMAIL = "lionofseattle@gmail.com";
+if(window.emailjs && EMAILJS_PUBLIC_KEY !== "YOUR_EMAILJS_PUBLIC_KEY"){
+  emailjs.init(EMAILJS_PUBLIC_KEY);
+}
+
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // =========================================================
@@ -143,6 +155,49 @@ function toast(msg, kind="default"){
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(()=>el.remove(), 3200);
+}
+
+async function sendShiftReportEmail(clockInAt, site){
+  if(!window.emailjs || EMAILJS_PUBLIC_KEY === "YOUR_EMAILJS_PUBLIC_KEY"){
+    console.warn("EmailJS not configured yet — skipping shift report email.");
+    return;
+  }
+  try{
+    const clockOutAt = new Date().toISOString();
+    const fmt = (iso)=> new Date(iso).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
+
+    const [scansRes, incidentsRes, reportsRes, checkpointsRes] = await Promise.all([
+      sb.from("checkpoint_scans").select("*").eq("officer_id", state.officer.id).gte("scanned_at", clockInAt).lte("scanned_at", clockOutAt),
+      sb.from("incidents").select("*").eq("officer_id", state.officer.id).gte("occurred_at", clockInAt).lte("occurred_at", clockOutAt),
+      sb.from("patrol_reports").select("*").eq("officer_id", state.officer.id).gte("started_at", clockInAt).lte("ended_at", clockOutAt),
+      sb.from("checkpoints").select("*").eq("site_id", site?.id || ""),
+    ]);
+    const scans = scansRes.data || [];
+    const incidents = incidentsRes.data || [];
+    const reports = reportsRes.data || [];
+    const cpById = {};
+    (checkpointsRes.data||[]).forEach(c=>{ cpById[c.id] = c; });
+
+    let summary = "";
+    summary += `CHECKPOINT SCANS (${scans.length})\n`;
+    summary += scans.length ? scans.map(s=>`- ${fmt(s.scanned_at)} — ${cpById[s.checkpoint_id]?.name || "Unknown checkpoint"} — ${s.verified ? "verified" : "FLAGGED (too far)"}`).join("\n") : "- None";
+    summary += `\n\nPATROL REPORTS (${reports.length})\n`;
+    summary += reports.length ? reports.map(r=>`- ${fmt(r.ended_at)} — ${r.patrol_type} patrol — ${r.areas_patrolled || "no area noted"}${r.activity_types?.length ? " — " + r.activity_types.join(", ") : ""}${r.details ? "\n  " + r.details : ""}`).join("\n") : "- None";
+    summary += `\n\nINCIDENTS (${incidents.length})\n`;
+    summary += incidents.length ? incidents.map(i=>`- ${fmt(i.occurred_at)} — ${i.title} [${i.severity}/${i.category}]${i.description ? "\n  " + i.description : ""}`).join("\n") : "- None";
+
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: SHIFT_REPORT_EMAIL,
+      officer_name: state.officer.name,
+      callsign: state.officer.callsign,
+      site_name: site?.name || "Unknown site",
+      clock_in: fmt(clockInAt),
+      clock_out: fmt(clockOutAt),
+      summary: summary,
+    });
+  }catch(e){
+    console.error("Shift report email failed:", e);
+  }
 }
 
 function getLocation(){
@@ -317,10 +372,13 @@ async function renderHome(){
         p_lat: loc.lat, p_lng: loc.lng
       });
       if(error){ toast("Couldn't clock out — try again.", "danger"); return; }
+      const shiftClockIn = state.shift.clock_in_at;
+      const shiftSite = state.site;
       stopLocationPings();
       state.shift = null; state.site = null;
       saveSession();
       toast("Clocked out", "success");
+      sendShiftReportEmail(shiftClockIn, shiftSite); // fire-and-forget, doesn't block clock-out
       renderHome();
     };
   }
@@ -430,7 +488,7 @@ async function renderLogPatrol(){
         </div>
 
         <label>Photos / Video</label>
-        <input type="file" id="mediaInput" accept="image/*,video/*" capture="environment" multiple />
+        <input type="file" id="mediaInput" accept="image/*,video/*" multiple />
         ${mediaFiles.length ? `<div class="chip-row">${mediaFiles.map((f,i)=>`<div class="chip">${f.name.length>18?f.name.slice(0,15)+"…":f.name} <span data-removemedia="${i}" style="margin-left:6px; cursor:pointer;">✕</span></div>`).join("")}</div>` : ""}
 
         <div class="err" id="patrolErr"></div>
@@ -569,7 +627,7 @@ async function renderIncident(){
         <textarea id="desc" placeholder="What happened?"></textarea>
 
         <label>Photo</label>
-        <input type="file" id="photoInput" accept="image/*" capture="environment" />
+        <input type="file" id="photoInput" accept="image/*" />
         ${photoPreview ? `<img class="photo-preview" src="${photoPreview}" />` : ""}
 
         <div class="err" id="incErr"></div>
