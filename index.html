@@ -84,6 +84,12 @@
   .dispatch-card{border-color:var(--warn); background:rgba(217,164,65,.06);}
   .dispatch-label{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--warn); font-weight:600;}
   .btn-ack{width:100%;}
+  .msg-row{display:flex;}
+  .msg-row.admin{justify-content:flex-start;}
+  .msg-row.officer{justify-content:flex-end;}
+  .msg-bubble{max-width:78%; padding:10px 13px; border-radius:14px; font-size:14px; line-height:1.35; word-break:break-word;}
+  .msg-bubble.admin{background:var(--raised); border:1px solid var(--border); border-bottom-left-radius:4px;}
+  .msg-bubble.officer{background:var(--gold); color:#141311; border-bottom-right-radius:4px;}
 </style>
 </head>
 <body>
@@ -170,6 +176,7 @@ const icons = {
   qr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M20 14v3h-3M17 21h3v-3"/></svg>`,
   warning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 1 21h22L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>`,
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>`,
+  clipboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="4" width="12" height="18" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>`,
   lion: `<svg viewBox="0 0 64 64" fill="currentColor"><path d="M14 50c3.2-7.4 7.1-12.4 12.4-16.2-.5-3.6.3-7.7 3.2-10.4 2.5-2.3 6-3 9.2-2 .9-3 3.7-5.5 7.4-6 .7 3.2-.3 6.4-2.6 8.4 2.8 1.6 4.6 4.6 4.6 8 0 2.4-.9 4.6-2.4 6.3 3.6 3.6 6.1 8.1 7.6 11.9H14zm17.2-21c-1.6 1.3-2.2 3.5-1.7 5.5l7.5-2.4c-.4-2.6-3-4.5-5.8-3.1z"/></svg>`,
 };
 
@@ -233,8 +240,10 @@ async function renderLogin(){
 
 async function renderHome(){
   const {data: sites} = await sb.from("sites").select("*").order("name");
-  const {data: myDispatches} = await sb.from("dispatches").select("*")
-    .eq("officer_id", state.officer.id).eq("status","sent").order("created_at", {ascending:false});
+  const {data: myMessages} = await sb.from("messages").select("*")
+    .eq("officer_id", state.officer.id).order("created_at", {ascending:false}).limit(1);
+  const lastSeen = localStorage.getItem("lp_last_seen_msg_"+state.officer.id) || "0";
+  const hasUnread = myMessages && myMessages[0] && myMessages[0].sender==="admin" && myMessages[0].created_at > lastSeen;
   const onDuty = !!state.shift;
 
   app.innerHTML = `
@@ -244,25 +253,24 @@ async function renderHome(){
         <div class="status-pill ${onDuty?"on":""}"><span class="dot"></span>${onDuty?"On Duty":"Off Duty"}</div>
       </div>
 
-      ${(myDispatches||[]).length ? `
-        <div id="dispatchInbox">
-          ${myDispatches.map(d=>`
-            <div class="card dispatch-card" data-dispatch="${d.id}">
-              <div class="dispatch-label">Message from Command</div>
-              <p style="margin:4px 0 0; font-size:14px; color:var(--fg);">${d.message.replace(/[<>&]/g, c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</p>
-              <button class="btn btn-secondary btn-ack" data-ack="${d.id}" style="margin-top:10px;">Acknowledge</button>
-            </div>
-          `).join("")}
+      <div class="card dispatch-card" id="tileMessages" style="cursor:pointer;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div>
+            <div class="dispatch-label">Command</div>
+            <p style="margin:4px 0 0; font-size:14px;">${hasUnread ? "New message" : "Message Command"}</p>
+          </div>
+          ${hasUnread ? `<span style="width:9px;height:9px;border-radius:50%;background:var(--warn);"></span>` : ""}
         </div>
-      ` : ""}
+      </div>
 
       ${onDuty ? `
         <div class="card">
           <h3>${state.site?.name || "Assigned site"}</h3>
           <p>Clocked in ${new Date(state.shift.clock_in_at).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</p>
         </div>
-        <div class="grid2">
+        <div class="grid2" style="grid-template-columns:1fr 1fr 1fr;">
           <div class="action-tile" id="tilePatrol">${icons.qr}<div>Scan Checkpoint</div></div>
+          <div class="action-tile" id="tileLogPatrol">${icons.clipboard}<div>Log Patrol</div></div>
           <div class="action-tile" id="tileIncident">${icons.warning}<div>Report Incident</div></div>
         </div>
         <button class="btn btn-danger" id="clockOutBtn" style="margin-top:20px;">Clock Out</button>
@@ -300,6 +308,7 @@ async function renderHome(){
     };
   } else {
     document.getElementById("tilePatrol").onclick = renderPatrol;
+    document.getElementById("tileLogPatrol").onclick = renderLogPatrol;
     document.getElementById("tileIncident").onclick = renderIncident;
     document.getElementById("clockOutBtn").onclick = async ()=>{
       const loc = await getLocation();
@@ -322,14 +331,7 @@ async function renderHome(){
     renderLogin();
   };
 
-  document.querySelectorAll("[data-ack]").forEach(btn=>{
-    btn.onclick = async ()=>{
-      btn.disabled = true; btn.textContent = "…";
-      const {error} = await sb.from("dispatches").update({status:"acknowledged", acknowledged_at:new Date().toISOString()}).eq("id", btn.dataset.ack);
-      if(error){ toast("Couldn't acknowledge — try again.", "danger"); btn.disabled=false; btn.textContent="Acknowledge"; return; }
-      renderHome();
-    };
-  });
+  document.getElementById("tileMessages").onclick = renderMessages;
 }
 
 async function renderPatrol(){
@@ -396,6 +398,148 @@ function startQrScan(checkpoints){
     else { toast(`${cp.name} scanned, but you're too far from the checkpoint`, "danger"); }
     renderPatrol();
   }, ()=>{});
+}
+
+const PATROL_ACTIVITY_TYPES = ["Nothing to report","Suspicious activity","Trespasser","Unlocked/broken door","Equipment issue","Lighting issue","Vehicle in lot","Other"];
+
+async function renderLogPatrol(){
+  let patrolType = "foot", areas = "", details = "", activityTypes = [], mediaFiles = [];
+  const startedAt = new Date().toISOString();
+
+  function draw(){
+    app.innerHTML = `
+      <div class="screen">
+        <div class="backbar" id="backBtn">‹ Home</div>
+        <h1>Log Patrol</h1>
+        <p class="sub">${state.site.name}</p>
+
+        <label>Patrol Type</label>
+        <div class="chip-row" id="typeRow">
+          ${["foot","vehicle","checkpoint"].map(t=>`<div class="chip ${patrolType===t?"active":""}" data-t="${t}">${t}</div>`).join("")}
+        </div>
+
+        <label>Area(s) Patrolled</label>
+        <input type="text" id="areasInput" placeholder="Loading dock, north perimeter…" value="${areas}" />
+
+        <label>Details</label>
+        <textarea id="detailsInput" placeholder="What did you observe?">${details}</textarea>
+
+        <label>Activity Types</label>
+        <div class="chip-row" id="activityRow">
+          ${PATROL_ACTIVITY_TYPES.map(a=>`<div class="chip ${activityTypes.includes(a)?"active":""}" data-a="${a}">${a}</div>`).join("")}
+        </div>
+
+        <label>Photos / Video</label>
+        <input type="file" id="mediaInput" accept="image/*,video/*" capture="environment" multiple />
+        ${mediaFiles.length ? `<div class="chip-row">${mediaFiles.map((f,i)=>`<div class="chip">${f.name.length>18?f.name.slice(0,15)+"…":f.name} <span data-removemedia="${i}" style="margin-left:6px; cursor:pointer;">✕</span></div>`).join("")}</div>` : ""}
+
+        <div class="err" id="patrolErr"></div>
+        <button class="btn btn-primary" id="patrolSubmitBtn" style="margin-top:18px;">Save Patrol Report</button>
+      </div>`;
+
+    document.getElementById("backBtn").onclick = renderHome;
+    document.querySelectorAll("#typeRow .chip").forEach(c=>c.onclick=()=>{patrolType=c.dataset.t; draw();});
+    document.querySelectorAll("#activityRow .chip").forEach(c=>c.onclick=()=>{
+      const a = c.dataset.a;
+      activityTypes = activityTypes.includes(a) ? activityTypes.filter(x=>x!==a) : [...activityTypes, a];
+      draw();
+    });
+    document.getElementById("areasInput").oninput = (e)=>{ areas = e.target.value; };
+    document.getElementById("detailsInput").oninput = (e)=>{ details = e.target.value; };
+    document.getElementById("mediaInput").onchange = (e)=>{
+      mediaFiles = [...mediaFiles, ...Array.from(e.target.files)];
+      draw();
+    };
+    document.querySelectorAll("[data-removemedia]").forEach(x=>{
+      x.onclick = (e)=>{ e.stopPropagation(); mediaFiles.splice(parseInt(x.dataset.removemedia),1); draw(); };
+    });
+    document.getElementById("patrolSubmitBtn").onclick = submit;
+  }
+
+  async function submit(){
+    const btn = document.getElementById("patrolSubmitBtn");
+    btn.disabled = true; btn.textContent = "Uploading…";
+
+    const mediaUrls = [];
+    let uploadFailCount = 0;
+    for(const file of mediaFiles){
+      const path = `patrols/${state.officer.id}/${Date.now()}-${file.name}`;
+      const {error: upErr} = await sb.storage.from(STORAGE_BUCKET).upload(path, file);
+      if(upErr){ uploadFailCount++; console.error("Media upload failed:", upErr); }
+      else mediaUrls.push(path);
+    }
+
+    btn.textContent = "Saving…";
+    const {error} = await sb.rpc("officer_submit_patrol_report", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
+      p_patrol_type: patrolType, p_started_at: startedAt, p_areas_patrolled: areas,
+      p_details: details, p_activity_types: activityTypes, p_media_urls: mediaUrls
+    });
+
+    if(error){
+      document.getElementById("patrolErr").textContent = "Couldn't save — try again.";
+      btn.disabled = false; btn.textContent = "Save Patrol Report";
+      return;
+    }
+    toast(uploadFailCount ? `Saved — but ${uploadFailCount} file(s) failed to upload` : "Patrol report saved", uploadFailCount ? "danger" : "success");
+    renderHome();
+  }
+
+  draw();
+}
+
+let messagesPollId = null;
+
+async function renderMessages(){
+  localStorage.setItem("lp_last_seen_msg_"+state.officer.id, new Date().toISOString());
+
+  async function loadAndDraw(){
+    const {data: msgs} = await sb.from("messages").select("*")
+      .eq("officer_id", state.officer.id).order("created_at", {ascending:true});
+    const list = document.getElementById("msgList");
+    if(!list) return; // screen navigated away
+    list.innerHTML = (msgs||[]).map(m=>`
+      <div class="msg-row ${m.sender}">
+        <div class="msg-bubble ${m.sender}">${escapeHtmlLocal(m.body)}</div>
+      </div>
+    `).join("") || `<div class="empty" style="padding:20px 0; text-align:center; color:var(--muted); font-size:13px;">No messages yet</div>`;
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function escapeHtmlLocal(s){ return String(s).replace(/[<>&]/g, c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+
+  app.innerHTML = `
+    <div class="screen" style="padding-bottom:12px;">
+      <div class="backbar" id="backBtn">‹ Home</div>
+      <h1 style="margin-bottom:2px;">Command</h1>
+      <p class="sub">Message thread</p>
+      <div id="msgList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px 0;"></div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <input type="text" id="msgInput" placeholder="Type a message…" style="flex:1;" />
+        <button class="btn btn-primary" id="msgSendBtn" style="flex-shrink:0; width:auto; padding:0 18px;">Send</button>
+      </div>
+    </div>`;
+
+  document.getElementById("backBtn").onclick = ()=>{
+    if(messagesPollId){ clearInterval(messagesPollId); messagesPollId = null; }
+    renderHome();
+  };
+
+  document.getElementById("msgSendBtn").onclick = async ()=>{
+    const input = document.getElementById("msgInput");
+    const body = input.value.trim();
+    if(!body) return;
+    input.value = "";
+    const {error} = await sb.rpc("officer_send_message", {p_officer_id: state.officer.id, p_pin: state.pin, p_body: body});
+    if(error){ toast("Couldn't send — try again.", "danger"); return; }
+    await loadAndDraw();
+  };
+  document.getElementById("msgInput").onkeydown = (e)=>{
+    if(e.key === "Enter") document.getElementById("msgSendBtn").click();
+  };
+
+  await loadAndDraw();
+  messagesPollId = setInterval(loadAndDraw, 5000);
 }
 
 async function renderIncident(){
