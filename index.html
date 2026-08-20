@@ -81,6 +81,9 @@
   .chip.active{background:var(--gold); color:#141311; border-color:var(--gold);}
   .photo-preview{width:100%; border-radius:12px; margin-top:10px; border:1px solid var(--border);}
   .muted-link{color:var(--muted); font-size:13px; text-align:center; margin-top:14px;}
+  .dispatch-card{border-color:var(--warn); background:rgba(217,164,65,.06);}
+  .dispatch-label{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--warn); font-weight:600;}
+  .btn-ack{width:100%;}
 </style>
 </head>
 <body>
@@ -230,6 +233,8 @@ async function renderLogin(){
 
 async function renderHome(){
   const {data: sites} = await sb.from("sites").select("*").order("name");
+  const {data: myDispatches} = await sb.from("dispatches").select("*")
+    .eq("officer_id", state.officer.id).eq("status","sent").order("created_at", {ascending:false});
   const onDuty = !!state.shift;
 
   app.innerHTML = `
@@ -238,6 +243,18 @@ async function renderHome(){
         <div class="brand">${icons.lion}<div class="brand-text"><div class="l">${state.officer.name}</div><div class="s">${state.officer.callsign}</div></div></div>
         <div class="status-pill ${onDuty?"on":""}"><span class="dot"></span>${onDuty?"On Duty":"Off Duty"}</div>
       </div>
+
+      ${(myDispatches||[]).length ? `
+        <div id="dispatchInbox">
+          ${myDispatches.map(d=>`
+            <div class="card dispatch-card" data-dispatch="${d.id}">
+              <div class="dispatch-label">Message from Command</div>
+              <p style="margin:4px 0 0; font-size:14px; color:var(--fg);">${d.message.replace(/[<>&]/g, c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</p>
+              <button class="btn btn-secondary btn-ack" data-ack="${d.id}" style="margin-top:10px;">Acknowledge</button>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
 
       ${onDuty ? `
         <div class="card">
@@ -304,6 +321,15 @@ async function renderHome(){
     clearSession();
     renderLogin();
   };
+
+  document.querySelectorAll("[data-ack]").forEach(btn=>{
+    btn.onclick = async ()=>{
+      btn.disabled = true; btn.textContent = "…";
+      const {error} = await sb.from("dispatches").update({status:"acknowledged", acknowledged_at:new Date().toISOString()}).eq("id", btn.dataset.ack);
+      if(error){ toast("Couldn't acknowledge — try again.", "danger"); btn.disabled=false; btn.textContent="Acknowledge"; return; }
+      renderHome();
+    };
+  });
 }
 
 async function renderPatrol(){
@@ -426,10 +452,12 @@ async function renderIncident(){
     btn.disabled = true; btn.textContent = "Submitting…";
 
     let photoUrls = [];
+    let photoUploadFailed = false;
     if(photoFile){
       const path = `incidents/${state.officer.id}/${Date.now()}-${photoFile.name}`;
       const {error: upErr} = await sb.storage.from(STORAGE_BUCKET).upload(path, photoFile);
-      if(!upErr) photoUrls = [path];
+      if(upErr){ photoUploadFailed = true; console.error("Photo upload failed:", upErr); }
+      else photoUrls = [path];
     }
 
     const loc = await getLocation();
@@ -444,7 +472,7 @@ async function renderIncident(){
       btn.disabled = false; btn.textContent = "Submit Report";
       return;
     }
-    toast("Incident report submitted", "success");
+    toast(photoUploadFailed ? "Report submitted — but the photo failed to upload" : "Incident report submitted", photoUploadFailed ? "danger" : "success");
     renderHome();
   }
 
