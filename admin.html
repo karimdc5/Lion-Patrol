@@ -195,13 +195,13 @@ const NAV = [
   {id:"sites", label:"Sites", icon:ic.sites},
   {id:"patrols", label:"Patrols", icon:ic.patrols},
   {id:"incidents", label:"Incidents", icon:ic.incidents},
-  {id:"dispatch", label:"Dispatch", icon:ic.dispatch},
+  {id:"dispatch", label:"Messages", icon:ic.dispatch},
 ];
 
 // =========================================================
 // State
 // =========================================================
-let DATA = {sites:[], officers:[], shifts:[], patrols:[], checkpoints:[], scans:[], incidents:[], dispatches:[], pings:{}};
+let DATA = {sites:[], officers:[], shifts:[], patrols:[], checkpoints:[], scans:[], incidents:[], dispatches:[], messages:[], patrolReports:[], pings:{}};
 let currentTab = "command";
 let loadError = null;
 let signedUrlCache = {}; // path -> signed url
@@ -210,7 +210,7 @@ function byId(arr){ const m={}; (arr||[]).forEach(x=>m[x.id]=x); return m; }
 
 async function fetchAll(){
   try{
-    const [sites, officers, shifts, patrols, checkpoints, scans, incidents, dispatches, pings] = await Promise.all([
+    const [sites, officers, shifts, patrols, checkpoints, scans, incidents, dispatches, messages, patrolReports, pings] = await Promise.all([
       sb.from("sites").select("*").order("name"),
       sb.from("officers").select("*").order("name"),
       sb.from("shifts").select("*").order("starts_at", {ascending:false}).limit(200),
@@ -219,9 +219,11 @@ async function fetchAll(){
       sb.from("checkpoint_scans").select("*").order("scanned_at", {ascending:false}).limit(300),
       sb.from("incidents").select("*").order("occurred_at", {ascending:false}).limit(150),
       sb.from("dispatches").select("*").order("created_at", {ascending:false}).limit(150),
+      sb.from("messages").select("*").order("created_at", {ascending:true}).limit(500),
+      sb.from("patrol_reports").select("*").order("ended_at", {ascending:false}).limit(150),
       sb.from("location_pings").select("*").order("recorded_at", {ascending:false}).limit(500),
     ]);
-    for(const r of [sites,officers,shifts,patrols,checkpoints,scans,incidents,dispatches,pings]){
+    for(const r of [sites,officers,shifts,patrols,checkpoints,scans,incidents,dispatches,messages,patrolReports,pings]){
       if(r.error) throw r.error;
     }
     // Reduce pings to latest per officer
@@ -232,7 +234,8 @@ async function fetchAll(){
     DATA = {
       sites: sites.data||[], officers: officers.data||[], shifts: shifts.data||[],
       patrols: patrols.data||[], checkpoints: checkpoints.data||[], scans: scans.data||[],
-      incidents: incidents.data||[], dispatches: dispatches.data||[], pings: latest,
+      incidents: incidents.data||[], dispatches: dispatches.data||[], messages: messages.data||[],
+      patrolReports: patrolReports.data||[], pings: latest,
     };
     loadError = null;
   }catch(e){
@@ -360,7 +363,7 @@ function renderCommand(main){
           <div id="recentIncidentsList"></div>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Recent Dispatches</h2></div>
+          <div class="card-head"><h2>Recent Messages</h2></div>
           <div id="recentDispatchesList"></div>
         </div>
       </div>
@@ -752,7 +755,7 @@ function renderPatrols(main){
 
   main.innerHTML = `
     <div class="card">
-      <div class="card-head"><h2>Patrols</h2></div>
+      <div class="card-head"><h2>Checkpoint Patrols</h2></div>
       ${DATA.patrols.length ? `
         <table>
           <thead><tr><th>Site</th><th>Officer</th><th>Status</th><th>Started</th><th>Checkpoints</th></tr></thead>
@@ -777,7 +780,71 @@ function renderPatrols(main){
         </table>
       ` : `<div class="empty">No patrols yet</div>`}
     </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Patrol Reports</h2><span class="meta">${DATA.patrolReports.length} logged</span></div>
+      ${DATA.patrolReports.length ? DATA.patrolReports.map(r=>`
+        <div class="row-click" data-report="${r.id}" style="padding:12px 0; border-top:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+            <div>
+              <div style="font-size:13px;">${siteById[r.site_id]?.name || "—"} · ${escapeHtml(r.areas_patrolled) || "No area noted"}</div>
+              <div style="font-size:11px; color:var(--muted); margin-top:3px;">
+                ${officerById[r.officer_id]?.name || "—"} · ${r.patrol_type} · ${timeAgo(r.ended_at)}
+              </div>
+            </div>
+            ${r.media_urls?.length ? `<span class="badge off">${r.media_urls.length} file${r.media_urls.length>1?'s':''}</span>` : ""}
+          </div>
+        </div>
+      `).join("") : `<div class="empty">No patrol reports logged yet</div>`}
+    </div>
   `;
+
+  document.querySelectorAll("[data-report]").forEach(row=>{
+    row.onclick = ()=> openPatrolReportDetail(row.dataset.report);
+  });
+}
+
+async function openPatrolReportDetail(reportId){
+  const r = DATA.patrolReports.find(x=>x.id===reportId);
+  if(!r) return;
+  const siteById = byId(DATA.sites);
+  const officerById = byId(DATA.officers);
+
+  showModal(`
+    <h3>${siteById[r.site_id]?.name || "—"}</h3>
+    <div style="color:var(--muted); font-size:13px; margin-bottom:14px;">
+      ${officerById[r.officer_id]?.name || "—"} · ${r.patrol_type} patrol · ${fmtDateTime(r.started_at)} → ${fmtTime(r.ended_at)}
+    </div>
+    <label>Areas Patrolled</label>
+    <div style="font-size:14px;">${escapeHtml(r.areas_patrolled) || "—"}</div>
+    <label>Details</label>
+    <div style="font-size:14px; line-height:1.5;">${escapeHtml(r.details) || "<em style='color:var(--muted)'>No details provided</em>"}</div>
+    ${r.activity_types?.length ? `
+      <label>Activity</label>
+      <div class="chip-row-static" style="display:flex; gap:6px; flex-wrap:wrap;">
+        ${r.activity_types.map(a=>`<span class="badge off">${escapeHtml(a)}</span>`).join("")}
+      </div>
+    ` : ""}
+    <div class="photo-grid" id="reportMedia" style="flex-wrap:wrap;"></div>
+  `);
+
+  const mediaEl = document.getElementById("reportMedia");
+  for(const path of (r.media_urls||[])){
+    const url = await getSignedUrl(path);
+    if(!url) continue;
+    const isVideo = /\.(mp4|mov|webm|m4v)$/i.test(path);
+    if(isVideo){
+      const vid = document.createElement("video");
+      vid.src = url; vid.controls = true;
+      vid.style.cssText = "width:100%; max-width:280px; border-radius:8px; margin-top:8px; border:1px solid var(--border);";
+      mediaEl.appendChild(vid);
+    } else {
+      const img = document.createElement("img");
+      img.src = url; img.style.cssText = "width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid var(--border); cursor:pointer;";
+      img.onclick = ()=> window.open(url, "_blank");
+      mediaEl.appendChild(img);
+    }
+  }
 }
 
 // =========================================================
@@ -861,54 +928,94 @@ async function openIncidentDetail(incidentId){
 }
 
 // =========================================================
-// DISPATCH
+// MESSAGES (formerly Dispatch — now real two-way chat)
 // =========================================================
-function renderDispatch(main){
-  const onDuty = DATA.officers.filter(o=>o.status==="on_duty");
-  const officerById = byId(DATA.officers);
+let selectedChatOfficer = null;
 
+function renderDispatch(main){
+  const officers = DATA.officers;
   main.innerHTML = `
     <div class="grid2">
       <div class="card">
-        <div class="card-head"><h2>Send Dispatch</h2></div>
-        <label>Officer</label>
-        <select id="d_officer">
-          <option value="">Select on-duty officer</option>
-          ${onDuty.map(o=>`<option value="${o.id}">${escapeHtml(o.name)} — ${escapeHtml(o.callsign)}</option>`).join("")}
-        </select>
-        <label>Message</label>
-        <textarea id="d_message" placeholder="Check the loading dock, client reported noise complaint…"></textarea>
-        <div class="err" id="d_err"></div>
-        <button class="btn btn-primary" id="d_send" style="width:100%; margin-top:12px;">Send</button>
-        ${onDuty.length===0 ? `<div class="empty" style="margin-top:6px;">No officers currently on duty</div>` : ""}
-      </div>
-      <div class="card">
-        <div class="card-head"><h2>Dispatch Log</h2></div>
-        ${DATA.dispatches.length ? DATA.dispatches.slice(0,20).map(d=>`
-          <div style="padding:10px 0; border-top:1px solid var(--border);">
-            <div style="font-size:13px;">${escapeHtml(d.message)}</div>
-            <div style="font-size:11px; color:var(--muted); margin-top:3px; display:flex; justify-content:space-between;">
-              <span>${officerById[d.officer_id]?.name || "—"}</span>
-              <span class="badge ${d.status==='acknowledged'?'on':'off'}">${d.status}</span>
+        <div class="card-head"><h2>Officers</h2></div>
+        ${officers.length ? officers.map(o=>{
+          const msgCount = DATA.messages.filter(m=>m.officer_id===o.id).length;
+          return `<div class="row-click chat-officer-row ${selectedChatOfficer===o.id?'active':''}" data-chatofficer="${o.id}"
+            style="display:flex; align-items:center; justify-content:space-between; padding:11px 4px; border-top:1px solid var(--border);">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div class="officer-photo">${o.name.split(" ").map(x=>x[0]).slice(0,2).join("")}</div>
+              <div>
+                <div style="font-size:13px;">${escapeHtml(o.name)}</div>
+                <div style="font-size:11px; color:var(--muted);">${o.status==='on_duty'?'On duty':'Off duty'}</div>
+              </div>
             </div>
-          </div>
-        `).join("") : `<div class="empty">No dispatches sent yet</div>`}
+            ${msgCount ? `<span style="font-size:11px; color:var(--muted);">${msgCount}</span>` : ""}
+          </div>`;
+        }).join("") : `<div class="empty">No officers yet</div>`}
+      </div>
+      <div class="card" style="display:flex; flex-direction:column; min-height:420px;">
+        <div class="card-head"><h2 id="chatHeader">Select an officer</h2></div>
+        <div id="chatList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px 0; max-height:360px;"></div>
+        <div id="chatInputRow" style="display:none; gap:8px; margin-top:10px;">
+          <input type="text" id="chatInput" placeholder="Type a message…" />
+          <button class="btn btn-primary btn-sm" id="chatSendBtn" style="flex-shrink:0;">Send</button>
+        </div>
       </div>
     </div>
   `;
-
-  document.getElementById("d_send").onclick = async ()=>{
-    const officerId = document.getElementById("d_officer").value;
-    const message = document.getElementById("d_message").value.trim();
-    if(!officerId || !message){ document.getElementById("d_err").textContent = "Select an officer and write a message."; return; }
-    const officer = officerById[officerId];
-    const btn = document.getElementById("d_send"); btn.disabled = true; btn.textContent = "Sending…";
-    const {error} = await sb.from("dispatches").insert({officer_id: officerId, site_id: officer?.site_id || null, message});
-    if(error){ document.getElementById("d_err").textContent = "Couldn't send — try again."; btn.disabled=false; btn.textContent="Send"; return; }
-    toast("Dispatch sent", "success");
-    await fetchAll(); renderMain();
-  };
+  document.querySelectorAll("[data-chatofficer]").forEach(row=>{
+    row.onclick = ()=> openChatWith(row.dataset.chatofficer);
+  });
+  if(selectedChatOfficer) openChatWith(selectedChatOfficer, true);
 }
+
+function openChatWith(officerId, skipRerenderList){
+  selectedChatOfficer = officerId;
+  const o = DATA.officers.find(x=>x.id===officerId);
+  if(!skipRerenderList) renderDispatch(document.getElementById("mainEl"));
+  const header = document.getElementById("chatHeader");
+  const inputRow = document.getElementById("chatInputRow");
+  if(header) header.textContent = o ? o.name : "Officer";
+  if(inputRow) inputRow.style.display = "flex";
+  drawChatMessages();
+
+  const sendBtn = document.getElementById("chatSendBtn");
+  const input = document.getElementById("chatInput");
+  if(sendBtn){
+    sendBtn.onclick = async ()=>{
+      const body = input.value.trim();
+      if(!body) return;
+      input.value = "";
+      const officer = DATA.officers.find(x=>x.id===selectedChatOfficer);
+      const {error} = await sb.from("messages").insert({
+        officer_id: selectedChatOfficer, site_id: officer?.site_id || null, sender:"admin", body
+      });
+      if(error){ toast("Couldn't send", "danger"); return; }
+      await fetchAll();
+      drawChatMessages();
+    };
+  }
+  if(input){
+    input.onkeydown = (e)=>{ if(e.key==="Enter") document.getElementById("chatSendBtn")?.click(); };
+  }
+}
+
+function drawChatMessages(){
+  const list = document.getElementById("chatList");
+  if(!list || !selectedChatOfficer) return;
+  const thread = DATA.messages.filter(m=>m.officer_id===selectedChatOfficer);
+  list.innerHTML = thread.length ? thread.map(m=>`
+    <div style="display:flex; justify-content:${m.sender==='admin'?'flex-end':'flex-start'};">
+      <div style="max-width:75%; padding:9px 12px; border-radius:12px; font-size:13px; line-height:1.35;
+        ${m.sender==='admin' ? 'background:var(--accent); color:var(--accent-fg); border-bottom-right-radius:3px;' : 'background:var(--raised); border:1px solid var(--border); border-bottom-left-radius:3px;'}">
+        ${escapeHtml(m.body)}
+      </div>
+    </div>
+  `).join("") : `<div class="empty">No messages yet — say hello</div>`;
+  list.scrollTop = list.scrollHeight;
+}
+
+
 
 // =========================================================
 // Modal helpers
