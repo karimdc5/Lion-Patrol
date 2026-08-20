@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --bg:#0a0b0a; --surface:#121412; --raised:#1a1c1a;
@@ -126,8 +128,16 @@
   .modal-close{position:absolute; top:18px; right:18px; color:var(--muted); cursor:pointer; line-height:1;}
   .modal-close svg{width:18px; height:18px; display:block;}
 
-  .map-wrap{position:relative; border-radius:var(--r-lg); overflow:hidden; background:var(--raised); border:1px solid var(--border);}
+  .map-wrap{position:relative; border-radius:var(--r-lg); overflow:hidden; background:var(--raised); border:1px solid var(--border);
+    height:340px;}
   .map-wrap svg{display:block; width:100%; height:auto;}
+  #mapHolder{height:340px; border-radius:var(--r-lg); overflow:hidden; border:1px solid var(--border);}
+  .leaflet-container{background:var(--raised) !important; font-family:var(--font-sans) !important;}
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip{background:var(--surface) !important; color:var(--fg) !important;}
+  .leaflet-control-attribution{background:rgba(10,11,10,.7) !important; color:var(--faint) !important; font-size:9px !important;}
+  .leaflet-control-attribution a{color:var(--muted) !important;}
+  .map-tooltip{background:var(--surface) !important; border:1px solid var(--border) !important; color:var(--fg) !important;
+    font-family:var(--font-mono) !important; font-size:11px !important; box-shadow:none !important;}
   .officer-photo{width:34px; height:34px; border-radius:50%; background:var(--raised); border:1px solid var(--border);
     display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:var(--muted); overflow:hidden;}
   .officer-photo img{width:100%; height:100%; object-fit:cover;}
@@ -321,23 +331,15 @@ function renderMain(){
 // =========================================================
 // COMMAND
 // =========================================================
+let leafletMap = null, siteLayer = null, officerLayer = null;
+
 function renderCommand(main){
-  const onDuty = DATA.officers.filter(o=>o.status==="on_duty").length;
-  const openIncidents = DATA.incidents.filter(i=>i.status!=="resolved").length;
-  const activePatrols = DATA.patrols.filter(p=>p.status==="active").length;
-  const sitesAlert = DATA.sites.filter(s=>s.status==="alert").length;
-
-  const recentIncidents = DATA.incidents.slice(0,5);
-  const recentDispatches = DATA.dispatches.slice(0,5);
-  const officerById = byId(DATA.officers);
-  const siteById = byId(DATA.sites);
-
   main.innerHTML = `
     <div class="kpi-row">
-      <div class="kpi"><div class="n">${onDuty}</div><div class="l">On Duty</div></div>
-      <div class="kpi"><div class="n">${activePatrols}</div><div class="l">Active Patrols</div></div>
-      <div class="kpi"><div class="n" style="${openIncidents>0?"color:var(--warning)":""}">${openIncidents}</div><div class="l">Open Incidents</div></div>
-      <div class="kpi"><div class="n" style="${sitesAlert>0?"color:var(--danger)":""}">${sitesAlert}</div><div class="l">Sites on Alert</div></div>
+      <div class="kpi"><div class="n" id="kpiOnDuty">0</div><div class="l">On Duty</div></div>
+      <div class="kpi"><div class="n" id="kpiPatrols">0</div><div class="l">Active Patrols</div></div>
+      <div class="kpi"><div class="n" id="kpiIncidents">0</div><div class="l">Open Incidents</div></div>
+      <div class="kpi"><div class="n" id="kpiAlerts">0</div><div class="l">Sites on Alert</div></div>
     </div>
 
     <div class="grid2">
@@ -345,98 +347,129 @@ function renderCommand(main){
         <div class="card">
           <div class="card-head"><h2>Field Map</h2><span class="meta">${DATA.sites.length} sites</span></div>
           <div id="mapHolder"></div>
+          <div style="display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--muted);">
+            <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;"></span>Site</span>
+            <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--success);display:inline-block;"></span>Officer (live)</span>
+            <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--faint);display:inline-block;"></span>Officer (stale)</span>
+          </div>
         </div>
       </div>
       <div>
         <div class="card">
           <div class="card-head"><h2>Recent Incidents</h2></div>
-          ${recentIncidents.length ? recentIncidents.map(i=>`
-            <div style="padding:10px 0; border-top:1px solid var(--border);" class="first-none">
-              <div style="display:flex; justify-content:space-between; gap:8px;">
-                <span style="font-size:13px;">${escapeHtml(i.title)}</span>
-                <span class="badge ${i.severity==='high'?'danger':i.severity==='medium'?'warn':'off'}">${i.severity}</span>
-              </div>
-              <div style="font-size:11px; color:var(--muted); margin-top:3px;">${siteById[i.site_id]?.name||"—"} · ${timeAgo(i.occurred_at)}</div>
-            </div>
-          `).join("") : `<div class="empty">No incidents yet</div>`}
+          <div id="recentIncidentsList"></div>
         </div>
         <div class="card">
           <div class="card-head"><h2>Recent Dispatches</h2></div>
-          ${recentDispatches.length ? recentDispatches.map(d=>`
-            <div style="padding:10px 0; border-top:1px solid var(--border);">
-              <div style="font-size:13px;">${escapeHtml(d.message)}</div>
-              <div style="font-size:11px; color:var(--muted); margin-top:3px;">to ${officerById[d.officer_id]?.name||"—"} · ${timeAgo(d.created_at)} · ${d.status}</div>
-            </div>
-          `).join("") : `<div class="empty">No dispatches yet</div>`}
+          <div id="recentDispatchesList"></div>
         </div>
       </div>
     </div>
   `;
-  renderMap(document.getElementById("mapHolder"));
+  initCommandMap();
+  updateCommandLive();
 }
 
-function renderMap(holder){
+function initCommandMap(){
+  const holder = document.getElementById("mapHolder");
   if(!holder) return;
-  const points = [
-    ...DATA.sites.map(s=>({lat:s.lat, lng:s.lng})),
-    ...Object.values(DATA.pings).map(p=>({lat:p.lat, lng:p.lng})),
-  ];
-  if(points.length === 0){
-    holder.innerHTML = `<div class="empty">Add a site to see the map</div>`;
-    return;
-  }
-  let minLat=Math.min(...points.map(p=>p.lat)), maxLat=Math.max(...points.map(p=>p.lat));
-  let minLng=Math.min(...points.map(p=>p.lng)), maxLng=Math.max(...points.map(p=>p.lng));
-  const padLat = Math.max((maxLat-minLat)*0.25, 0.01);
-  const padLng = Math.max((maxLng-minLng)*0.25, 0.01);
-  minLat-=padLat; maxLat+=padLat; minLng-=padLng; maxLng+=padLng;
+  if(leafletMap){ leafletMap.remove(); leafletMap = null; }
 
-  function project(lat,lng){
-    const x = ((lng-minLng)/(maxLng-minLng))*100;
-    const y = ((maxLat-lat)/(maxLat-minLat))*72;
-    return {x,y};
+  leafletMap = L.map(holder, {zoomControl:true, attributionControl:true}).setView([47.6062,-122.3321], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap contributors &copy; CARTO', subdomains:'abcd', maxZoom:19
+  }).addTo(leafletMap);
+  siteLayer = L.layerGroup().addTo(leafletMap);
+  officerLayer = L.layerGroup().addTo(leafletMap);
+}
+
+function updateCommandLive(){
+  const onDuty = DATA.officers.filter(o=>o.status==="on_duty").length;
+  const openIncidents = DATA.incidents.filter(i=>i.status!=="resolved").length;
+  const activePatrols = DATA.patrols.filter(p=>p.status==="active").length;
+  const sitesAlert = DATA.sites.filter(s=>s.status==="alert").length;
+
+  const kOn = document.getElementById("kpiOnDuty"); if(kOn) kOn.textContent = onDuty;
+  const kP = document.getElementById("kpiPatrols"); if(kP) kP.textContent = activePatrols;
+  const kI = document.getElementById("kpiIncidents"); if(kI){ kI.textContent = openIncidents; kI.style.color = openIncidents>0 ? "var(--warning)" : ""; }
+  const kA = document.getElementById("kpiAlerts"); if(kA){ kA.textContent = sitesAlert; kA.style.color = sitesAlert>0 ? "var(--danger)" : ""; }
+
+  const officerById = byId(DATA.officers);
+  const siteById = byId(DATA.sites);
+
+  const incList = document.getElementById("recentIncidentsList");
+  if(incList){
+    const recent = DATA.incidents.slice(0,5);
+    incList.innerHTML = recent.length ? recent.map(i=>`
+      <div style="padding:10px 0; border-top:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; gap:8px;">
+          <span style="font-size:13px;">${escapeHtml(i.title)}</span>
+          <span class="badge ${i.severity==='high'?'danger':i.severity==='medium'?'warn':'off'}">${i.severity}</span>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-top:3px;">${siteById[i.site_id]?.name||"—"} · ${timeAgo(i.occurred_at)}</div>
+      </div>
+    `).join("") : `<div class="empty">No incidents yet</div>`;
   }
+
+  const dispList = document.getElementById("recentDispatchesList");
+  if(dispList){
+    const recent = DATA.dispatches.slice(0,5);
+    dispList.innerHTML = recent.length ? recent.map(d=>`
+      <div style="padding:10px 0; border-top:1px solid var(--border);">
+        <div style="font-size:13px;">${escapeHtml(d.message)}</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:3px;">to ${officerById[d.officer_id]?.name||"—"} · ${timeAgo(d.created_at)} · ${d.status}</div>
+      </div>
+    `).join("") : `<div class="empty">No dispatches yet</div>`;
+  }
+
+  updateMapMarkers();
+}
+
+function updateMapMarkers(){
+  if(!leafletMap || !siteLayer || !officerLayer) return;
+  siteLayer.clearLayers();
+  officerLayer.clearLayers();
+
+  const bounds = [];
+  const statusColor = {secure:"var(--accent)", alert:"var(--danger)", unmanned:"var(--faint)"};
+
+  DATA.sites.forEach(s=>{
+    if(s.lat==null || s.lng==null) return;
+    const color = getCssColor(statusColor[s.status] || statusColor.secure);
+    L.circleMarker([s.lat, s.lng], {radius:8, color, fillColor:color, fillOpacity:0.85, weight:2})
+      .bindTooltip(s.code, {permanent:true, direction:"right", className:"map-tooltip", offset:[8,0]})
+      .addTo(siteLayer);
+    bounds.push([s.lat, s.lng]);
+  });
 
   const officerById = byId(DATA.officers);
   const now = Date.now();
-
-  const siteMarkers = DATA.sites.map(s=>{
-    const p = project(s.lat, s.lng);
-    const color = s.status==="alert" ? "var(--danger)" : s.status==="unmanned" ? "var(--faint)" : "var(--accent)";
-    return `<g transform="translate(${p.x} ${p.y})">
-      <circle r="1.6" fill="${color}" opacity="0.35"/>
-      <circle r="0.8" fill="${color}"/>
-      <text x="1.6" y="0.5" font-size="2.4" fill="var(--muted)" font-family="var(--font-mono)">${escapeHtml(s.code)}</text>
-    </g>`;
-  }).join("");
-
-  const officerMarkers = Object.entries(DATA.pings).map(([officerId,ping])=>{
+  Object.entries(DATA.pings).forEach(([officerId, ping])=>{
     const o = officerById[officerId];
-    if(!o || o.status !== "on_duty") return "";
-    const p = project(ping.lat, ping.lng);
+    if(!o || o.status !== "on_duty" || ping.lat==null || ping.lng==null) return;
     const fresh = (now - new Date(ping.recorded_at).getTime()) < 5*60*1000;
-    return `<g transform="translate(${p.x} ${p.y})">
-      <circle r="1.3" fill="${fresh?'var(--success)':'var(--faint)'}" opacity="0.9"/>
-      <text x="0" y="-2" font-size="2.2" fill="var(--fg)" font-family="var(--font-mono)" text-anchor="middle">${escapeHtml(o.callsign)}</text>
-    </g>`;
-  }).join("");
+    const color = fresh ? getCssColor("var(--success)") : getCssColor("var(--faint)");
+    L.circleMarker([ping.lat, ping.lng], {radius:7, color, fillColor:color, fillOpacity:0.9, weight:2})
+      .bindTooltip(o.callsign, {permanent:true, direction:"top", className:"map-tooltip", offset:[0,-6]})
+      .addTo(officerLayer);
+    bounds.push([ping.lat, ping.lng]);
+  });
 
-  holder.innerHTML = `
-    <div class="map-wrap">
-      <svg viewBox="0 0 100 72" role="img" aria-label="Field map">
-        <rect width="100" height="72" fill="var(--raised)"/>
-        ${Array.from({length:9}).map((_,i)=>`<line x1="${i*12.5}" y1="0" x2="${i*12.5}" y2="72" stroke="var(--border)" stroke-width="0.15"/>`).join("")}
-        ${Array.from({length:7}).map((_,i)=>`<line x1="0" y1="${i*12}" x2="100" y2="${i*12}" stroke="var(--border)" stroke-width="0.15"/>`).join("")}
-        ${siteMarkers}
-        ${officerMarkers}
-      </svg>
-    </div>
-    <div style="display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--muted);">
-      <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;"></span>Site</span>
-      <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--success);display:inline-block;"></span>Officer (live)</span>
-      <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--faint);display:inline-block;"></span>Officer (stale)</span>
-    </div>
-  `;
+  if(bounds.length === 1){
+    leafletMap.setView(bounds[0], 14);
+  } else if(bounds.length > 1){
+    leafletMap.fitBounds(bounds, {padding:[30,30], maxZoom:16});
+  }
+}
+
+function getCssColor(varExpr){
+  // Resolves a css var(--x) string to its actual computed color value
+  const el = document.createElement("div");
+  el.style.color = varExpr;
+  document.body.appendChild(el);
+  const resolved = getComputedStyle(el).color;
+  el.remove();
+  return resolved;
 }
 
 // =========================================================
@@ -909,7 +942,11 @@ async function boot(){
   renderShell();
   setInterval(async ()=>{
     await fetchAll();
-    renderMain();
+    if(currentTab === "command" && leafletMap){
+      updateCommandLive();
+    } else {
+      renderMain();
+    }
   }, REFRESH_MS);
 }
 boot();
