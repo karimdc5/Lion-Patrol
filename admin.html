@@ -478,23 +478,30 @@ function getCssColor(varExpr){
 // =========================================================
 // OFFICERS
 // =========================================================
+let officerSearch = "";
+
 function renderOfficers(main){
   const siteById = byId(DATA.sites);
+  const filtered = DATA.officers.filter(o=>{
+    const q = officerSearch.toLowerCase();
+    return !q || o.name.toLowerCase().includes(q) || o.callsign.toLowerCase().includes(q);
+  });
   main.innerHTML = `
     <div class="card">
       <div class="card-head">
         <h2>Officers</h2>
         <button class="btn btn-primary btn-sm" id="addOfficerBtn">${ic.plus} Add Officer</button>
       </div>
-      ${DATA.officers.length ? `
+      <input type="text" id="officerSearchInput" placeholder="Search by name or callsign…" value="${escapeHtml(officerSearch)}" style="margin-bottom:14px;" />
+      ${filtered.length ? `
         <table>
           <thead><tr><th></th><th>Name</th><th>Callsign</th><th>Status</th><th>Site</th><th>Phone</th></tr></thead>
           <tbody>
-            ${DATA.officers.map(o=>{
+            ${filtered.map(o=>{
               const ping = DATA.pings[o.id];
-              return `<tr class="row-click" data-officer="${o.id}">
+              return `<tr class="row-click" data-officer="${o.id}" style="${!o.active?'opacity:.5;':''}">
                 <td><div class="officer-photo">${o.name.split(" ").map(x=>x[0]).slice(0,2).join("")}</div></td>
-                <td>${escapeHtml(o.name)}</td>
+                <td>${escapeHtml(o.name)}${!o.active?' <span class="badge off" style="margin-left:6px;">Inactive</span>':''}</td>
                 <td style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(o.callsign)}</td>
                 <td><span class="badge ${o.status==='on_duty'?'on':'off'}"><span class="dot"></span>${o.status.replace('_',' ')}</span></td>
                 <td>${siteById[o.site_id]?.name || "—"}</td>
@@ -503,13 +510,17 @@ function renderOfficers(main){
             }).join("")}
           </tbody>
         </table>
-      ` : `<div class="empty">No officers yet — add your first one</div>`}
+      ` : `<div class="empty">${officerSearch ? "No officers match" : "No officers yet — add your first one"}</div>`}
     </div>
   `;
   document.getElementById("addOfficerBtn").onclick = openAddOfficerModal;
   document.querySelectorAll("[data-officer]").forEach(row=>{
     row.onclick = ()=> openOfficerDetail(row.dataset.officer);
   });
+  const searchInput = document.getElementById("officerSearchInput");
+  searchInput.oninput = (e)=>{ officerSearch = e.target.value; renderOfficers(main); };
+  searchInput.focus();
+  searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
 }
 
 function openOfficerDetail(officerId){
@@ -521,7 +532,7 @@ function openOfficerDetail(officerId){
 
   showModal(`
     <h3>${escapeHtml(o.name)}</h3>
-    <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">${escapeHtml(o.callsign)} · ${escapeHtml(o.rank)}</div>
+    <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">${escapeHtml(o.callsign)} · ${escapeHtml(o.rank)} ${!o.active?'· <span style="color:var(--danger);">Inactive</span>':''}</div>
     <label>Status</label>
     <div>${o.status.replace('_',' ')} ${o.site_id ? "at "+escapeHtml(siteById[o.site_id]?.name||"") : ""}</div>
     <label>Last known location</label>
@@ -533,6 +544,13 @@ function openOfficerDetail(officerId){
       </div>
     `).join("") : `<div class="empty" style="padding:8px 0;">No shifts yet</div>`}
 
+    <button class="btn ${o.active?'btn-danger':'btn-secondary'}" id="toggleActiveBtn" style="width:100%; margin-top:16px;">
+      ${o.active ? "Deactivate Officer" : "Reactivate Officer"}
+    </button>
+    <div style="font-size:11px; color:var(--muted); margin-top:6px;">
+      ${o.active ? "They'll no longer be able to log into the officer app." : "They'll be able to log in again."}
+    </div>
+
     <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--border);">
       <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">
         PIN reset requires the SQL editor (no admin login is set up yet, so this stays out of the app on purpose).
@@ -543,6 +561,14 @@ function openOfficerDetail(officerId){
       </div>
     </div>
   `);
+
+  document.getElementById("toggleActiveBtn").onclick = async ()=>{
+    const {error} = await sb.from("officers").update({active: !o.active}).eq("id", o.id);
+    if(error){ toast("Couldn't update officer", "danger"); return; }
+    closeModal();
+    toast(o.active ? "Officer deactivated" : "Officer reactivated", "success");
+    await fetchAll(); renderMain();
+  };
   document.getElementById("copyPinSql").onclick = ()=>{
     navigator.clipboard?.writeText(document.getElementById("pinSqlText").textContent);
     toast("Copied to clipboard", "success");
@@ -588,18 +614,25 @@ function openAddOfficerModal(){
 // =========================================================
 // SITES
 // =========================================================
+let siteSearch = "";
+
 function renderSites(main){
+  const filtered = DATA.sites.filter(s=>{
+    const q = siteSearch.toLowerCase();
+    return !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q) || s.address.toLowerCase().includes(q);
+  });
   main.innerHTML = `
     <div class="card">
       <div class="card-head">
         <h2>Sites</h2>
         <button class="btn btn-primary btn-sm" id="addSiteBtn">${ic.plus} Add Site</button>
       </div>
-      ${DATA.sites.length ? `
+      <input type="text" id="siteSearchInput" placeholder="Search by name, code, or address…" value="${escapeHtml(siteSearch)}" style="margin-bottom:14px;" />
+      ${filtered.length ? `
         <table>
           <thead><tr><th>Name</th><th>Code</th><th>Status</th><th>Address</th><th>Checkpoints</th></tr></thead>
           <tbody>
-            ${DATA.sites.map(s=>{
+            ${filtered.map(s=>{
               const cpCount = DATA.checkpoints.filter(c=>c.site_id===s.id).length;
               return `<tr class="row-click" data-site="${s.id}">
                 <td>${escapeHtml(s.name)}</td>
@@ -611,13 +644,17 @@ function renderSites(main){
             }).join("")}
           </tbody>
         </table>
-      ` : `<div class="empty">No sites yet — add your first one</div>`}
+      ` : `<div class="empty">${siteSearch ? "No sites match" : "No sites yet — add your first one"}</div>`}
     </div>
   `;
   document.getElementById("addSiteBtn").onclick = openAddSiteModal;
   document.querySelectorAll("[data-site]").forEach(row=>{
     row.onclick = ()=> openSiteDetail(row.dataset.site);
   });
+  const searchInput = document.getElementById("siteSearchInput");
+  searchInput.oninput = (e)=>{ siteSearch = e.target.value; renderSites(main); };
+  searchInput.focus();
+  searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
 }
 
 function openAddSiteModal(){
@@ -758,7 +795,7 @@ function renderPatrols(main){
       <div class="card-head"><h2>Checkpoint Patrols</h2></div>
       ${DATA.patrols.length ? `
         <table>
-          <thead><tr><th>Site</th><th>Officer</th><th>Status</th><th>Started</th><th>Checkpoints</th></tr></thead>
+          <thead><tr><th>Site</th><th>Officer</th><th>Status</th><th>Started</th><th>Checkpoints</th><th></th></tr></thead>
           <tbody>
             ${DATA.patrols.slice(0,30).map(p=>{
               const cps = DATA.checkpoints.filter(c=>c.site_id===p.site_id);
@@ -774,6 +811,7 @@ function renderPatrols(main){
                   <span style="color:var(--success);">${verified} verified</span>${unverified?` · <span style="color:var(--warning);">${unverified} flagged</span>`:""}
                   ${cps.length ? ` / ${cps.length}` : ""}
                 </td>
+                <td><span class="subtle-link" data-deletepatrol="${p.id}" style="color:var(--danger);">Delete</span></td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -782,7 +820,13 @@ function renderPatrols(main){
     </div>
 
     <div class="card">
-      <div class="card-head"><h2>Patrol Reports</h2><span class="meta">${DATA.patrolReports.length} logged</span></div>
+      <div class="card-head">
+        <h2>Patrol Reports</h2>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="meta">${DATA.patrolReports.length} logged</span>
+          <button class="btn btn-secondary btn-sm" id="exportPatrolReportsBtn">Export CSV</button>
+        </div>
+      </div>
       ${DATA.patrolReports.length ? DATA.patrolReports.map(r=>`
         <div class="row-click" data-report="${r.id}" style="padding:12px 0; border-top:1px solid var(--border);">
           <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
@@ -802,6 +846,23 @@ function renderPatrols(main){
   document.querySelectorAll("[data-report]").forEach(row=>{
     row.onclick = ()=> openPatrolReportDetail(row.dataset.report);
   });
+  document.querySelectorAll("[data-deletepatrol]").forEach(el=>{
+    el.onclick = async (e)=>{
+      e.stopPropagation();
+      if(!confirm("Delete this patrol? This also removes its checkpoint scans and can't be undone.")) return;
+      const {error} = await sb.from("patrols").delete().eq("id", el.dataset.deletepatrol);
+      if(error){ toast("Couldn't delete patrol", "danger"); return; }
+      toast("Patrol deleted", "success");
+      await fetchAll(); renderMain();
+    };
+  });
+  document.getElementById("exportPatrolReportsBtn").onclick = ()=>{
+    exportCsv("patrol-reports.csv", DATA.patrolReports.map(r=>({
+      site: siteById[r.site_id]?.name || "", officer: officerById[r.officer_id]?.name || "",
+      patrol_type: r.patrol_type, started_at: r.started_at, ended_at: r.ended_at,
+      areas_patrolled: r.areas_patrolled, activity_types: (r.activity_types||[]).join("; "), details: r.details,
+    })));
+  };
 }
 
 async function openPatrolReportDetail(reportId){
@@ -826,7 +887,17 @@ async function openPatrolReportDetail(reportId){
       </div>
     ` : ""}
     <div class="photo-grid" id="reportMedia" style="flex-wrap:wrap;"></div>
+    <button class="btn btn-danger" id="deleteReportBtn" style="width:100%; margin-top:16px;">Delete Report</button>
   `);
+
+  document.getElementById("deleteReportBtn").onclick = async ()=>{
+    if(!confirm("Delete this patrol report? This can't be undone.")) return;
+    const {error} = await sb.from("patrol_reports").delete().eq("id", r.id);
+    if(error){ toast("Couldn't delete report", "danger"); return; }
+    closeModal();
+    toast("Patrol report deleted", "success");
+    await fetchAll(); renderMain();
+  };
 
   const mediaEl = document.getElementById("reportMedia");
   for(const path of (r.media_urls||[])){
@@ -850,14 +921,27 @@ async function openPatrolReportDetail(reportId){
 // =========================================================
 // INCIDENTS
 // =========================================================
+let incidentSearch = "";
+
 function renderIncidents(main){
   const siteById = byId(DATA.sites);
   const officerById = byId(DATA.officers);
+  const filtered = DATA.incidents.filter(i=>{
+    const q = incidentSearch.toLowerCase();
+    return !q || i.title.toLowerCase().includes(q) || (i.description||"").toLowerCase().includes(q) || i.category.toLowerCase().includes(q);
+  });
 
   main.innerHTML = `
     <div class="card">
-      <div class="card-head"><h2>Incidents</h2><span class="meta">${DATA.incidents.length} total</span></div>
-      ${DATA.incidents.length ? DATA.incidents.map(i=>`
+      <div class="card-head">
+        <h2>Incidents</h2>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="meta">${filtered.length} of ${DATA.incidents.length}</span>
+          <button class="btn btn-secondary btn-sm" id="exportIncidentsBtn">Export CSV</button>
+        </div>
+      </div>
+      <input type="text" id="incidentSearchInput" placeholder="Search title, description, category…" value="${escapeHtml(incidentSearch)}" style="margin-bottom:6px;" />
+      ${filtered.length ? filtered.map(i=>`
         <div class="row-click" data-incident="${i.id}" style="padding:14px 0; border-top:1px solid var(--border);">
           <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
             <div>
@@ -872,12 +956,40 @@ function renderIncidents(main){
             </div>
           </div>
         </div>
-      `).join("") : `<div class="empty">No incidents reported</div>`}
+      `).join("") : `<div class="empty">${incidentSearch ? "No incidents match" : "No incidents reported"}</div>`}
     </div>
   `;
   document.querySelectorAll("[data-incident]").forEach(row=>{
     row.onclick = ()=> openIncidentDetail(row.dataset.incident);
   });
+  const searchInput = document.getElementById("incidentSearchInput");
+  searchInput.oninput = (e)=>{ incidentSearch = e.target.value; renderIncidents(main); };
+  searchInput.focus();
+  searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
+
+  document.getElementById("exportIncidentsBtn").onclick = ()=>{
+    exportCsv("incidents.csv", filtered.map(i=>({
+      title: i.title, category: i.category, severity: i.severity, status: i.status,
+      site: siteById[i.site_id]?.name || "", officer: officerById[i.officer_id]?.name || "",
+      occurred_at: i.occurred_at, description: i.description,
+    })));
+  };
+}
+
+function exportCsv(filename, rows){
+  if(!rows.length){ toast("Nothing to export", "danger"); return; }
+  const headers = Object.keys(rows[0]);
+  const escapeCsv = (v)=>{
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const csv = [headers.join(","), ...rows.map(r=>headers.map(h=>escapeCsv(r[h])).join(","))].join("\n");
+  const blob = new Blob([csv], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 async function openIncidentDetail(incidentId){
@@ -887,15 +999,26 @@ async function openIncidentDetail(incidentId){
   const officerById = byId(DATA.officers);
 
   showModal(`
-    <h3>${escapeHtml(i.title)}</h3>
+    <h3>Edit Incident</h3>
     <div style="color:var(--muted); font-size:13px; margin-bottom:14px;">
       ${siteById[i.site_id]?.name || "—"} · ${officerById[i.officer_id]?.name || "Unknown"} · ${fmtDateTime(i.occurred_at)}
     </div>
-    <div style="display:flex; gap:6px; margin-bottom:14px;">
-      <span class="badge ${i.severity==='high'?'danger':i.severity==='medium'?'warn':'off'}">${i.severity}</span>
-      <span class="badge off">${i.category}</span>
+    <label>Title</label>
+    <input type="text" id="editTitle" value="${escapeHtml(i.title)}" />
+    <div class="field-row">
+      <div><label>Category</label>
+        <select id="editCategory">
+          ${["general","access","safety","property","medical"].map(c=>`<option value="${c}" ${i.category===c?"selected":""}>${c}</option>`).join("")}
+        </select>
+      </div>
+      <div><label>Severity</label>
+        <select id="editSeverity">
+          ${["low","medium","high"].map(s=>`<option value="${s}" ${i.severity===s?"selected":""}>${s}</option>`).join("")}
+        </select>
+      </div>
     </div>
-    <div style="font-size:14px; line-height:1.5;">${escapeHtml(i.description) || "<em style='color:var(--muted)'>No description provided</em>"}</div>
+    <label>Description</label>
+    <textarea id="editDescription">${escapeHtml(i.description)}</textarea>
     <div class="photo-grid" id="incidentPhotos"></div>
     <label>Status</label>
     <select id="statusSelect">
@@ -903,7 +1026,9 @@ async function openIncidentDetail(incidentId){
       <option value="investigating" ${i.status==='investigating'?'selected':''}>Investigating</option>
       <option value="resolved" ${i.status==='resolved'?'selected':''}>Resolved</option>
     </select>
-    <button class="btn btn-primary" id="statusSave" style="width:100%; margin-top:14px;">Update Status</button>
+    <div class="err" id="editErr"></div>
+    <button class="btn btn-primary" id="statusSave" style="width:100%; margin-top:14px;">Save Changes</button>
+    <button class="btn btn-danger" id="deleteIncidentBtn" style="width:100%; margin-top:8px;">Delete Incident</button>
   `);
 
   const photosEl = document.getElementById("incidentPhotos");
@@ -917,12 +1042,26 @@ async function openIncidentDetail(incidentId){
   }
 
   document.getElementById("statusSave").onclick = async ()=>{
-    const newStatus = document.getElementById("statusSelect").value;
     const btn = document.getElementById("statusSave"); btn.disabled = true; btn.textContent = "Saving…";
-    const {error} = await sb.from("incidents").update({status:newStatus}).eq("id", i.id);
-    if(error){ toast("Couldn't update status", "danger"); btn.disabled=false; btn.textContent="Update Status"; return; }
+    const {error} = await sb.from("incidents").update({
+      title: document.getElementById("editTitle").value.trim(),
+      category: document.getElementById("editCategory").value,
+      severity: document.getElementById("editSeverity").value,
+      description: document.getElementById("editDescription").value.trim(),
+      status: document.getElementById("statusSelect").value,
+    }).eq("id", i.id);
+    if(error){ document.getElementById("editErr").textContent = "Couldn't save changes."; btn.disabled=false; btn.textContent="Save Changes"; return; }
     closeModal();
-    toast("Status updated", "success");
+    toast("Incident updated", "success");
+    await fetchAll(); renderMain();
+  };
+
+  document.getElementById("deleteIncidentBtn").onclick = async ()=>{
+    if(!confirm(`Delete "${i.title}"? This can't be undone.`)) return;
+    const {error} = await sb.from("incidents").delete().eq("id", i.id);
+    if(error){ toast("Couldn't delete incident", "danger"); return; }
+    closeModal();
+    toast("Incident deleted", "success");
     await fetchAll(); renderMain();
   };
 }
