@@ -61,7 +61,8 @@
   .card p{margin:0; color:var(--muted); font-size:13px;}
   .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
   .action-tile{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px 14px;
-    text-align:center; color:var(--fg);}
+    text-align:center; color:var(--fg); transition:transform .08s ease, background .08s ease;}
+  .action-tile:active{transform:scale(.96); background:var(--raised);}
   .action-tile svg{width:26px; height:26px; margin-bottom:8px; color:var(--gold);}
   .action-tile div{font-size:13px; font-weight:600;}
   .backbar{display:flex; align-items:center; gap:10px; margin-bottom:18px; color:var(--muted); font-size:14px;}
@@ -78,11 +79,13 @@
   .toast.success{border-color:var(--success);}
   .toast.danger{border-color:var(--danger);}
   .chip-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
-  .chip{background:var(--raised); border:1px solid var(--border); border-radius:999px; padding:8px 14px; font-size:13px;}
+  .chip{background:var(--raised); border:1px solid var(--border); border-radius:999px; padding:8px 14px; font-size:13px; transition:transform .08s ease;}
+  .chip:active{transform:scale(.94);}
   .chip.active{background:var(--gold); color:#141311; border-color:var(--gold);}
   .photo-preview{width:100%; border-radius:12px; margin-top:10px; border:1px solid var(--border);}
   .muted-link{color:var(--muted); font-size:13px; text-align:center; margin-top:14px;}
-  .dispatch-card{border-color:var(--warn); background:rgba(217,164,65,.06);}
+  .dispatch-card{border-color:var(--warn); background:rgba(217,164,65,.06); transition:transform .08s ease;}
+  .dispatch-card:active{transform:scale(.98);}
   .dispatch-label{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--warn); font-weight:600;}
   .btn-ack{width:100%;}
   .msg-row{display:flex;}
@@ -196,40 +199,56 @@ async function sendShiftReportEmail(clockInAt, site){
         const url = await getSignedMediaUrl(path);
         if(!url) continue;
         const isVideo = /\.(mp4|mov|webm|m4v)$/i.test(path);
-        const label = isVideo ? `Video ${++videoNum}` : `Photo ${++photoNum}`;
-        links.push(`<a href="${url}" style="color:#c9a86a; font-size:12px; text-decoration:underline; margin-right:14px;">${isVideo ? "&#9654;" : "&#128247;"} ${label}</a>`);
+        const label = isVideo ? `View Video ${++videoNum}` : `View Photo ${++photoNum}`;
+        links.push(`<a href="${url}" style="display:inline-block; font-size:11px; font-weight:600; color:#8a6a1f; background:#f5ecd6; border-radius:5px; padding:5px 10px; margin:6px 6px 0 0; text-decoration:none;">${label} &rarr;</a>`);
       }
-      return links.length ? `<div style="margin-top:8px;">${links.join("")}</div>` : "";
+      return links.length ? `<div>${links.join("")}</div>` : "";
     }
 
     const sectionHeading = (label, count)=>
-      `<div style="color:#8d8b82; font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:600; margin:20px 0 8px;">${label} (${count})</div>`;
+      `<div style="color:#8a6a1f; font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:700; margin:22px 0 10px; padding-bottom:6px; border-bottom:1px solid #eeece5;">${label} <span style="color:#a8a69c; font-weight:500;">(${count})</span></div>`;
     const emptyRow = (label)=>
-      `<div style="color:#5a594f; font-size:13px; font-style:italic; padding:4px 0;">No ${label} logged this shift.</div>`;
-    const row = (innerHtml)=>
-      `<div style="background:#141513; border:1px solid #1c1d1a; border-radius:8px; padding:12px 14px; margin-bottom:8px;">${innerHtml}</div>`;
+      `<div style="color:#a8a69c; font-size:13px; font-style:italic; padding:2px 0 4px;">No ${label} logged this shift.</div>`;
+    const card = (accentColor, innerHtml)=>
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px; background:#faf9f6; border:1px solid #eeece5; border-left:3px solid ${accentColor}; border-radius:0 6px 6px 0;">
+        <tr><td style="padding:12px 16px;">${innerHtml}</td></tr>
+      </table>`;
+    const titleRow = (leftHtml, rightHtml)=>
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="font-size:13px; font-weight:700; color:#1a1a17;">${leftHtml}</td>
+        <td style="text-align:right; white-space:nowrap; padding-left:10px;">${rightHtml}</td>
+      </tr></table>`;
     const badge = (text, color, bg)=>
-      `<span style="display:inline-block; font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-weight:600; color:${color}; background:${bg}; border-radius:999px; padding:3px 9px; margin-left:6px;">${text}</span>`;
+      `<span style="display:inline-block; font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; color:${color}; background:${bg}; border-radius:4px; padding:3px 8px;">${text}</span>`;
 
     let summary = "";
 
     summary += sectionHeading("Checkpoint Scans", scans.length);
-    summary += scans.length ? scans.map(s=>{
-      const cp = cpById[s.checkpoint_id];
-      const b = s.verified ? badge("Verified", "#7d9a7e", "rgba(125,154,126,.14)") : badge("Flagged", "#d9a441", "rgba(217,164,65,.14)");
-      return row(`<span style="color:#e8e5da; font-size:13px;">${fmt(s.scanned_at)} &mdash; ${esc(cp?.name || "Unknown checkpoint")}</span>${b}`);
-    }).join("") : emptyRow("checkpoint scans");
+    if(scans.length){
+      summary += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:6px;">`;
+      summary += scans.map(s=>{
+        const cp = cpById[s.checkpoint_id];
+        const b = s.verified ? badge("Verified", "#3f7350", "#e6f0e8") : badge("Flagged", "#8a6a1f", "#f5ecd6");
+        return `<tr style="border-bottom:1px solid #eeece5;">
+          <td style="padding:9px 0; font-size:13px; color:#2a2a26;">${fmt(s.scanned_at)} &mdash; ${esc(cp?.name || "Unknown checkpoint")}</td>
+          <td style="padding:9px 0; text-align:right; white-space:nowrap;">${b}</td>
+        </tr>`;
+      }).join("");
+      summary += `</table>`;
+    } else {
+      summary += emptyRow("checkpoint scans");
+    }
 
     summary += sectionHeading("Patrol Reports", reports.length);
     if(reports.length){
       for(const r of reports){
-        const tags = (r.activity_types||[]).map(a=>badge(esc(a), "#c9a86a", "rgba(201,168,106,.14)")).join("");
+        const tags = (r.activity_types||[]).map(a=>`<span style="display:inline-block; background:#f2e9d3; color:#7a5c1e; font-size:10px; font-weight:700; border-radius:4px; padding:3px 8px; margin:6px 6px 0 0;">${esc(a)}</span>`).join("");
         const mediaLinks = await mediaLinksHtml(r.media_urls);
-        summary += row(`
-          <div style="color:#e8e5da; font-size:13px; font-weight:600;">${fmt(r.ended_at)} &mdash; ${esc(r.patrol_type)} patrol</div>
-          <div style="color:#8d8b82; font-size:12px; margin-top:3px;">${esc(r.areas_patrolled) || "No area noted"}</div>
-          ${tags ? `<div style="margin-top:6px;">${tags}</div>` : ""}
-          ${r.details ? `<div style="color:#c8c5ba; font-size:12px; margin-top:6px; line-height:1.4;">${esc(r.details)}</div>` : ""}
+        summary += card("#b8933f", `
+          ${titleRow(`${esc(r.patrol_type.charAt(0).toUpperCase()+r.patrol_type.slice(1))} Patrol`, `<span style="color:#8a887e; font-size:12px; font-weight:400;">${fmt(r.ended_at)}</span>`)}
+          <div style="color:#6b6a63; font-size:12px; margin-top:3px;">${esc(r.areas_patrolled) || "No area noted"}</div>
+          ${tags}
+          ${r.details ? `<div style="color:#2a2a26; font-size:12px; margin-top:8px; line-height:1.5;">${esc(r.details)}</div>` : ""}
           ${mediaLinks}
         `);
       }
@@ -240,15 +259,13 @@ async function sendShiftReportEmail(clockInAt, site){
     summary += sectionHeading("Incidents", incidents.length);
     if(incidents.length){
       for(const i of incidents){
-        const sevColor = i.severity==="high" ? ["#c96b5a","rgba(201,107,90,.14)"] : i.severity==="medium" ? ["#d9a441","rgba(217,164,65,.14)"] : ["#8d8b82","rgba(141,139,130,.14)"];
+        const sevMap = { high: ["#a23c30","#f7e2df"], medium: ["#8a6a1f","#f5ecd6"], low: ["#6b6a63","#eeece5"] };
+        const [sevColor, sevBg] = sevMap[i.severity] || sevMap.low;
         const mediaLinks = await mediaLinksHtml(i.photo_urls);
-        summary += row(`
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <span style="color:#e8e5da; font-size:13px; font-weight:600;">${esc(i.title)}</span>
-            ${badge(i.severity, sevColor[0], sevColor[1])}
-          </div>
-          <div style="color:#8d8b82; font-size:12px; margin-top:3px;">${fmt(i.occurred_at)} &mdash; ${esc(i.category)}</div>
-          ${i.description ? `<div style="color:#c8c5ba; font-size:12px; margin-top:6px; line-height:1.4;">${esc(i.description)}</div>` : ""}
+        summary += card(sevColor, `
+          ${titleRow(esc(i.title), badge(i.severity, sevColor, sevBg))}
+          <div style="color:#8a887e; font-size:12px; margin-top:3px;">${fmt(i.occurred_at)} &mdash; ${esc(i.category.charAt(0).toUpperCase()+i.category.slice(1))}</div>
+          ${i.description ? `<div style="color:#2a2a26; font-size:12px; margin-top:8px; line-height:1.5;">${esc(i.description)}</div>` : ""}
           ${mediaLinks}
         `);
       }
