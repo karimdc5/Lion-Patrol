@@ -113,7 +113,7 @@
   label{display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:12px 0 6px;}
   input[type=text], input[type=tel], input[type=number], select, textarea{
     width:100%; background:var(--raised); border:1px solid var(--border); color:var(--fg);
-    border-radius:var(--r-md); padding:10px 12px; font-size:14px; font-family:inherit; outline:none;}
+    border-radius:var(--r-md); padding:10px 12px; font-size:16px; font-family:inherit; outline:none;}
   input:focus, select:focus, textarea:focus{border-color:var(--ring);}
   textarea{min-height:80px; resize:vertical;}
   .field-row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
@@ -404,7 +404,7 @@ function updateCommandLive(){
   if(incList){
     const recent = DATA.incidents.slice(0,5);
     incList.innerHTML = recent.length ? recent.map(i=>`
-      <div style="padding:10px 0; border-top:1px solid var(--border);">
+      <div class="row-click" data-cmdincident="${i.id}" style="padding:10px 0; border-top:1px solid var(--border);">
         <div style="display:flex; justify-content:space-between; gap:8px;">
           <span style="font-size:13px;">${escapeHtml(i.title)}</span>
           <span class="badge ${i.severity==='high'?'danger':i.severity==='medium'?'warn':'off'}">${i.severity}</span>
@@ -412,17 +412,27 @@ function updateCommandLive(){
         <div style="font-size:11px; color:var(--muted); margin-top:3px;">${siteById[i.site_id]?.name||"—"} · ${timeAgo(i.occurred_at)}</div>
       </div>
     `).join("") : `<div class="empty">No incidents yet</div>`;
+    incList.querySelectorAll("[data-cmdincident]").forEach(row=>{
+      row.onclick = ()=> openIncidentDetail(row.dataset.cmdincident);
+    });
   }
 
   const dispList = document.getElementById("recentDispatchesList");
   if(dispList){
-    const recent = DATA.dispatches.slice(0,5);
-    dispList.innerHTML = recent.length ? recent.map(d=>`
-      <div style="padding:10px 0; border-top:1px solid var(--border);">
-        <div style="font-size:13px;">${escapeHtml(d.message)}</div>
-        <div style="font-size:11px; color:var(--muted); margin-top:3px;">to ${officerById[d.officer_id]?.name||"—"} · ${timeAgo(d.created_at)} · ${d.status}</div>
+    const recent = DATA.messages.slice(-5).reverse();
+    dispList.innerHTML = recent.length ? recent.map(m=>`
+      <div class="row-click" data-cmdmessage="${m.officer_id}" style="padding:10px 0; border-top:1px solid var(--border);">
+        <div style="font-size:13px;">${m.sender==='admin' ? '' : (officerById[m.officer_id]?.name||'Officer') + ': '}${escapeHtml(m.body)}</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:3px;">${m.sender==='admin' ? 'to '+(officerById[m.officer_id]?.name||'—') : 'from '+(officerById[m.officer_id]?.name||'—')} · ${timeAgo(m.created_at)}</div>
       </div>
-    `).join("") : `<div class="empty">No dispatches yet</div>`;
+    `).join("") : `<div class="empty">No messages yet</div>`;
+    dispList.querySelectorAll("[data-cmdmessage]").forEach(row=>{
+      row.onclick = ()=>{
+        selectedChatOfficer = row.dataset.cmdmessage;
+        currentTab = "dispatch";
+        renderShell();
+      };
+    });
   }
 
   updateMapMarkers();
@@ -481,6 +491,7 @@ function getCssColor(varExpr){
 let officerSearch = "";
 
 function renderOfficers(main){
+  const wasFocused = document.activeElement?.id === "officerSearchInput";
   const siteById = byId(DATA.sites);
   const filtered = DATA.officers.filter(o=>{
     const q = officerSearch.toLowerCase();
@@ -519,8 +530,10 @@ function renderOfficers(main){
   });
   const searchInput = document.getElementById("officerSearchInput");
   searchInput.oninput = (e)=>{ officerSearch = e.target.value; renderOfficers(main); };
-  searchInput.focus();
-  searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
+  if(wasFocused){
+    searchInput.focus();
+    searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
+  }
 }
 
 function openOfficerDetail(officerId){
@@ -617,6 +630,7 @@ function openAddOfficerModal(){
 let siteSearch = "";
 
 function renderSites(main){
+  const wasFocused = document.activeElement?.id === "siteSearchInput";
   const filtered = DATA.sites.filter(s=>{
     const q = siteSearch.toLowerCase();
     return !q || s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q) || s.address.toLowerCase().includes(q);
@@ -653,8 +667,10 @@ function renderSites(main){
   });
   const searchInput = document.getElementById("siteSearchInput");
   searchInput.oninput = (e)=>{ siteSearch = e.target.value; renderSites(main); };
-  searchInput.focus();
-  searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
+  if(wasFocused){
+    searchInput.focus();
+    searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
+  }
 }
 
 function openAddSiteModal(){
@@ -910,10 +926,12 @@ async function openPatrolReportDetail(reportId){
       vid.style.cssText = "width:100%; max-width:280px; border-radius:8px; margin-top:8px; border:1px solid var(--border);";
       mediaEl.appendChild(vid);
     } else {
+      const link = document.createElement("a");
+      link.href = url; link.target = "_blank"; link.rel = "noopener";
       const img = document.createElement("img");
-      img.src = url; img.style.cssText = "width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid var(--border); cursor:pointer;";
-      img.onclick = ()=> window.open(url, "_blank");
-      mediaEl.appendChild(img);
+      img.src = url; img.style.cssText = "width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid var(--border); display:block;";
+      link.appendChild(img);
+      mediaEl.appendChild(link);
     }
   }
 }
@@ -924,6 +942,7 @@ async function openPatrolReportDetail(reportId){
 let incidentSearch = "";
 
 function renderIncidents(main){
+  const wasFocused = document.activeElement?.id === "incidentSearchInput";
   const siteById = byId(DATA.sites);
   const officerById = byId(DATA.officers);
   const filtered = DATA.incidents.filter(i=>{
@@ -964,8 +983,10 @@ function renderIncidents(main){
   });
   const searchInput = document.getElementById("incidentSearchInput");
   searchInput.oninput = (e)=>{ incidentSearch = e.target.value; renderIncidents(main); };
-  searchInput.focus();
-  searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
+  if(wasFocused){
+    searchInput.focus();
+    searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
+  }
 
   document.getElementById("exportIncidentsBtn").onclick = ()=>{
     exportCsv("incidents.csv", filtered.map(i=>({
@@ -1035,9 +1056,12 @@ async function openIncidentDetail(incidentId){
   for(const path of (i.photo_urls||[])){
     const url = await getSignedUrl(path);
     if(url){
+      const link = document.createElement("a");
+      link.href = url; link.target = "_blank"; link.rel = "noopener";
       const img = document.createElement("img");
       img.src = url;
-      photosEl.appendChild(img);
+      link.appendChild(img);
+      photosEl.appendChild(link);
     }
   }
 
