@@ -183,7 +183,7 @@ async function sendShiftReportEmail(clockInAt, site){
     async function getSignedMediaUrl(path){
       if(!path) return null;
       if(signedUrlCache[path]) return signedUrlCache[path];
-      const {data, error} = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(path, 60*60*24*30); // 30 days
+      const {data, error} = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(path, 60*60*24*365*10); // 10 years — effectively permanent
       if(error || !data) return null;
       signedUrlCache[path] = data.signedUrl;
       return data.signedUrl;
@@ -468,9 +468,14 @@ async function renderPatrol(){
     .eq("site_id", state.site.id).eq("officer_id", state.officer.id).eq("status","active").maybeSingle();
 
   if(!activePatrol){
-    const {data: created} = await sb.from("patrols").insert({
+    const {data: created, error: createErr} = await sb.from("patrols").insert({
       site_id: state.site.id, officer_id: state.officer.id, name:"Patrol", status:"active", started_at:new Date().toISOString()
     }).select().single();
+    if(createErr || !created){
+      toast("Couldn't start patrol — try again.", "danger");
+      console.error("Patrol creation failed:", createErr);
+      return;
+    }
     activePatrol = created;
   }
   state.patrol = activePatrol;
