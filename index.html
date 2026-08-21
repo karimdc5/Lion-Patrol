@@ -165,6 +165,7 @@ async function sendShiftReportEmail(clockInAt, site){
   try{
     const clockOutAt = new Date().toISOString();
     const fmt = (iso)=> new Date(iso).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
+    const esc = (s)=> String(s ?? "").replace(/[<>&]/g, c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
 
     const [scansRes, incidentsRes, reportsRes, checkpointsRes] = await Promise.all([
       sb.from("checkpoint_scans").select("*").eq("officer_id", state.officer.id).gte("scanned_at", clockInAt).lte("scanned_at", clockOutAt),
@@ -178,13 +179,82 @@ async function sendShiftReportEmail(clockInAt, site){
     const cpById = {};
     (checkpointsRes.data||[]).forEach(c=>{ cpById[c.id] = c; });
 
+    const signedUrlCache = {};
+    async function getSignedMediaUrl(path){
+      if(!path) return null;
+      if(signedUrlCache[path]) return signedUrlCache[path];
+      const {data, error} = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(path, 60*60*24*30); // 30 days
+      if(error || !data) return null;
+      signedUrlCache[path] = data.signedUrl;
+      return data.signedUrl;
+    }
+    async function mediaLinksHtml(paths){
+      if(!paths || !paths.length) return "";
+      const links = [];
+      let photoNum = 0, videoNum = 0;
+      for(const path of paths){
+        const url = await getSignedMediaUrl(path);
+        if(!url) continue;
+        const isVideo = /\.(mp4|mov|webm|m4v)$/i.test(path);
+        const label = isVideo ? `Video ${++videoNum}` : `Photo ${++photoNum}`;
+        links.push(`<a href="${url}" style="color:#c9a86a; font-size:12px; text-decoration:underline; margin-right:14px;">${isVideo ? "&#9654;" : "&#128247;"} ${label}</a>`);
+      }
+      return links.length ? `<div style="margin-top:8px;">${links.join("")}</div>` : "";
+    }
+
+    const sectionHeading = (label, count)=>
+      `<div style="color:#8d8b82; font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:600; margin:20px 0 8px;">${label} (${count})</div>`;
+    const emptyRow = (label)=>
+      `<div style="color:#5a594f; font-size:13px; font-style:italic; padding:4px 0;">No ${label} logged this shift.</div>`;
+    const row = (innerHtml)=>
+      `<div style="background:#141513; border:1px solid #1c1d1a; border-radius:8px; padding:12px 14px; margin-bottom:8px;">${innerHtml}</div>`;
+    const badge = (text, color, bg)=>
+      `<span style="display:inline-block; font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-weight:600; color:${color}; background:${bg}; border-radius:999px; padding:3px 9px; margin-left:6px;">${text}</span>`;
+
     let summary = "";
-    summary += `CHECKPOINT SCANS (${scans.length})\n`;
-    summary += scans.length ? scans.map(s=>`- ${fmt(s.scanned_at)} — ${cpById[s.checkpoint_id]?.name || "Unknown checkpoint"} — ${s.verified ? "verified" : "FLAGGED (too far)"}`).join("\n") : "- None";
-    summary += `\n\nPATROL REPORTS (${reports.length})\n`;
-    summary += reports.length ? reports.map(r=>`- ${fmt(r.ended_at)} — ${r.patrol_type} patrol — ${r.areas_patrolled || "no area noted"}${r.activity_types?.length ? " — " + r.activity_types.join(", ") : ""}${r.details ? "\n  " + r.details : ""}`).join("\n") : "- None";
-    summary += `\n\nINCIDENTS (${incidents.length})\n`;
-    summary += incidents.length ? incidents.map(i=>`- ${fmt(i.occurred_at)} — ${i.title} [${i.severity}/${i.category}]${i.description ? "\n  " + i.description : ""}`).join("\n") : "- None";
+
+    summary += sectionHeading("Checkpoint Scans", scans.length);
+    summary += scans.length ? scans.map(s=>{
+      const cp = cpById[s.checkpoint_id];
+      const b = s.verified ? badge("Verified", "#7d9a7e", "rgba(125,154,126,.14)") : badge("Flagged", "#d9a441", "rgba(217,164,65,.14)");
+      return row(`<span style="color:#e8e5da; font-size:13px;">${fmt(s.scanned_at)} &mdash; ${esc(cp?.name || "Unknown checkpoint")}</span>${b}`);
+    }).join("") : emptyRow("checkpoint scans");
+
+    summary += sectionHeading("Patrol Reports", reports.length);
+    if(reports.length){
+      for(const r of reports){
+        const tags = (r.activity_types||[]).map(a=>badge(esc(a), "#c9a86a", "rgba(201,168,106,.14)")).join("");
+        const mediaLinks = await mediaLinksHtml(r.media_urls);
+        summary += row(`
+          <div style="color:#e8e5da; font-size:13px; font-weight:600;">${fmt(r.ended_at)} &mdash; ${esc(r.patrol_type)} patrol</div>
+          <div style="color:#8d8b82; font-size:12px; margin-top:3px;">${esc(r.areas_patrolled) || "No area noted"}</div>
+          ${tags ? `<div style="margin-top:6px;">${tags}</div>` : ""}
+          ${r.details ? `<div style="color:#c8c5ba; font-size:12px; margin-top:6px; line-height:1.4;">${esc(r.details)}</div>` : ""}
+          ${mediaLinks}
+        `);
+      }
+    } else {
+      summary += emptyRow("patrol reports");
+    }
+
+    summary += sectionHeading("Incidents", incidents.length);
+    if(incidents.length){
+      for(const i of incidents){
+        const sevColor = i.severity==="high" ? ["#c96b5a","rgba(201,107,90,.14)"] : i.severity==="medium" ? ["#d9a441","rgba(217,164,65,.14)"] : ["#8d8b82","rgba(141,139,130,.14)"];
+        const mediaLinks = await mediaLinksHtml(i.photo_urls);
+        summary += row(`
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <span style="color:#e8e5da; font-size:13px; font-weight:600;">${esc(i.title)}</span>
+            ${badge(i.severity, sevColor[0], sevColor[1])}
+          </div>
+          <div style="color:#8d8b82; font-size:12px; margin-top:3px;">${fmt(i.occurred_at)} &mdash; ${esc(i.category)}</div>
+          ${i.description ? `<div style="color:#c8c5ba; font-size:12px; margin-top:6px; line-height:1.4;">${esc(i.description)}</div>` : ""}
+          ${mediaLinks}
+        `);
+      }
+    } else {
+      summary += emptyRow("incidents");
+    }
 
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
       to_email: SHIFT_REPORT_EMAIL,
