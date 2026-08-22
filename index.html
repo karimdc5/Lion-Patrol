@@ -313,6 +313,70 @@ function stopLocationPings(){
   state.watchId = null;
 }
 
+// =========================================================
+// Camera / QR scanner lifecycle — the single source of truth
+// for whether a camera is running, so it can always be killed
+// from anywhere: back button, tab hidden, page closing.
+// =========================================================
+let activeScanner = null;   // Html5Qrcode instance, if one is running
+let scannerRunning = false;
+
+async function stopActiveScanner(){
+  if(!activeScanner){ return; }
+  const s = activeScanner;
+  activeScanner = null;
+  if(scannerRunning){
+    scannerRunning = false;
+    try{ await s.stop(); }catch(e){}
+  }
+  try{ s.clear(); }catch(e){}
+  // Safety net: iOS Safari has known cases where stop() doesn't fully
+  // release the hardware — directly kill any leftover video tracks too
+  document.querySelectorAll("#qr-reader video").forEach(v=>{
+    if(v.srcObject){
+      try{ v.srcObject.getTracks().forEach(t=>t.stop()); }catch(e){}
+      v.srcObject = null;
+    }
+  });
+  const reader = document.getElementById("qr-reader");
+  if(reader) reader.style.display = "none";
+  const torchBtn = document.getElementById("torchBtn");
+  if(torchBtn) torchBtn.remove();
+}
+
+// Registered once — kills the camera the instant the tab is hidden,
+// backgrounded, or the page is closing, regardless of what screen
+// the app thinks it's on
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) stopActiveScanner(); });
+window.addEventListener("pagehide", stopActiveScanner);
+window.addEventListener("beforeunload", stopActiveScanner);
+
+function vibrate(pattern){
+  if(navigator.vibrate){ try{ navigator.vibrate(pattern); }catch(e){} }
+}
+
+async function setOfficerStatus(status){
+  const {error} = await sb.rpc("officer_set_status", {p_officer_id: state.officer.id, p_pin: state.pin, p_status: status});
+  if(error) console.error("Status update failed:", error);
+  return !error;
+}
+
+const STATUS_LABEL = {
+  on_duty: "On Duty", on_patrol: "On Patrol", responding: "Responding",
+  on_break: "On Break", traveling: "Traveling",
+};
+const STATUS_COLOR = {
+  on_duty: "var(--gold)", on_patrol: "var(--success)", responding: "var(--danger)",
+  on_break: "var(--muted)", traveling: "var(--warn)",
+};
+function timeInState(since){
+  const mins = Math.floor((Date.now() - new Date(since).getTime())/60000);
+  if(mins < 1) return "just now";
+  if(mins < 60) return `${mins}m`;
+  const h = Math.floor(mins/60), m = mins%60;
+  return `${h}h ${m}m`;
+}
+
 const icons = {
   clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
   qr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M20 14v3h-3M17 21h3v-3"/></svg>`,
@@ -388,12 +452,45 @@ async function renderHome(){
   const hasUnread = myMessages && myMessages[0] && myMessages[0].sender==="admin" && myMessages[0].created_at > lastSeen;
   const onDuty = !!state.shift;
 
+  let officerRow = null, patrolProgress = null;
+  if(onDuty){
+    const {data: o} = await sb.from("officers").select("*").eq("id", state.officer.id).single();
+    officerRow = o;
+    const {data: activePatrol} = await sb.from("patrols").select("*")
+      .eq("site_id", state.site.id).eq("officer_id", state.officer.id).eq("status","active").maybeSingle();
+    if(activePatrol){
+      const [{data: cps}, {data: scans}] = await Promise.all([
+        sb.from("checkpoints").select("id").eq("site_id", state.site.id),
+        sb.from("checkpoint_scans").select("checkpoint_id").eq("patrol_id", activePatrol.id),
+      ]);
+      const doneCount = new Set((scans||[]).map(s=>s.checkpoint_id)).size;
+      patrolProgress = {done: doneCount, total: (cps||[]).length};
+    }
+  }
+
+  const status = officerRow?.status || "on_duty";
+  const statusColor = STATUS_COLOR[status] || "var(--gold)";
+  const patrolLabel = patrolProgress ? `Resume Patrol — ${patrolProgress.done} of ${patrolProgress.total}` : "Start Patrol";
+
   app.innerHTML = `
     <div class="screen">
       <div class="topbar">
         <div class="brand">${icons.lion}<div class="brand-text"><div class="l">${state.officer.name}</div><div class="s">${state.officer.callsign}</div></div></div>
-        <div class="status-pill ${onDuty?"on":""}"><span class="dot"></span>${onDuty?"On Duty":"Off Duty"}</div>
+        ${!onDuty ? `<div class="status-pill"><span class="dot"></span>Off Duty</div>` : ""}
       </div>
+
+      ${onDuty ? `
+        <div class="card" id="statusBanner" style="cursor:pointer; border-color:${statusColor};">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div>
+              <div style="font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:${statusColor}; font-weight:700;">${STATUS_LABEL[status] || status}</div>
+              <h3 style="margin-top:4px;">${state.site?.name || "Assigned site"}</h3>
+              <p>${officerRow ? timeInState(officerRow.status_changed_at) : ""} in this state</p>
+            </div>
+            <span style="width:10px; height:10px; border-radius:50%; background:${statusColor}; flex-shrink:0;"></span>
+          </div>
+        </div>
+      ` : ""}
 
       <div class="card dispatch-card" id="tileMessages" style="cursor:pointer;">
         <div style="display:flex; align-items:center; justify-content:space-between;">
@@ -406,16 +503,15 @@ async function renderHome(){
       </div>
 
       ${onDuty ? `
-        <div class="card">
-          <h3>${state.site?.name || "Assigned site"}</h3>
-          <p>Clocked in ${new Date(state.shift.clock_in_at).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</p>
+        <button class="btn btn-primary" id="btnPatrol" style="margin-top:6px;">${patrolLabel}</button>
+        <button class="btn btn-secondary" id="btnIncident">Log Incident</button>
+        <button class="btn btn-danger" id="btnAssist" style="background:transparent; border:1.5px solid var(--danger); color:var(--danger); margin-top:18px;">Need Assistance</button>
+        <button class="btn btn-danger" id="clockOutBtn" style="margin-top:18px;">End Shift</button>
+
+        <div style="display:flex; justify-content:center; gap:18px; margin-top:16px;">
+          <span class="muted-link" id="switchSiteLink" style="margin-top:0;">Switch Site</span>
+          <span class="muted-link" id="logPatrolLink" style="margin-top:0;">Add Patrol Notes</span>
         </div>
-        <div class="grid2" style="grid-template-columns:1fr 1fr 1fr;">
-          <div class="action-tile" id="tilePatrol">${icons.qr}<div>Scan Checkpoint</div></div>
-          <div class="action-tile" id="tileLogPatrol">${icons.clipboard}<div>Log Patrol</div></div>
-          <div class="action-tile" id="tileIncident">${icons.warning}<div>Report Incident</div></div>
-        </div>
-        <button class="btn btn-danger" id="clockOutBtn" style="margin-top:20px;">Clock Out</button>
       ` : `
         <label>Site</label>
         <select id="siteSelect">
@@ -445,13 +541,31 @@ async function renderHome(){
       state.site = (sites||[]).find(s=>s.id===sel.value);
       saveSession();
       startLocationPings();
+      vibrate(60);
       toast("Clocked in", "success");
       renderHome();
     };
   } else {
-    document.getElementById("tilePatrol").onclick = renderPatrol;
-    document.getElementById("tileLogPatrol").onclick = renderLogPatrol;
-    document.getElementById("tileIncident").onclick = renderIncident;
+    document.getElementById("statusBanner").onclick = renderChangeStatus;
+    document.getElementById("btnPatrol").onclick = renderPatrol;
+    document.getElementById("btnIncident").onclick = renderIncident;
+    document.getElementById("switchSiteLink").onclick = renderSwitchSite;
+    document.getElementById("logPatrolLink").onclick = renderLogPatrol;
+
+    document.getElementById("btnAssist").onclick = async ()=>{
+      if(!confirm("Send an emergency assistance request to Command? Your location will be shared.")) return;
+      const btn = document.getElementById("btnAssist");
+      btn.disabled = true; btn.textContent = "Sending…";
+      const loc = await getLocation();
+      const mapsLink = (loc.lat && loc.lng) ? `https://maps.google.com/?q=${loc.lat},${loc.lng}` : "location unavailable";
+      const body = `NEED ASSISTANCE — ${state.officer.name} at ${state.site?.name || "unknown site"}. Location: ${mapsLink}`;
+      const {error} = await sb.rpc("officer_send_priority_message", {p_officer_id: state.officer.id, p_pin: state.pin, p_body: body});
+      if(error){ toast("Couldn't send — try again or call directly.", "danger"); btn.disabled=false; btn.textContent="Need Assistance"; return; }
+      vibrate([100,60,100,60,100]);
+      toast("Assistance request sent to Command", "success");
+      btn.disabled = false; btn.textContent = "Need Assistance";
+    };
+
     document.getElementById("clockOutBtn").onclick = async ()=>{
       const loc = await getLocation();
       const {error} = await sb.rpc("officer_clock_out", {
@@ -464,6 +578,7 @@ async function renderHome(){
       stopLocationPings();
       state.shift = null; state.site = null;
       saveSession();
+      vibrate(60);
       toast("Clocked out", "success");
       sendShiftReportEmail(shiftClockIn, shiftSite); // fire-and-forget, doesn't block clock-out
       renderHome();
@@ -477,6 +592,61 @@ async function renderHome(){
   };
 
   document.getElementById("tileMessages").onclick = renderMessages;
+}
+
+async function renderChangeStatus(){
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Update Status</h1>
+      <p class="sub">${state.site?.name || ""}</p>
+      <button class="btn btn-secondary" data-status="on_patrol">On Patrol</button>
+      <button class="btn btn-secondary" data-status="responding">Responding</button>
+      <button class="btn btn-secondary" data-status="on_break">On Break</button>
+      <button class="btn btn-secondary" data-status="traveling">Traveling</button>
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+  document.querySelectorAll("[data-status]").forEach(btn=>{
+    btn.onclick = async ()=>{
+      btn.disabled = true;
+      const ok = await setOfficerStatus(btn.dataset.status);
+      if(!ok){ toast("Couldn't update status — try again.", "danger"); btn.disabled=false; return; }
+      vibrate(40);
+      renderHome();
+    };
+  });
+}
+
+async function renderSwitchSite(){
+  const {data: sites} = await sb.from("sites").select("*").order("name");
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Switch Site</h1>
+      <p class="sub">Currently at ${state.site?.name || "—"}</p>
+      <label>New site</label>
+      <select id="newSiteSelect">
+        <option value="">Select site</option>
+        ${(sites||[]).filter(s=>s.id!==state.site?.id).map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}
+      </select>
+      <div class="err" id="switchErr"></div>
+      <button class="btn btn-primary" id="confirmSwitchBtn" style="margin-top:16px;" disabled>Confirm Switch</button>
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+  const sel = document.getElementById("newSiteSelect");
+  const btn = document.getElementById("confirmSwitchBtn");
+  sel.onchange = ()=>{ btn.disabled = !sel.value; };
+  btn.onclick = async ()=>{
+    btn.disabled = true; btn.textContent = "Switching…";
+    const {data, error} = await sb.rpc("officer_switch_site", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id, p_site_id: sel.value
+    });
+    if(error){ document.getElementById("switchErr").textContent = "Couldn't switch — try again."; btn.disabled=false; btn.textContent="Confirm Switch"; return; }
+    state.site = (sites||[]).find(s=>s.id===sel.value);
+    saveSession();
+    toast("Site switched", "success");
+    renderHome();
+  };
 }
 
 async function renderPatrol(){
@@ -496,6 +666,7 @@ async function renderPatrol(){
     activePatrol = created;
   }
   state.patrol = activePatrol;
+  await setOfficerStatus("on_patrol");
 
   const {data: scans} = await sb.from("checkpoint_scans").select("*").eq("patrol_id", state.patrol.id);
   state.scans = scans || [];
@@ -506,29 +677,115 @@ async function renderPatrol(){
     return s.verified ? "done" : "unverified";
   }
 
+  const total = (checkpoints||[]).length;
+  const done = (checkpoints||[]).filter(cp=>scanStatusFor(cp.id)!=="pending").length;
+  const nextPending = (checkpoints||[]).find(cp=>scanStatusFor(cp.id)==="pending");
+
   app.innerHTML = `
     <div class="screen">
       <div class="backbar" id="backBtn">‹ Back</div>
       <h1>${state.site.name} — Checkpoints</h1>
-      <p class="sub">Scan each checkpoint's QR code in order.</p>
+      <p class="sub">${total ? `${done} of ${total} checked` : "No checkpoints set up for this site."}</p>
       <div id="qr-reader" style="display:none; margin-bottom:16px;"></div>
-      <button class="btn btn-primary" id="startScanBtn">${icons.qr} Scan Next Checkpoint</button>
+      <button class="btn btn-primary" id="startScanBtn" ${!nextPending ? "disabled" : ""}>${icons.qr} Scan Next Checkpoint</button>
       <div class="card" style="margin-top:18px;">
         ${(checkpoints||[]).map(cp=>{
           const st = scanStatusFor(cp.id);
-          return `<div class="checkpoint-row"><span>${cp.seq}. ${cp.name}</span><span class="cp-status ${st}">${st==="pending"?"Pending":st==="done"?"Verified":"Too far"}</span></div>`;
+          const label = st==="pending" ? "Pending" : st==="done" ? "Verified" : "Too far";
+          return `<div class="checkpoint-row">
+            <span>${cp.seq}. ${cp.name}</span>
+            <span style="display:flex; align-items:center; gap:8px;">
+              ${st==="pending" ? `<span class="subtle-link" data-manual="${cp.id}" style="font-size:11px; color:var(--muted);">Can't scan?</span>` : ""}
+              <span class="cp-status ${st}">${label}</span>
+            </span>
+          </div>`;
         }).join("")}
       </div>
+      <button class="btn btn-secondary" id="allClearBtn" style="margin-top:14px;">Round Complete — All Clear</button>
     </div>`;
 
-  document.getElementById("backBtn").onclick = renderHome;
+  document.getElementById("backBtn").onclick = async ()=>{
+    await stopActiveScanner();
+    renderHome();
+  };
   document.getElementById("startScanBtn").onclick = ()=>startQrScan(checkpoints||[]);
+  document.querySelectorAll("[data-manual]").forEach(el=>{
+    el.onclick = ()=> renderManualCheckpoint(el.dataset.manual, checkpoints||[]);
+  });
+  document.getElementById("allClearBtn").onclick = ()=> confirmAllClear(checkpoints||[]);
+}
+
+async function confirmAllClear(checkpoints){
+  if(!confirm("Mark this round complete with nothing to report?")) return;
+  const btn = document.getElementById("allClearBtn");
+  if(btn){ btn.disabled = true; btn.textContent = "Saving…"; }
+
+  await sb.from("patrols").update({status:"completed", completed_at:new Date().toISOString()}).eq("id", state.patrol.id);
+  const {error} = await sb.rpc("officer_submit_patrol_report", {
+    p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
+    p_patrol_type: "foot", p_started_at: state.patrol.started_at,
+    p_areas_patrolled: `All ${checkpoints.length} checkpoint${checkpoints.length===1?"":"s"}`,
+    p_details: "Round completed — all clear, nothing to report.",
+    p_activity_types: ["Nothing to report"], p_media_urls: []
+  });
+  if(error){ toast("Couldn't save — try again.", "danger"); if(btn){ btn.disabled=false; btn.textContent="Round Complete — All Clear"; } return; }
+  vibrate(80);
+  toast("Round marked complete", "success");
+  renderHome();
+}
+
+async function renderManualCheckpoint(checkpointId, checkpoints){
+  const cp = checkpoints.find(c=>c.id===checkpointId);
+  if(!cp) return;
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Mark Visited</h1>
+      <p class="sub">${cp.name} — no QR scan available</p>
+      <label>Reason</label>
+      <div class="chip-row" id="reasonRow">
+        ${["QR code missing","QR unreadable","Other"].map(r=>`<div class="chip" data-r="${r}">${r}</div>`).join("")}
+      </div>
+      <textarea id="reasonText" placeholder="Add a short note (required)" style="margin-top:12px;"></textarea>
+      <div class="err" id="manualErr"></div>
+      <button class="btn btn-primary" id="manualSubmitBtn" style="margin-top:16px;">Confirm — I'm At This Checkpoint</button>
+    </div>`;
+
+  document.getElementById("backBtn").onclick = ()=>renderPatrol();
+  document.querySelectorAll("#reasonRow .chip").forEach(c=>{
+    c.onclick = ()=>{
+      const t = document.getElementById("reasonText");
+      t.value = c.dataset.r;
+      t.focus();
+    };
+  });
+  document.getElementById("manualSubmitBtn").onclick = async ()=>{
+    const reason = document.getElementById("reasonText").value.trim();
+    if(!reason){ document.getElementById("manualErr").textContent = "A short reason is required."; return; }
+    const btn = document.getElementById("manualSubmitBtn");
+    btn.disabled = true; btn.textContent = "Saving…";
+    const loc = await getLocation();
+    const {data, error} = await sb.rpc("officer_manual_checkpoint", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_patrol_id: state.patrol.id,
+      p_checkpoint_id: cp.id, p_lat: loc.lat, p_lng: loc.lng, p_reason: reason
+    });
+    if(error){
+      document.getElementById("manualErr").textContent = "Couldn't save — try again.";
+      btn.disabled = false; btn.textContent = "Confirm — I'm At This Checkpoint";
+      return;
+    }
+    vibrate(data.verified ? 80 : [40,60,40]);
+    toast(data.verified ? `${cp.name} marked ✓` : `${cp.name} marked, but you're too far`, data.verified ? "success" : "danger");
+    renderPatrol();
+  };
 }
 
 function startQrScan(checkpoints){
   const reader = document.getElementById("qr-reader");
   reader.style.display = "block";
   const qr = new Html5Qrcode("qr-reader");
+  activeScanner = qr;
   let handled = false;
 
   qr.start({facingMode:"environment"}, {fps:10, qrbox:220}, async (decodedText)=>{
@@ -536,18 +793,49 @@ function startQrScan(checkpoints){
     const cp = checkpoints.find(c=>c.qr_token===decodedText.trim());
     if(!cp){ toast("Unrecognized checkpoint code", "danger"); return; }
     handled = true;
-    await qr.stop(); reader.style.display="none";
+    await stopActiveScanner();
+    vibrate(60);
 
     const loc = await getLocation();
     const {data, error} = await sb.rpc("officer_scan_checkpoint", {
       p_officer_id: state.officer.id, p_pin: state.pin, p_patrol_id: state.patrol.id,
       p_checkpoint_id: cp.id, p_lat: loc.lat, p_lng: loc.lng, p_photo_url: null
     });
-    if(error){ toast("Scan failed — try again.", "danger"); }
-    else if(data.verified){ toast(`${cp.name} verified ✓`, "success"); }
-    else { toast(`${cp.name} scanned, but you're too far from the checkpoint`, "danger"); }
+    if(error){ vibrate([40,60,40]); toast("Scan failed — try again.", "danger"); }
+    else if(data.verified){ vibrate(80); toast(`${cp.name} verified ✓`, "success"); }
+    else { vibrate([40,60,40]); toast(`${cp.name} scanned, but you're too far from the checkpoint`, "danger"); }
     renderPatrol();
-  }, ()=>{});
+  }, ()=>{}).then(()=>{
+    scannerRunning = true;
+    showTorchToggle(qr);
+  }).catch(()=>{
+    activeScanner = null;
+    toast("Couldn't access camera — check permissions.", "danger");
+    reader.style.display = "none";
+  });
+}
+
+function showTorchToggle(qr){
+  const existing = document.getElementById("torchBtn");
+  if(existing) existing.remove();
+  const btn = document.createElement("button");
+  btn.id = "torchBtn";
+  btn.className = "btn btn-secondary";
+  btn.style.marginTop = "10px";
+  btn.textContent = "Flashlight";
+  btn.onclick = async ()=>{
+    try{
+      const caps = qr.getRunningTrackCapabilities ? qr.getRunningTrackCapabilities() : {};
+      if(!caps || !caps.torch){ toast("Flashlight not supported on this device", "danger"); return; }
+      const isOn = btn.dataset.on === "1";
+      await qr.applyVideoConstraints({advanced:[{torch: !isOn}]});
+      btn.dataset.on = isOn ? "0" : "1";
+      btn.textContent = isOn ? "Flashlight" : "Flashlight: On";
+    }catch(e){
+      toast("Flashlight not supported on this device", "danger");
+    }
+  };
+  document.getElementById("qr-reader").insertAdjacentElement("afterend", btn);
 }
 
 const PATROL_ACTIVITY_TYPES = ["Nothing to report","Suspicious activity","Trespasser","Unlocked/broken door","Equipment issue","Lighting issue","Vehicle in lot","Other"];
