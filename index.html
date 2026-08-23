@@ -31,7 +31,7 @@
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; height:100%; background:var(--bg); color:var(--fg); font-family:var(--font-sans);}
   #app{min-height:100dvh; display:flex; flex-direction:column;}
-  .screen{flex:1; display:flex; flex-direction:column; padding:24px 20px calc(24px + env(safe-area-inset-bottom));}
+  .screen{flex:1; display:flex; flex-direction:column; padding:20px 20px calc(20px + env(safe-area-inset-bottom));}
   .brand{display:flex; align-items:center; gap:10px; margin-bottom:28px;}
   .brand svg{width:30px; height:30px; color:var(--gold); filter:drop-shadow(0 0 6px rgba(201,168,106,.35));}
   .avatar{width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
@@ -57,8 +57,8 @@
     font-size:22px; font-family:var(--font-sans); padding:18px 0; text-align:center; box-shadow:var(--shadow-sm);}
   .key:active{background:var(--border); box-shadow:none; transform:translateY(1px);}
   .key.ghost{background:transparent; border:none; box-shadow:none; color:var(--muted); font-size:14px;}
-  .btn{display:flex; align-items:center; justify-content:center; gap:10px; width:100%; text-align:center; border:none; border-radius:13px; padding:17px;
-    font-size:16px; font-weight:600; font-family:var(--font-sans); margin-top:10px; transition:transform .08s ease, box-shadow .08s ease; text-decoration:none; box-sizing:border-box;}
+  .btn{display:flex; align-items:center; justify-content:center; gap:10px; width:100%; text-align:center; border:none; border-radius:13px; padding:14px;
+    font-size:16px; font-weight:600; font-family:var(--font-sans); margin-top:8px; transition:transform .08s ease, box-shadow .08s ease; text-decoration:none; box-sizing:border-box;}
   .btn svg{width:19px; height:19px; flex-shrink:0;}
   .btn-primary{background:linear-gradient(180deg,var(--gold-bright),var(--gold) 60%,var(--gold-deep)); color:#1a1610; box-shadow:var(--shadow-gold);}
   .btn-primary:active{transform:translateY(1px) scale(.99); box-shadow:0 2px 10px rgba(201,168,106,.18);}
@@ -81,15 +81,15 @@
   .sync-pill.ok{color:var(--faint);}
   .sync-pill.warn{color:var(--warn); border-color:var(--warn); background:rgba(217,164,65,.08);}
   .sync-pill.danger{color:var(--danger); border-color:var(--danger); background:rgba(200,92,74,.08);}
-  .card{background:linear-gradient(160deg,var(--surface),var(--bg) 140%); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:14px; box-shadow:var(--shadow-sm);}
+  .card{background:linear-gradient(160deg,var(--surface),var(--bg) 140%); border:1px solid var(--border); border-radius:16px; padding:15px; margin-bottom:12px; box-shadow:var(--shadow-sm);}
   .card h3{font-family:var(--font-display); margin:0 0 4px; font-size:19px; font-weight:600;}
   .card p{margin:0; color:var(--muted); font-size:13px;}
-  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
-  .action-tile{background:linear-gradient(160deg,var(--surface),var(--bg) 140%); border:1px solid var(--border); border-radius:16px; padding:20px 14px;
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .action-tile{background:linear-gradient(160deg,var(--surface),var(--bg) 140%); border:1px solid var(--border); border-radius:14px; padding:14px 10px;
     text-align:center; color:var(--fg); cursor:pointer; transition:transform .08s ease, background .08s ease; box-shadow:var(--shadow-sm);}
   .action-tile:active{transform:scale(.96); background:var(--raised);}
-  .action-tile svg{width:26px; height:26px; margin-bottom:8px; color:var(--gold);}
-  .action-tile div{font-size:13px; font-weight:600;}
+  .action-tile svg{width:21px; height:21px; margin-bottom:5px; color:var(--gold);}
+  .action-tile div{font-size:12.5px; font-weight:600;}
   .backbar{display:flex; align-items:center; gap:10px; margin-bottom:18px; color:var(--muted); font-size:14px;}
   #qr-reader{border-radius:14px; overflow:hidden; border:1px solid var(--border);}
   .checkpoint-row{display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border);}
@@ -131,7 +131,7 @@
   .msg-bubble.officer{background:linear-gradient(180deg,var(--gold-bright),var(--gold)); color:#1a1610; border-bottom-right-radius:4px;}
 
   /* Status console — the one place this screen spends its design boldness */
-  .status-console{position:relative; border-radius:18px; padding:20px 20px 18px 22px; margin-bottom:14px; overflow:hidden;
+  .status-console{position:relative; border-radius:18px; padding:15px 18px 13px 20px; margin-bottom:10px; overflow:hidden;
     background:linear-gradient(150deg,var(--surface) 0%,var(--bg) 160%); border:1px solid var(--border); box-shadow:var(--shadow-md);}
   .status-console::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--sc-accent, var(--gold));}
   .status-console .eyebrow{font-size:11px; text-transform:uppercase; letter-spacing:.14em; font-weight:700; color:var(--sc-accent, var(--gold));}
@@ -988,7 +988,7 @@ async function renderHome(){
           <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;">Tap to update status</div>
         </div>
         ${weeklyVerified !== null ? `
-          <div style="display:flex; align-items:center; gap:8px; margin:-2px 0 14px 4px; color:var(--muted); font-size:12px;">
+          <div style="display:flex; align-items:center; gap:8px; margin:-2px 0 10px 4px; color:var(--muted); font-size:12px;">
             <span class="icon20" style="width:14px; height:14px; color:var(--success);">${icons.shield}</span>
             <span>${weeklyVerified} verified round${weeklyVerified===1?'':'s'} this week</span>
           </div>
@@ -1012,14 +1012,14 @@ async function renderHome(){
         <button class="btn btn-primary" id="btnPatrol" style="margin-top:6px;">${icons.shield}${patrolLabel}</button>
         <button class="btn btn-secondary" id="btnIncident">${icons.warning}Log Incident</button>
 
-        <button class="btn btn-assist" id="btnAssist" style="margin-top:18px;">${icons.siren}Need Assistance</button>
+        <button class="btn btn-assist" id="btnAssist" style="margin-top:12px;">${icons.siren}Need Assistance</button>
         <div style="display:flex; gap:10px; margin-top:8px;">
           <a href="tel:911" class="btn btn-secondary" style="margin-top:0; font-size:14px; padding:12px;">Call 911</a>
           ${COMMAND_PHONE ? `<a href="tel:${COMMAND_PHONE}" class="btn btn-secondary" style="margin-top:0; font-size:14px; padding:12px;">Call Command</a>` : ""}
         </div>
-        <button class="btn btn-danger" id="clockOutBtn" style="margin-top:18px;">${icons.logout}End Shift</button>
+        <button class="btn btn-danger" id="clockOutBtn" style="margin-top:12px;">${icons.logout}End Shift</button>
 
-        <div class="grid2" style="margin-top:18px;">
+        <div class="grid2" style="margin-top:14px;">
           <div class="action-tile" id="mapLink">${icons.mappin}<div>Map</div></div>
           <div class="action-tile" id="onDutyLink">${icons.people}<div>On Duty</div></div>
           <div class="action-tile" id="historyLink">${icons.clock}<div>Patrol History</div></div>
