@@ -139,8 +139,9 @@
   .map-tooltip{background:var(--surface) !important; border:1px solid var(--border) !important; color:var(--fg) !important;
     font-family:var(--font-mono) !important; font-size:11px !important; box-shadow:none !important;}
   .officer-photo{width:34px; height:34px; border-radius:50%; background:var(--raised); border:1px solid var(--border);
-    display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:var(--muted); overflow:hidden;}
+    display:inline-flex; align-items:center; justify-content:center; font-size:11px; color:#fff; overflow:hidden; font-weight:700; flex-shrink:0;}
   .officer-photo img{width:100%; height:100%; object-fit:cover;}
+  .officer-photo.lg{width:52px; height:52px; font-size:16px;}
 
   .toast{position:fixed; left:20px; right:20px; bottom:calc(80px + env(safe-area-inset-bottom)); z-index:60;
     background:var(--raised); border:1px solid var(--border); color:var(--fg); padding:13px 16px;
@@ -207,6 +208,16 @@ let loadError = null;
 let signedUrlCache = {}; // path -> signed url
 
 function byId(arr){ const m={}; (arr||[]).forEach(x=>m[x.id]=x); return m; }
+
+function avatarStyle(name){
+  let hash = 0;
+  for(let i=0; i<name.length; i++){ hash = name.charCodeAt(i) + ((hash<<5)-hash); }
+  const hue = Math.abs(hash) % 360;
+  return `background:linear-gradient(135deg, hsl(${hue} 70% 48%), hsl(${(hue+45)%360} 65% 30%));`;
+}
+function initialsOf(name){
+  return (name||"").split(" ").map(x=>x[0]).filter(Boolean).slice(0,2).join("").toUpperCase();
+}
 
 async function fetchAll(){
   try{
@@ -421,7 +432,8 @@ function updateCommandLive(){
   if(dispList){
     const recent = DATA.messages.slice(-5).reverse();
     dispList.innerHTML = recent.length ? recent.map(m=>`
-      <div class="row-click" data-cmdmessage="${m.officer_id}" style="padding:10px 0; border-top:1px solid var(--border);">
+      <div class="row-click" data-cmdmessage="${m.officer_id}" style="padding:10px 0; border-top:1px solid var(--border); ${m.is_priority?'border-left:3px solid var(--danger); padding-left:10px; background:rgba(176,112,100,.06);':''}">
+        ${m.is_priority ? `<span class="badge danger" style="margin-bottom:4px; display:inline-block;">⚠ Priority</span>` : ""}
         <div style="font-size:13px;">${m.sender==='admin' ? '' : (officerById[m.officer_id]?.name||'Officer') + ': '}${escapeHtml(m.body)}</div>
         <div style="font-size:11px; color:var(--muted); margin-top:3px;">${m.sender==='admin' ? 'to '+(officerById[m.officer_id]?.name||'—') : 'from '+(officerById[m.officer_id]?.name||'—')} · ${timeAgo(m.created_at)}</div>
       </div>
@@ -497,32 +509,46 @@ function renderOfficers(main){
     const q = officerSearch.toLowerCase();
     return !q || o.name.toLowerCase().includes(q) || o.callsign.toLowerCase().includes(q);
   });
+
+  // Group by assigned site — unassigned officers get their own bucket at the end
+  const groups = {};
+  filtered.forEach(o=>{
+    const key = o.site_id && siteById[o.site_id] ? o.site_id : "_unassigned";
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(o);
+  });
+  const siteGroupIds = Object.keys(groups).filter(k=>k!=="_unassigned").sort((a,b)=>
+    (siteById[a]?.name||"").localeCompare(siteById[b]?.name||""));
+  if(groups["_unassigned"]) siteGroupIds.push("_unassigned");
+
+  const officerRow = (o)=>{
+    const ping = DATA.pings[o.id];
+    return `<tr class="row-click" data-officer="${o.id}" style="${!o.active?'opacity:.5;':''}">
+      <td><div class="officer-photo" style="${avatarStyle(o.name)}">${initialsOf(o.name)}</div></td>
+      <td>${escapeHtml(o.name)}${!o.active?' <span class="badge off" style="margin-left:6px;">Inactive</span>':''}</td>
+      <td style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(o.callsign)}</td>
+      <td><span class="badge ${o.status==='on_duty'?'on':o.status&&o.status!=='off_duty'?'warn':'off'}"><span class="dot"></span>${(o.status||'off_duty').replace('_',' ')}</span></td>
+      <td>${o.phone || "—"}</td>
+    </tr>`;
+  };
+
   main.innerHTML = `
-    <div class="card">
-      <div class="card-head">
-        <h2>Officers</h2>
-        <button class="btn btn-primary btn-sm" id="addOfficerBtn">${ic.plus} Add Officer</button>
-      </div>
-      <input type="text" id="officerSearchInput" placeholder="Search by name or callsign…" value="${escapeHtml(officerSearch)}" style="margin-bottom:14px;" />
-      ${filtered.length ? `
-        <table>
-          <thead><tr><th></th><th>Name</th><th>Callsign</th><th>Status</th><th>Site</th><th>Phone</th></tr></thead>
-          <tbody>
-            ${filtered.map(o=>{
-              const ping = DATA.pings[o.id];
-              return `<tr class="row-click" data-officer="${o.id}" style="${!o.active?'opacity:.5;':''}">
-                <td><div class="officer-photo">${o.name.split(" ").map(x=>x[0]).slice(0,2).join("")}</div></td>
-                <td>${escapeHtml(o.name)}${!o.active?' <span class="badge off" style="margin-left:6px;">Inactive</span>':''}</td>
-                <td style="font-family:var(--font-mono); font-size:12px;">${escapeHtml(o.callsign)}</td>
-                <td><span class="badge ${o.status==='on_duty'?'on':'off'}"><span class="dot"></span>${o.status.replace('_',' ')}</span></td>
-                <td>${siteById[o.site_id]?.name || "—"}</td>
-                <td>${o.phone || "—"}</td>
-              </tr>`;
-            }).join("")}
-          </tbody>
-        </table>
-      ` : `<div class="empty">${officerSearch ? "No officers match" : "No officers yet — add your first one"}</div>`}
+    <div class="card-head" style="padding:0 2px;">
+      <h2>Officers</h2>
+      <button class="btn btn-primary btn-sm" id="addOfficerBtn">${ic.plus} Add Officer</button>
     </div>
+    <input type="text" id="officerSearchInput" placeholder="Search by name or callsign…" value="${escapeHtml(officerSearch)}" style="margin-bottom:16px;" />
+    ${filtered.length ? siteGroupIds.map(key=>{
+      const group = groups[key];
+      const label = key==="_unassigned" ? "Unassigned" : siteById[key].name;
+      return `<div class="card">
+        <div class="card-head"><h2 style="font-size:15px;">${escapeHtml(label)}</h2><span class="meta">${group.length} officer${group.length===1?'':'s'}</span></div>
+        <table>
+          <thead><tr><th></th><th>Name</th><th>Callsign</th><th>Status</th><th>Phone</th></tr></thead>
+          <tbody>${group.map(officerRow).join("")}</tbody>
+        </table>
+      </div>`;
+    }).join("") : `<div class="card"><div class="empty">${officerSearch ? "No officers match" : "No officers yet — add your first one"}</div></div>`}
   `;
   document.getElementById("addOfficerBtn").onclick = openAddOfficerModal;
   document.querySelectorAll("[data-officer]").forEach(row=>{
@@ -1103,16 +1129,18 @@ function renderDispatch(main){
         <div class="card-head"><h2>Officers</h2></div>
         ${officers.length ? officers.map(o=>{
           const msgCount = DATA.messages.filter(m=>m.officer_id===o.id).length;
+          const hourAgo = new Date(Date.now() - 60*60*1000).toISOString();
+          const hasUrgent = DATA.messages.some(m=>m.officer_id===o.id && m.is_priority && m.created_at > hourAgo);
           return `<div class="row-click chat-officer-row ${selectedChatOfficer===o.id?'active':''}" data-chatofficer="${o.id}"
-            style="display:flex; align-items:center; justify-content:space-between; padding:11px 4px; border-top:1px solid var(--border);">
+            style="display:flex; align-items:center; justify-content:space-between; padding:11px 4px; border-top:1px solid var(--border); ${hasUrgent?'background:rgba(176,112,100,.08);':''}">
             <div style="display:flex; align-items:center; gap:10px;">
-              <div class="officer-photo">${o.name.split(" ").map(x=>x[0]).slice(0,2).join("")}</div>
+              <div class="officer-photo lg" style="${avatarStyle(o.name)}">${initialsOf(o.name)}</div>
               <div>
                 <div style="font-size:13px;">${escapeHtml(o.name)}</div>
                 <div style="font-size:11px; color:var(--muted);">${o.status==='on_duty'?'On duty':'Off duty'}</div>
               </div>
             </div>
-            ${msgCount ? `<span style="font-size:11px; color:var(--muted);">${msgCount}</span>` : ""}
+            ${hasUrgent ? `<span class="badge danger">⚠ Urgent</span>` : msgCount ? `<span style="font-size:11px; color:var(--muted);">${msgCount}</span>` : ""}
           </div>`;
         }).join("") : `<div class="empty">No officers yet</div>`}
       </div>
@@ -1170,7 +1198,10 @@ function drawChatMessages(){
   list.innerHTML = thread.length ? thread.map(m=>`
     <div style="display:flex; justify-content:${m.sender==='admin'?'flex-end':'flex-start'};">
       <div style="max-width:75%; padding:9px 12px; border-radius:12px; font-size:13px; line-height:1.35;
-        ${m.sender==='admin' ? 'background:var(--accent); color:var(--accent-fg); border-bottom-right-radius:3px;' : 'background:var(--raised); border:1px solid var(--border); border-bottom-left-radius:3px;'}">
+        ${m.is_priority
+          ? 'background:rgba(176,112,100,.16); border:1.5px solid var(--danger); color:var(--fg);'
+          : m.sender==='admin' ? 'background:var(--accent); color:var(--accent-fg); border-bottom-right-radius:3px;' : 'background:var(--raised); border:1px solid var(--border); border-bottom-left-radius:3px;'}">
+        ${m.is_priority ? `<div style="font-size:9px; text-transform:uppercase; letter-spacing:.06em; font-weight:700; color:var(--danger); margin-bottom:3px;">⚠ Priority</div>` : ""}
         ${escapeHtml(m.body)}
       </div>
     </div>

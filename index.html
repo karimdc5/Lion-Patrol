@@ -32,6 +32,9 @@
   .screen{flex:1; display:flex; flex-direction:column; padding:24px 20px calc(24px + env(safe-area-inset-bottom));}
   .brand{display:flex; align-items:center; gap:10px; margin-bottom:28px;}
   .brand svg{width:30px; height:30px; color:var(--gold); filter:drop-shadow(0 0 6px rgba(201,168,106,.35));}
+  .avatar{width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:700; font-size:14px; flex-shrink:0; box-shadow:var(--shadow-sm);}
+  .avatar.sm{width:30px; height:30px; font-size:11px;}
   .brand-text{line-height:1;}
   .brand-text .l{font-family:var(--font-display); font-size:24px; font-weight:600; letter-spacing:.01em;}
   .brand-text .s{font-size:10px; letter-spacing:.22em; color:var(--muted); text-transform:uppercase; margin-top:3px;}
@@ -53,7 +56,7 @@
   .key:active{background:var(--border); box-shadow:none; transform:translateY(1px);}
   .key.ghost{background:transparent; border:none; box-shadow:none; color:var(--muted); font-size:14px;}
   .btn{display:flex; align-items:center; justify-content:center; gap:10px; width:100%; text-align:center; border:none; border-radius:13px; padding:17px;
-    font-size:16px; font-weight:600; font-family:var(--font-sans); margin-top:10px; transition:transform .08s ease, box-shadow .08s ease;}
+    font-size:16px; font-weight:600; font-family:var(--font-sans); margin-top:10px; transition:transform .08s ease, box-shadow .08s ease; text-decoration:none; box-sizing:border-box;}
   .btn svg{width:19px; height:19px; flex-shrink:0;}
   .btn-primary{background:linear-gradient(180deg,var(--gold-bright),var(--gold) 60%,var(--gold-deep)); color:#1a1610; box-shadow:var(--shadow-gold);}
   .btn-primary:active{transform:translateY(1px) scale(.99); box-shadow:0 2px 10px rgba(201,168,106,.18);}
@@ -70,6 +73,12 @@
     letter-spacing:.08em; padding:5px 10px; border-radius:999px; background:var(--raised); border:1px solid var(--border);}
   .status-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--faint);}
   .status-pill.on .dot{background:var(--success); box-shadow:0 0 0 3px rgba(76,154,106,.2);}
+  .sync-pill{display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:5px 10px; border-radius:999px;
+    border:1px solid var(--border); background:var(--raised); color:var(--muted);}
+  .sync-pill::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .sync-pill.ok{color:var(--faint);}
+  .sync-pill.warn{color:var(--warn); border-color:var(--warn); background:rgba(217,164,65,.08);}
+  .sync-pill.danger{color:var(--danger); border-color:var(--danger); background:rgba(200,92,74,.08);}
   .card{background:linear-gradient(160deg,var(--surface),var(--bg) 140%); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:14px; box-shadow:var(--shadow-sm);}
   .card h3{font-family:var(--font-display); margin:0 0 4px; font-size:19px; font-weight:600;}
   .card p{margin:0; color:var(--muted); font-size:13px;}
@@ -87,6 +96,7 @@
   .cp-status.pending{color:var(--faint); background:var(--raised);}
   .cp-status.done{color:var(--success); background:rgba(76,154,106,.12);}
   .cp-status.unverified{color:var(--warn); background:rgba(217,164,65,.12);}
+  .cp-status.queued{color:var(--warn); background:rgba(217,164,65,.12);}
   .toast{position:fixed; left:20px; right:20px; bottom:calc(20px + env(safe-area-inset-bottom));
     background:var(--raised); border:1px solid var(--border); color:var(--fg); padding:14px 16px;
     border-radius:12px; font-size:14px; text-align:center; z-index:50; box-shadow:var(--shadow-md);}
@@ -141,6 +151,10 @@ const EMAILJS_PUBLIC_KEY = "nwtsiZispHGMJGhoj";
 const EMAILJS_SERVICE_ID = "service_6g8we6b";
 const EMAILJS_TEMPLATE_ID = "template_zu0uf0o";
 const SHIFT_REPORT_EMAIL = "lionofseattle@gmail.com";
+
+// Dispatch/Command phone number for the "Call Command" quick-dial button.
+// Leave blank to hide that button — officers will still see "Call 911".
+const COMMAND_PHONE = "";
 if(window.emailjs && EMAILJS_PUBLIC_KEY !== "YOUR_EMAILJS_PUBLIC_KEY"){
   emailjs.init(EMAILJS_PUBLIC_KEY);
 }
@@ -187,7 +201,7 @@ function toast(msg, kind="default"){
   setTimeout(()=>el.remove(), 3200);
 }
 
-async function sendShiftReportEmail(clockInAt, site){
+async function sendShiftReportEmail(clockInAt, site, finalNote){
   if(!window.emailjs || EMAILJS_PUBLIC_KEY === "YOUR_EMAILJS_PUBLIC_KEY"){
     console.warn("EmailJS not configured yet — skipping shift report email.");
     return;
@@ -249,6 +263,15 @@ async function sendShiftReportEmail(clockInAt, site){
       `<span style="display:inline-block; font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; color:${color}; background:${bg}; border-radius:4px; padding:3px 8px;">${text}</span>`;
 
     let summary = "";
+
+    if(finalNote){
+      summary += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px; background:#faf9f6; border:1px solid #eeece5; border-left:3px solid #b8933f; border-radius:0 6px 6px 0;">
+        <tr><td style="padding:12px 16px;">
+          <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:700; color:#8a6a1f; margin-bottom:4px;">Final Note</div>
+          <div style="color:#2a2a26; font-size:13px; line-height:1.5;">${esc(finalNote)}</div>
+        </td></tr>
+      </table>`;
+    }
 
     summary += sectionHeading("Checkpoint Scans", scans.length);
     if(scans.length){
@@ -329,7 +352,7 @@ function startLocationPings(){
   if(!navigator.geolocation) return;
   state.watchId = navigator.geolocation.watchPosition(async (pos)=>{
     if(!state.officer || !state.shift) return;
-    await sb.rpc("officer_ping", {
+    await callOrQueue("ping", {
       p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id,
       p_lat: pos.coords.latitude, p_lng: pos.coords.longitude
     });
@@ -382,8 +405,144 @@ function vibrate(pattern){
   if(navigator.vibrate){ try{ navigator.vibrate(pattern); }catch(e){} }
 }
 
+// =========================================================
+// Offline queue — the durable local store for every write
+// that must survive a dead zone. Persists in localStorage,
+// so it survives app restarts and phone reboots as long as
+// the officer doesn't clear Safari's site data.
+//
+// Scope, on purpose: scans, incidents, patrol reports, status
+// changes, and messages are queueable. Login, clock in/out,
+// switching sites, and starting a brand-new patrol still need
+// a live connection — those are the moments that need a real
+// server response before the app can meaningfully continue.
+// =========================================================
+const QUEUE_KEY = "lp_offline_queue";
+const FAILED_KEY = "lp_offline_failed";
+const LAST_SYNC_KEY = "lp_last_sync_at";
+
+function loadQueue(){ try{ return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]"); }catch(e){ return []; } }
+function saveQueue(q){ try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }catch(e){ console.error("Queue save failed:", e); } }
+function loadFailed(){ try{ return JSON.parse(localStorage.getItem(FAILED_KEY) || "[]"); }catch(e){ return []; } }
+function saveFailed(f){ try{ localStorage.setItem(FAILED_KEY, JSON.stringify(f)); }catch(e){} }
+function markSynced(){ localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString()); }
+function lastSyncAt(){ return localStorage.getItem(LAST_SYNC_KEY); }
+
+function newQueueId(){
+  return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now()+"-"+Math.random().toString(36).slice(2));
+}
+
+// Each handler performs the real Supabase call for a queued item's type.
+// Every one of these mirrors an existing direct call elsewhere in the app —
+// nothing new is invented here, this just gives queued items a way to replay.
+const QUEUE_HANDLERS = {
+  ping: (p)=> sb.rpc("officer_ping", p),
+  status: (p)=> sb.rpc("officer_set_status", p),
+  checkpoint_scan: (p)=> sb.rpc("officer_scan_checkpoint", p),
+  manual_checkpoint: (p)=> sb.rpc("officer_manual_checkpoint", p),
+  incident: (p)=> sb.rpc("officer_submit_incident", p),
+  patrol_report: (p)=> sb.rpc("officer_submit_patrol_report", p),
+  complete_patrol: (p)=> sb.from("patrols").update({status:"completed", completed_at:p.completed_at}).eq("id", p.patrol_id),
+  message: (p)=> sb.rpc("officer_send_message", p),
+  priority_message: (p)=> sb.rpc("officer_send_priority_message", p),
+};
+
+const QUEUE_LABEL = {
+  ping: "Location update", status: "Status change", checkpoint_scan: "Checkpoint scan",
+  manual_checkpoint: "Manual checkpoint mark", incident: "Incident report", patrol_report: "Patrol report",
+  complete_patrol: "Round completion", message: "Message", priority_message: "Assistance request",
+};
+
+function enqueue(type, payload){
+  const q = loadQueue();
+  q.push({id:newQueueId(), type, payload, createdAt:new Date().toISOString()});
+  saveQueue(q);
+  updateSyncPill();
+}
+
+// The single entry point every write in this app goes through. Tries the
+// real call first; if the network genuinely isn't there, it queues instead
+// of failing. If the SERVER responds (even with a rejection), that's not a
+// connectivity problem — it's surfaced immediately, not queued, because
+// retrying a rejected action later would just fail again silently.
+async function callOrQueue(type, payload){
+  if(!navigator.onLine){
+    enqueue(type, payload);
+    return {queued:true};
+  }
+  try{
+    const result = await QUEUE_HANDLERS[type](payload);
+    if(!result.error){
+      markSynced();
+      flushQueue(); // catch up any older backlog now that we know we're online
+    }
+    return result;
+  }catch(e){
+    // A thrown exception here means the fetch itself never reached the
+    // server — that's a connectivity failure, not an application error
+    enqueue(type, payload);
+    return {queued:true};
+  }
+}
+
+let flushing = false;
+async function flushQueue(){
+  if(flushing) return;
+  flushing = true;
+  try{
+    let q = loadQueue();
+    while(q.length){
+      const item = q[0];
+      const handler = QUEUE_HANDLERS[item.type];
+      if(!handler){ q.shift(); saveQueue(q); q = loadQueue(); continue; }
+      let result;
+      try{
+        result = await handler(item.payload);
+      }catch(e){
+        break; // still offline — stop here, the rest stays queued for next try
+      }
+      if(result.error){
+        // Server reached us and rejected it — move to the failed list instead
+        // of silently dropping it, so the officer can see and act on it
+        const failed = loadFailed();
+        failed.push({...item, failedAt:new Date().toISOString(), reason: result.error.message || "Rejected by server"});
+        saveFailed(failed);
+      }
+      q.shift();
+      saveQueue(q);
+      q = loadQueue();
+    }
+    if(loadQueue().length === 0) markSynced();
+  } finally {
+    flushing = false;
+    updateSyncPill();
+  }
+}
+
+function updateSyncPill(){
+  const pill = document.getElementById("syncPill");
+  if(!pill) return;
+  const pending = loadQueue().length;
+  const failed = loadFailed().length;
+  if(pending > 0){
+    pill.textContent = `Offline — ${pending} pending`;
+    pill.className = "sync-pill warn";
+  } else if(failed > 0){
+    pill.textContent = `${failed} item${failed===1?"":"s"} failed to sync`;
+    pill.className = "sync-pill danger";
+  } else {
+    const ts = lastSyncAt();
+    const t = ts ? timeInState(ts) : null;
+    pill.textContent = !t ? "Synced" : t === "just now" ? "Synced just now" : `Synced ${t} ago`;
+    pill.className = "sync-pill ok";
+  }
+}
+
+setInterval(flushQueue, 20000);
+window.addEventListener("online", flushQueue);
+
 async function setOfficerStatus(status){
-  const {error} = await sb.rpc("officer_set_status", {p_officer_id: state.officer.id, p_pin: state.pin, p_status: status});
+  const {error} = await callOrQueue("status", {p_officer_id: state.officer.id, p_pin: state.pin, p_status: status});
   if(error) console.error("Status update failed:", error);
   return !error;
 }
@@ -402,6 +561,16 @@ function timeInState(since){
   if(mins < 60) return `${mins}m`;
   const h = Math.floor(mins/60), m = mins%60;
   return `${h}h ${m}m`;
+}
+
+function avatarStyle(name){
+  let hash = 0;
+  for(let i=0; i<name.length; i++){ hash = name.charCodeAt(i) + ((hash<<5)-hash); }
+  const hue = Math.abs(hash) % 360;
+  return `background:linear-gradient(135deg, hsl(${hue} 70% 48%), hsl(${(hue+45)%360} 65% 30%));`;
+}
+function initialsOf(name){
+  return (name||"").split(" ").map(x=>x[0]).filter(Boolean).slice(0,2).join("").toUpperCase();
 }
 
 const icons = {
@@ -482,10 +651,13 @@ async function renderHome(){
   const hasUnread = myMessages && myMessages[0] && myMessages[0].sender==="admin" && myMessages[0].created_at > lastSeen;
   const onDuty = !!state.shift;
 
-  let officerRow = null, patrolProgress = null;
+  let officerRow = null, patrolProgress = null, onDutyPeers = [], weeklyVerified = null;
   if(onDuty){
     const {data: o} = await sb.from("officers").select("*").eq("id", state.officer.id).single();
     officerRow = o;
+    if(state.localStatus && officerRow?.status === state.localStatus){
+      state.localStatus = null; state.localStatusAt = null; // server confirmed it — stop overriding
+    }
     const {data: activePatrol} = await sb.from("patrols").select("*")
       .eq("site_id", state.site.id).eq("officer_id", state.officer.id).eq("status","active").maybeSingle();
     if(activePatrol){
@@ -496,18 +668,32 @@ async function renderHome(){
       const doneCount = new Set((scans||[]).map(s=>s.checkpoint_id)).size;
       patrolProgress = {done: doneCount, total: (cps||[]).length};
     }
+
+    const weekAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+    const [{data: peers}, {data: weekScans}] = await Promise.all([
+      sb.from("officers").select("id,name,callsign,status,site_id").neq("id", state.officer.id).neq("status","off_duty"),
+      sb.from("checkpoint_scans").select("id,verified").eq("officer_id", state.officer.id).eq("verified", true).gte("scanned_at", weekAgo),
+    ]);
+    onDutyPeers = peers || [];
+    weeklyVerified = (weekScans || []).length;
   }
 
-  const status = officerRow?.status || "on_duty";
+  // Prefer what the officer just picked over what we fetched — if a status
+  // change is still sitting in the offline queue, the server hasn't caught
+  // up yet, but the banner should show what they actually chose, not stale data
+  const status = state.localStatus || officerRow?.status || "on_duty";
+  const statusSince = state.localStatus ? state.localStatusAt : officerRow?.status_changed_at;
   const statusColor = STATUS_COLOR[status] || "var(--gold)";
   const patrolLabel = patrolProgress ? `Resume Patrol — ${patrolProgress.done} of ${patrolProgress.total}` : "Start Patrol";
 
   app.innerHTML = `
     <div class="screen">
       <div class="topbar">
-        <div class="brand">${icons.lion}<div class="brand-text"><div class="l">${state.officer.name}</div><div class="s">${state.officer.callsign}</div></div></div>
-        ${!onDuty ? `<div class="status-pill"><span class="dot"></span>Off Duty</div>` : ""}
+        <div class="brand"><div class="avatar" style="${avatarStyle(state.officer.name)}">${initialsOf(state.officer.name)}</div><div class="brand-text"><div class="l">${state.officer.name}</div><div class="s">${state.officer.callsign}</div></div></div>
+        ${!onDuty ? `<div class="status-pill"><span class="dot"></span>Off Duty</div>` : `<span id="syncPill" class="sync-pill ok"></span>`}
       </div>
+
+      ${loadFailed().length ? `<div class="muted-link" id="syncIssuesLink" style="color:var(--danger); margin:-14px 0 14px;">${loadFailed().length} item${loadFailed().length===1?"":"s"} failed to sync — Review</div>` : ""}
 
       ${onDuty ? `
         <div class="status-console" id="statusBanner" style="cursor:pointer; --sc-accent:${statusColor};">
@@ -515,11 +701,21 @@ async function renderHome(){
             <div>
               <div class="eyebrow">${STATUS_LABEL[status] || status}</div>
               <h3>${state.site?.name || "Assigned site"}</h3>
-              <p>${officerRow ? timeInState(officerRow.status_changed_at) : ""} in this state</p>
+              <p>${statusSince ? timeInState(statusSince) : ""} in this state</p>
             </div>
-            <span class="pulse"></span>
+            <div style="display:flex; flex-direction:column; align-items:center; gap:8px; flex-shrink:0;">
+              <span class="pulse"></span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" width="14" height="14"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
           </div>
+          <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;">Tap to update status</div>
         </div>
+        ${weeklyVerified !== null ? `
+          <div style="display:flex; align-items:center; gap:8px; margin:-2px 0 14px 4px; color:var(--muted); font-size:12px;">
+            <span class="icon20" style="width:14px; height:14px; color:var(--success);">${icons.shield}</span>
+            <span>${weeklyVerified} verified round${weeklyVerified===1?'':'s'} this week</span>
+          </div>
+        ` : ""}
       ` : ""}
 
       <div class="card dispatch-card" id="tileMessages" style="cursor:pointer;">
@@ -538,7 +734,28 @@ async function renderHome(){
       ${onDuty ? `
         <button class="btn btn-primary" id="btnPatrol" style="margin-top:6px;">${icons.shield}${patrolLabel}</button>
         <button class="btn btn-secondary" id="btnIncident">${icons.warning}Log Incident</button>
+
+        ${onDutyPeers.length ? `
+          <div class="card" style="margin-top:18px;">
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; margin-bottom:10px;">On Duty Now</div>
+            ${onDutyPeers.map(p=>{
+              const peerSite = (sites||[]).find(s=>s.id===p.site_id);
+              return `<div style="display:flex; align-items:center; gap:10px; padding:6px 0;">
+                <div class="avatar sm" style="${avatarStyle(p.name)}">${initialsOf(p.name)}</div>
+                <div style="flex:1;">
+                  <div style="font-size:13px;">${p.name}</div>
+                  <div style="font-size:11px; color:var(--muted);">${peerSite?.name || "—"} · ${(STATUS_LABEL[p.status]||p.status)}</div>
+                </div>
+              </div>`;
+            }).join("")}
+          </div>
+        ` : ""}
+
         <button class="btn btn-assist" id="btnAssist" style="margin-top:18px;">${icons.siren}Need Assistance</button>
+        <div style="display:flex; gap:10px; margin-top:8px;">
+          <a href="tel:911" class="btn btn-secondary" style="margin-top:0; font-size:14px; padding:12px;">Call 911</a>
+          ${COMMAND_PHONE ? `<a href="tel:${COMMAND_PHONE}" class="btn btn-secondary" style="margin-top:0; font-size:14px; padding:12px;">Call Command</a>` : ""}
+        </div>
         <button class="btn btn-danger" id="clockOutBtn" style="margin-top:18px;">${icons.logout}End Shift</button>
 
         <div style="display:flex; justify-content:center; gap:18px; margin-top:16px;">
@@ -592,30 +809,18 @@ async function renderHome(){
       const loc = await getLocation();
       const mapsLink = (loc.lat && loc.lng) ? `https://maps.google.com/?q=${loc.lat},${loc.lng}` : "location unavailable";
       const body = `NEED ASSISTANCE — ${state.officer.name} at ${state.site?.name || "unknown site"}. Location: ${mapsLink}`;
-      const {error} = await sb.rpc("officer_send_priority_message", {p_officer_id: state.officer.id, p_pin: state.pin, p_body: body});
-      if(error){ toast("Couldn't send — try again or call directly.", "danger"); btn.disabled=false; btn.textContent="Need Assistance"; return; }
+      const result = await callOrQueue("priority_message", {p_officer_id: state.officer.id, p_pin: state.pin, p_body: body});
+      if(result.error){ toast("Couldn't send — try again or call directly.", "danger"); btn.disabled=false; btn.textContent="Need Assistance"; return; }
       vibrate([100,60,100,60,100]);
-      toast("Assistance request sent to Command", "success");
+      if(result.queued){
+        toast("No signal — request queued, will send the instant you're back in range. Call 911 if this is an emergency.", "danger");
+      } else {
+        toast("Assistance request sent to Command", "success");
+      }
       btn.disabled = false; btn.textContent = "Need Assistance";
     };
 
-    document.getElementById("clockOutBtn").onclick = async ()=>{
-      const loc = await getLocation();
-      const {error} = await sb.rpc("officer_clock_out", {
-        p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id,
-        p_lat: loc.lat, p_lng: loc.lng
-      });
-      if(error){ toast("Couldn't clock out — try again.", "danger"); return; }
-      const shiftClockIn = state.shift.clock_in_at;
-      const shiftSite = state.site;
-      stopLocationPings();
-      state.shift = null; state.site = null;
-      saveSession();
-      vibrate(60);
-      toast("Clocked out", "success");
-      sendShiftReportEmail(shiftClockIn, shiftSite); // fire-and-forget, doesn't block clock-out
-      renderHome();
-    };
+    document.getElementById("clockOutBtn").onclick = renderEndShiftSummary;
   }
 
   document.getElementById("signOutLink").onclick = ()=>{
@@ -625,6 +830,37 @@ async function renderHome(){
   };
 
   document.getElementById("tileMessages").onclick = renderMessages;
+
+  if(onDuty){
+    updateSyncPill();
+    const issuesLink = document.getElementById("syncIssuesLink");
+    if(issuesLink) issuesLink.onclick = renderSyncIssues;
+  }
+}
+
+async function renderSyncIssues(){
+  const failed = loadFailed();
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Sync Issues</h1>
+      <p class="sub">These were rejected by the server and won't retry automatically — check with Command if needed.</p>
+      ${failed.length ? failed.map(f=>`
+        <div class="card">
+          <h3 style="font-size:15px;">${QUEUE_LABEL[f.type] || f.type}</h3>
+          <p>${new Date(f.createdAt).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"})} — ${f.reason || "Unknown error"}</p>
+          <button class="btn btn-secondary" data-dismiss="${f.id}" style="margin-top:10px;">Dismiss</button>
+        </div>
+      `).join("") : `<div class="empty" style="padding:20px 0; text-align:center; color:var(--muted);">Nothing here</div>`}
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+  document.querySelectorAll("[data-dismiss]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const remaining = loadFailed().filter(f=>f.id!==btn.dataset.dismiss);
+      saveFailed(remaining);
+      renderSyncIssues();
+    };
+  });
 }
 
 async function renderChangeStatus(){
@@ -644,6 +880,8 @@ async function renderChangeStatus(){
       btn.disabled = true;
       const ok = await setOfficerStatus(btn.dataset.status);
       if(!ok){ toast("Couldn't update status — try again.", "danger"); btn.disabled=false; return; }
+      state.localStatus = btn.dataset.status;
+      state.localStatusAt = new Date().toISOString();
       vibrate(40);
       renderHome();
     };
@@ -706,8 +944,9 @@ async function renderPatrol(){
 
   function scanStatusFor(cpId){
     const s = state.scans.find(s=>s.checkpoint_id===cpId);
-    if(!s) return "pending";
-    return s.verified ? "done" : "unverified";
+    if(s) return s.verified ? "done" : "unverified";
+    if(state.locallyMarked && state.locallyMarked.has(cpId)) return "queued";
+    return "pending";
   }
 
   const total = (checkpoints||[]).length;
@@ -724,7 +963,7 @@ async function renderPatrol(){
       <div class="card" style="margin-top:18px;">
         ${(checkpoints||[]).map(cp=>{
           const st = scanStatusFor(cp.id);
-          const label = st==="pending" ? "Pending" : st==="done" ? "Verified" : "Too far";
+          const label = st==="pending" ? "Pending" : st==="done" ? "Verified" : st==="queued" ? "Saved — syncing" : "Too far";
           return `<div class="checkpoint-row">
             <span>${cp.seq}. ${cp.name}</span>
             <span style="display:flex; align-items:center; gap:8px;">
@@ -753,17 +992,18 @@ async function confirmAllClear(checkpoints){
   const btn = document.getElementById("allClearBtn");
   if(btn){ btn.disabled = true; btn.textContent = "Saving…"; }
 
-  await sb.from("patrols").update({status:"completed", completed_at:new Date().toISOString()}).eq("id", state.patrol.id);
-  const {error} = await sb.rpc("officer_submit_patrol_report", {
+  const completedAt = new Date().toISOString();
+  await callOrQueue("complete_patrol", {patrol_id: state.patrol.id, completed_at: completedAt});
+  const result = await callOrQueue("patrol_report", {
     p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
     p_patrol_type: "foot", p_started_at: state.patrol.started_at,
     p_areas_patrolled: `All ${checkpoints.length} checkpoint${checkpoints.length===1?"":"s"}`,
     p_details: "Round completed — all clear, nothing to report.",
     p_activity_types: ["Nothing to report"], p_media_urls: []
   });
-  if(error){ toast("Couldn't save — try again.", "danger"); if(btn){ btn.disabled=false; btn.textContent="Round Complete — All Clear"; } return; }
+  if(result.error){ toast("Couldn't save — try again.", "danger"); if(btn){ btn.disabled=false; btn.textContent="Round Complete — All Clear"; } return; }
   vibrate(80);
-  toast("Round marked complete", "success");
+  toast(result.queued ? "Saved offline — will sync when back in range" : "Round marked complete", result.queued ? "danger" : "success");
   renderHome();
 }
 
@@ -799,17 +1039,24 @@ async function renderManualCheckpoint(checkpointId, checkpoints){
     const btn = document.getElementById("manualSubmitBtn");
     btn.disabled = true; btn.textContent = "Saving…";
     const loc = await getLocation();
-    const {data, error} = await sb.rpc("officer_manual_checkpoint", {
+    const result = await callOrQueue("manual_checkpoint", {
       p_officer_id: state.officer.id, p_pin: state.pin, p_patrol_id: state.patrol.id,
       p_checkpoint_id: cp.id, p_lat: loc.lat, p_lng: loc.lng, p_reason: reason
     });
-    if(error){
+    if(result.error){
       document.getElementById("manualErr").textContent = "Couldn't save — try again.";
       btn.disabled = false; btn.textContent = "Confirm — I'm At This Checkpoint";
       return;
     }
-    vibrate(data.verified ? 80 : [40,60,40]);
-    toast(data.verified ? `${cp.name} marked ✓` : `${cp.name} marked, but you're too far`, data.verified ? "success" : "danger");
+    if(result.queued){
+      state.locallyMarked = state.locallyMarked || new Set();
+      state.locallyMarked.add(cp.id);
+      vibrate(60);
+      toast(`${cp.name} saved offline — will verify once synced`, "danger");
+    } else {
+      vibrate(result.data.verified ? 80 : [40,60,40]);
+      toast(result.data.verified ? `${cp.name} marked ✓` : `${cp.name} marked, but you're too far`, result.data.verified ? "success" : "danger");
+    }
     renderPatrol();
   };
 }
@@ -830,12 +1077,18 @@ function startQrScan(checkpoints){
     vibrate(60);
 
     const loc = await getLocation();
-    const {data, error} = await sb.rpc("officer_scan_checkpoint", {
+    const result = await callOrQueue("checkpoint_scan", {
       p_officer_id: state.officer.id, p_pin: state.pin, p_patrol_id: state.patrol.id,
       p_checkpoint_id: cp.id, p_lat: loc.lat, p_lng: loc.lng, p_photo_url: null
     });
-    if(error){ vibrate([40,60,40]); toast("Scan failed — try again.", "danger"); }
-    else if(data.verified){ vibrate(80); toast(`${cp.name} verified ✓`, "success"); }
+    if(result.error){ vibrate([40,60,40]); toast("Scan failed — try again.", "danger"); }
+    else if(result.queued){
+      state.locallyMarked = state.locallyMarked || new Set();
+      state.locallyMarked.add(cp.id);
+      vibrate(60);
+      toast(`${cp.name} saved offline — will verify once synced`, "danger");
+    }
+    else if(result.data.verified){ vibrate(80); toast(`${cp.name} verified ✓`, "success"); }
     else { vibrate([40,60,40]); toast(`${cp.name} scanned, but you're too far from the checkpoint`, "danger"); }
     renderPatrol();
   }, ()=>{}).then(()=>{
@@ -941,18 +1194,21 @@ async function renderLogPatrol(){
     }
 
     btn.textContent = "Saving…";
-    const {error} = await sb.rpc("officer_submit_patrol_report", {
+    const result = await callOrQueue("patrol_report", {
       p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
       p_patrol_type: patrolType, p_started_at: startedAt, p_areas_patrolled: areas,
       p_details: details, p_activity_types: activityTypes, p_media_urls: mediaUrls
     });
 
-    if(error){
+    if(result.error){
       document.getElementById("patrolErr").textContent = "Couldn't save — try again.";
       btn.disabled = false; btn.textContent = "Save Patrol Report";
       return;
     }
-    toast(uploadFailCount ? `Saved — but ${uploadFailCount} file(s) failed to upload` : "Patrol report saved", uploadFailCount ? "danger" : "success");
+    const msg = result.queued
+      ? "Saved offline — will sync when back in range" + (uploadFailCount ? `, ${uploadFailCount} file(s) also failed to upload` : "")
+      : (uploadFailCount ? `Saved — but ${uploadFailCount} file(s) failed to upload` : "Patrol report saved");
+    toast(msg, (result.queued || uploadFailCount) ? "danger" : "success");
     renderHome();
   }
 
@@ -960,6 +1216,83 @@ async function renderLogPatrol(){
 }
 
 let messagesPollId = null;
+
+async function renderEndShiftSummary(){
+  const clockInAt = state.shift.clock_in_at;
+  const site = state.site;
+  const nowIso = new Date().toISOString();
+  const durationMins = Math.floor((Date.now() - new Date(clockInAt).getTime())/60000);
+  const durationText = durationMins < 60 ? `${durationMins}m` : `${Math.floor(durationMins/60)}h ${durationMins%60}m`;
+
+  const [scansRes, incidentsRes, reportsRes, checkpointsRes] = await Promise.all([
+    sb.from("checkpoint_scans").select("verified").eq("officer_id", state.officer.id).gte("scanned_at", clockInAt).lte("scanned_at", nowIso),
+    sb.from("incidents").select("title,severity").eq("officer_id", state.officer.id).gte("occurred_at", clockInAt).lte("occurred_at", nowIso),
+    sb.from("patrol_reports").select("id").eq("officer_id", state.officer.id).gte("started_at", clockInAt).lte("ended_at", nowIso),
+    sb.from("checkpoints").select("id").eq("site_id", site?.id || ""),
+  ]);
+  const scans = scansRes.data || [];
+  const verified = scans.filter(s=>s.verified).length;
+  const incidents = incidentsRes.data || [];
+  const reportsCount = (reportsRes.data || []).length;
+  const totalCheckpoints = (checkpointsRes.data || []).length;
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>End Shift</h1>
+      <p class="sub">${site?.name || "—"} · ${durationText} on duty</p>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border);">
+          <span style="color:var(--muted); font-size:13px;">Checkpoints</span>
+          <span style="font-size:13px;">${verified} of ${totalCheckpoints || scans.length} verified</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border);">
+          <span style="color:var(--muted); font-size:13px;">Patrol reports</span>
+          <span style="font-size:13px;">${reportsCount}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:8px 0;">
+          <span style="color:var(--muted); font-size:13px;">Incidents</span>
+          <span style="font-size:13px;">${incidents.length}</span>
+        </div>
+        ${incidents.length ? `
+          <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+            ${incidents.map(i=>`<div style="font-size:12px; color:var(--muted); padding:2px 0;">• ${i.title} (${i.severity})</div>`).join("")}
+          </div>
+        ` : ""}
+      </div>
+
+      <label>Final Note (optional)</label>
+      <textarea id="finalNote" placeholder="Anything Command should know before you go…"></textarea>
+
+      <button class="btn btn-danger" id="confirmEndShiftBtn" style="margin-top:18px;">${icons.logout}Confirm — End Shift</button>
+      <button class="btn btn-secondary" id="cancelEndShiftBtn">Cancel</button>
+    </div>`;
+
+  document.getElementById("backBtn").onclick = renderHome;
+  document.getElementById("cancelEndShiftBtn").onclick = renderHome;
+
+  document.getElementById("confirmEndShiftBtn").onclick = async ()=>{
+    const btn = document.getElementById("confirmEndShiftBtn");
+    btn.disabled = true; btn.textContent = "Ending shift…";
+    const finalNote = document.getElementById("finalNote").value.trim();
+
+    const loc = await getLocation();
+    const {error} = await sb.rpc("officer_clock_out", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id,
+      p_lat: loc.lat, p_lng: loc.lng
+    });
+    if(error){ toast("Couldn't clock out — try again.", "danger"); btn.disabled=false; btn.textContent="Confirm — End Shift"; return; }
+
+    stopLocationPings();
+    state.shift = null; state.site = null;
+    saveSession();
+    vibrate(60);
+    toast("Clocked out", "success");
+    sendShiftReportEmail(clockInAt, site, finalNote); // fire-and-forget, doesn't block clock-out
+    renderHome();
+  };
+}
 
 async function renderMessages(){
   localStorage.setItem("lp_last_seen_msg_"+state.officer.id, new Date().toISOString());
@@ -985,6 +1318,9 @@ async function renderMessages(){
       <h1 style="margin-bottom:2px;">Command</h1>
       <p class="sub">Message thread</p>
       <div id="msgList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px 0;"></div>
+      <div class="chip-row" id="quickReplyRow" style="margin-top:10px;">
+        ${["On site","Starting round","All clear","En route","Standing by"].map(q=>`<div class="chip" data-quick="${q}">${q}</div>`).join("")}
+      </div>
       <div style="display:flex; gap:8px; margin-top:10px;">
         <input type="text" id="msgInput" placeholder="Type a message…" style="flex:1;" />
         <button class="btn btn-primary" id="msgSendBtn" style="flex-shrink:0; width:auto; padding:0 18px;">Send</button>
@@ -996,18 +1332,44 @@ async function renderMessages(){
     renderHome();
   };
 
+  async function sendMsg(body){
+    const result = await callOrQueue("message", {p_officer_id: state.officer.id, p_pin: state.pin, p_body: body});
+    if(result.error){ toast("Couldn't send — try again.", "danger"); return; }
+    vibrate(40);
+    if(result.queued){
+      // Show it in the thread immediately even though it hasn't synced yet —
+      // the data is safely queued either way, this is just so the chat
+      // doesn't look like it silently ate the message
+      const list = document.getElementById("msgList");
+      if(list){
+        const row = document.createElement("div");
+        row.className = "msg-row officer";
+        row.innerHTML = `<div class="msg-bubble officer" style="opacity:.6;">${escapeHtmlLocal(body)}<div style="font-size:10px; margin-top:3px; opacity:.8;">Sending when back in range…</div></div>`;
+        list.appendChild(row);
+        list.scrollTop = list.scrollHeight;
+      }
+      return;
+    }
+    await loadAndDraw();
+  }
+
   document.getElementById("msgSendBtn").onclick = async ()=>{
     const input = document.getElementById("msgInput");
     const body = input.value.trim();
     if(!body) return;
     input.value = "";
-    const {error} = await sb.rpc("officer_send_message", {p_officer_id: state.officer.id, p_pin: state.pin, p_body: body});
-    if(error){ toast("Couldn't send — try again.", "danger"); return; }
-    await loadAndDraw();
+    await sendMsg(body);
   };
   document.getElementById("msgInput").onkeydown = (e)=>{
     if(e.key === "Enter") document.getElementById("msgSendBtn").click();
   };
+  document.querySelectorAll("[data-quick]").forEach(chip=>{
+    chip.onclick = async ()=>{
+      chip.style.pointerEvents = "none";
+      await sendMsg(chip.dataset.quick);
+      chip.style.pointerEvents = "";
+    };
+  });
 
   await loadAndDraw();
   messagesPollId = setInterval(loadAndDraw, 5000);
@@ -1076,18 +1438,21 @@ async function renderIncident(){
     }
 
     const loc = await getLocation();
-    const {error} = await sb.rpc("officer_submit_incident", {
+    const result = await callOrQueue("incident", {
       p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
       p_title: title, p_category: category, p_severity: severity, p_description: desc,
       p_lat: loc.lat, p_lng: loc.lng, p_photo_urls: photoUrls
     });
 
-    if(error){
+    if(result.error){
       document.getElementById("incErr").textContent = "Couldn't submit — try again.";
       btn.disabled = false; btn.textContent = "Submit Report";
       return;
     }
-    toast(photoUploadFailed ? "Report submitted — but the photo failed to upload" : "Incident report submitted", photoUploadFailed ? "danger" : "success");
+    const msg = result.queued
+      ? "Saved offline — will sync when back in range" + (photoUploadFailed ? ", photo also failed to upload" : "")
+      : (photoUploadFailed ? "Report submitted — but the photo failed to upload" : "Incident report submitted");
+    toast(msg, (result.queued || photoUploadFailed) ? "danger" : "success");
     renderHome();
   }
 
