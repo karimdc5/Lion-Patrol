@@ -86,7 +86,7 @@
   .card p{margin:0; color:var(--muted); font-size:13px;}
   .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
   .action-tile{background:linear-gradient(160deg,var(--surface),var(--bg) 140%); border:1px solid var(--border); border-radius:16px; padding:20px 14px;
-    text-align:center; color:var(--fg); transition:transform .08s ease, background .08s ease; box-shadow:var(--shadow-sm);}
+    text-align:center; color:var(--fg); cursor:pointer; transition:transform .08s ease, background .08s ease; box-shadow:var(--shadow-sm);}
   .action-tile:active{transform:scale(.96); background:var(--raised);}
   .action-tile svg{width:26px; height:26px; margin-bottom:8px; color:var(--gold);}
   .action-tile div{font-size:13px; font-weight:600;}
@@ -861,6 +861,9 @@ const icons = {
   chat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.4 8.4 0 0 1-8.4 8.4H12a8.4 8.4 0 0 1-3.4-.7L3 21l1.9-5.7A8.4 8.4 0 1 1 21 11.5z"/></svg>`,
   siren: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2a7 7 0 0 0-7 7v6h14V9a7 7 0 0 0-7-7z"/><path d="M5 15h14v3a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1zM12 2V0M8 3l-1-1M16 3l1-1"/></svg>`,
   lion: `<svg viewBox="0 0 64 64" fill="currentColor"><path d="M14 50c3.2-7.4 7.1-12.4 12.4-16.2-.5-3.6.3-7.7 3.2-10.4 2.5-2.3 6-3 9.2-2 .9-3 3.7-5.5 7.4-6 .7 3.2-.3 6.4-2.6 8.4 2.8 1.6 4.6 4.6 4.6 8 0 2.4-.9 4.6-2.4 6.3 3.6 3.6 6.1 8.1 7.6 11.9H14zm17.2-21c-1.6 1.3-2.2 3.5-1.7 5.5l7.5-2.4c-.4-2.6-3-4.5-5.8-3.1z"/></svg>`,
+  mappin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`,
+  people: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  swap: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 3l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 21l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`,
 };
 
 // =========================================================
@@ -895,7 +898,7 @@ async function renderLogin(){
 
     document.getElementById("officerSelect").onchange = (e)=>{ selected = e.target.value || null; draw(); };
     document.querySelectorAll(".key[data-n]").forEach(b=>{
-      b.onclick = ()=>{ if(pin.length<6){ pin += b.dataset.n; draw(); } };
+      b.onclick = ()=>{ if(pin.length<4){ pin += b.dataset.n; draw(); } };
     });
     document.getElementById("clearPin").onclick = ()=>{ pin=""; draw(); };
     document.getElementById("delPin").onclick = ()=>{ pin = pin.slice(0,-1); draw(); };
@@ -1016,12 +1019,12 @@ async function renderHome(){
         </div>
         <button class="btn btn-danger" id="clockOutBtn" style="margin-top:18px;">${icons.logout}End Shift</button>
 
-        <div style="display:flex; justify-content:center; gap:14px; margin-top:16px; flex-wrap:wrap;">
-          <span class="muted-link" id="switchSiteLink" style="margin-top:0;">Switch Site</span>
-          <span class="muted-link" id="logPatrolLink" style="margin-top:0;">General Notes</span>
-          <span class="muted-link" id="historyLink" style="margin-top:0;">Patrol History</span>
-          <span class="muted-link" id="onDutyLink" style="margin-top:0;">On Duty</span>
-          <span class="muted-link" id="mapLink" style="margin-top:0;">Map</span>
+        <div class="grid2" style="margin-top:18px;">
+          <div class="action-tile" id="mapLink">${icons.mappin}<div>Map</div></div>
+          <div class="action-tile" id="onDutyLink">${icons.people}<div>On Duty</div></div>
+          <div class="action-tile" id="historyLink">${icons.clock}<div>Patrol History</div></div>
+          <div class="action-tile" id="logPatrolLink">${icons.clipboard}<div>General Notes</div></div>
+          <div class="action-tile" id="switchSiteLink" style="grid-column:span 2;">${icons.swap}<div>Switch Site</div></div>
         </div>
       ` : `
         <label>Site</label>
@@ -1420,7 +1423,8 @@ async function confirmAllClear(checkpoints){
   if(btn){ btn.disabled = true; btn.textContent = "Saving…"; }
 
   const completedAt = new Date().toISOString();
-  await callOrQueue("complete_patrol", {patrol_id: state.patrol.id, completed_at: completedAt});
+  const completeResult = await callOrQueue("complete_patrol", {patrol_id: state.patrol.id, completed_at: completedAt});
+  if(completeResult.error){ toast("Couldn't complete the round — try again.", "danger"); if(btn){ btn.disabled=false; btn.textContent="Round Complete — All Clear"; } return; }
   const result = await callOrQueue("patrol_report", {
     p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
     p_patrol_type: "foot", p_started_at: state.patrol.started_at,
@@ -1489,16 +1493,22 @@ async function renderManualCheckpoint(checkpointId, checkpoints){
 }
 
 function startQrScan(checkpoints){
+  if(activeScanner) return; // already scanning — ignore a double-tap on the scan button
   const reader = document.getElementById("qr-reader");
   reader.style.display = "block";
   const qr = new Html5Qrcode("qr-reader");
   activeScanner = qr;
   let handled = false;
+  let lastUnrecognizedAt = 0;
 
   qr.start({facingMode:"environment"}, {fps:10, qrbox:220}, async (decodedText)=>{
     if(handled) return;
     const cp = checkpoints.find(c=>c.qr_token===decodedText.trim());
-    if(!cp){ toast("Unrecognized checkpoint code", "danger"); return; }
+    if(!cp){
+      const now = Date.now();
+      if(now - lastUnrecognizedAt > 2500){ toast("Unrecognized checkpoint code", "danger"); lastUnrecognizedAt = now; }
+      return;
+    }
     handled = true;
     await stopActiveScanner();
     vibrate(60);
@@ -1519,10 +1529,17 @@ function startQrScan(checkpoints){
     else { vibrate([40,60,40]); toast(`${cp.name} scanned, but you're too far from the checkpoint`, "danger"); }
     renderPatrol();
   }, ()=>{}).then(()=>{
+    if(activeScanner !== qr){
+      // The screen was backgrounded/left while the camera was still warming up —
+      // stopActiveScanner() already ran against a null activeScanner and missed
+      // this instance. Kill it now instead of leaving an untracked stream live.
+      try{ qr.stop().then(()=>qr.clear()).catch(()=>{}); }catch(e){}
+      return;
+    }
     scannerRunning = true;
     showTorchToggle(qr);
   }).catch(()=>{
-    activeScanner = null;
+    if(activeScanner === qr) activeScanner = null;
     toast("Couldn't access camera — check permissions.", "danger");
     reader.style.display = "none";
   });
@@ -1722,6 +1739,7 @@ async function renderEndShiftSummary(){
 }
 
 async function renderMessages(){
+  if(messagesPollId){ clearInterval(messagesPollId); messagesPollId = null; }
   localStorage.setItem("lp_last_seen_msg_"+state.officer.id, new Date().toISOString());
 
   async function loadAndDraw(){
@@ -1887,8 +1905,9 @@ function renderIncidentDetails(category){
     document.getElementById("selectedCatChip").onclick = renderIncident;
     document.querySelectorAll("#sevRow .chip").forEach(c=>c.onclick=()=>{severity=c.dataset.s; draw();});
     document.getElementById("photoInput").onchange = (e)=>{
+      if(photoPreview) URL.revokeObjectURL(photoPreview);
       photoFile = e.target.files[0] || null;
-      if(photoFile) photoPreview = URL.createObjectURL(photoFile);
+      photoPreview = photoFile ? URL.createObjectURL(photoFile) : null;
       draw();
     };
     document.getElementById("submitBtn").onclick = submit;
