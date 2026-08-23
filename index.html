@@ -168,272 +168,7 @@ if(window.emailjs && EMAILJS_PUBLIC_KEY !== "YOUR_EMAILJS_PUBLIC_KEY"){
   emailjs.init(EMAILJS_PUBLIC_KEY);
 }
 
-// =========================================================
-// DEMO MODE — realistic presentation data for client walkthroughs.
-// Enabled only by adding ?demo=1 to the URL; there is no visible
-// switch anywhere in the UI. Nothing here ever touches the real
-// database — every read/write goes to an in-memory copy that
-// resets the instant the page reloads. Demo PIN for every officer: 1234.
-// =========================================================
-const DEMO_MODE = new URLSearchParams(location.search).get("demo") === "1";
-const DEMO_PIN = "1234";
-
-function buildDemoSeed(){
-  const minAgo = (m)=> new Date(Date.now() - m*60000).toISOString();
-  const hrAgo  = (h)=> new Date(Date.now() - h*3600000).toISOString();
-  const dayAgo = (d)=> new Date(Date.now() - d*86400000).toISOString();
-  const img = (seed)=> `https://picsum.photos/seed/lionpatrol-${seed}/640/480`;
-
-  const sites = [
-    {id:"demo-site-1", name:"Harborview Corporate Campus", code:"SEA-01", kind:"commercial", address:"400 Elliott Ave W", city:"Seattle", lat:47.6205, lng:-122.3629, required_officers:2, status:"secure"},
-    {id:"demo-site-2", name:"Cascade Ridge Apartments", code:"SEA-02", kind:"residential", address:"1200 12th Ave", city:"Seattle", lat:47.6142, lng:-122.3169, required_officers:1, status:"secure"},
-    {id:"demo-site-3", name:"Northgate Retail Plaza", code:"SEA-03", kind:"commercial", address:"401 NE Northgate Way", city:"Seattle", lat:47.7106, lng:-122.3253, required_officers:2, status:"alert"},
-    {id:"demo-site-4", name:"Pier 66 Construction Site", code:"SEA-04", kind:"construction", address:"2601 Alaskan Way", city:"Seattle", lat:47.6097, lng:-122.3467, required_officers:1, status:"unmanned"},
-    {id:"demo-site-5", name:"Emerald Events Center", code:"SEA-05", kind:"event", address:"800 Occidental Ave S", city:"Seattle", lat:47.5980, lng:-122.3316, required_officers:1, status:"secure"},
-  ];
-
-  const officers = [
-    {id:"demo-officer-1", name:"Marcus Webb", callsign:"L1-01", rank:"Officer", phone:"(206) 555-0142", certifications:"Unarmed, First Aid/CPR", active:true, status:"on_duty", site_id:"demo-site-1", status_changed_at:minAgo(42)},
-    {id:"demo-officer-2", name:"Sarah Chen", callsign:"L1-02", rank:"Senior Officer", phone:"(206) 555-0187", certifications:"Unarmed, De-escalation, First Aid/CPR", active:true, status:"on_patrol", site_id:"demo-site-1", status_changed_at:minAgo(12)},
-    {id:"demo-officer-3", name:"David Ortiz", callsign:"L2-01", rank:"Officer", phone:"(206) 555-0164", certifications:"Unarmed", active:true, status:"on_break", site_id:"demo-site-2", status_changed_at:minAgo(8)},
-    {id:"demo-officer-4", name:"Angela Brooks", callsign:"L2-02", rank:"Officer", phone:"(206) 555-0119", certifications:"Unarmed, First Aid/CPR", active:true, status:"off_duty", site_id:null, status_changed_at:dayAgo(1)},
-    {id:"demo-officer-5", name:"James Whitfield", callsign:"L3-01", rank:"Shift Supervisor", phone:"(206) 555-0155", certifications:"Armed, De-escalation, Supervisor", active:true, status:"responding", site_id:"demo-site-3", status_changed_at:minAgo(3)},
-    {id:"demo-officer-6", name:"Priya Nair", callsign:"L3-02", rank:"Officer", phone:"(206) 555-0173", certifications:"Unarmed, First Aid/CPR", active:true, status:"traveling", site_id:"demo-site-3", status_changed_at:minAgo(6)},
-    {id:"demo-officer-7", name:"Tyrell Jackson", callsign:"L4-01", rank:"Officer", phone:"(206) 555-0128", certifications:"Unarmed", active:true, status:"on_duty", site_id:"demo-site-4", status_changed_at:minAgo(95)},
-    {id:"demo-officer-8", name:"Monique Davis", callsign:"L1-03", rank:"Officer", phone:"(206) 555-0196", certifications:"Unarmed", active:false, status:"off_duty", site_id:null, status_changed_at:dayAgo(9)},
-  ];
-
-  const checkpoints = [
-    {id:"demo-cp-1-1", site_id:"demo-site-1", name:"Main Lobby Entrance", seq:1, radius_m:30, lat:47.6206, lng:-122.3628, qr_token:"demo-cp-token-1-1"},
-    {id:"demo-cp-1-2", site_id:"demo-site-1", name:"Parking Garage — Level 2", seq:2, radius_m:30, lat:47.6203, lng:-122.3631, qr_token:"demo-cp-token-1-2"},
-    {id:"demo-cp-1-3", site_id:"demo-site-1", name:"Loading Dock — Rear", seq:3, radius_m:30, lat:47.6201, lng:-122.3625, qr_token:"demo-cp-token-1-3"},
-    {id:"demo-cp-1-4", site_id:"demo-site-1", name:"Rooftop Access", seq:4, radius_m:30, lat:47.6207, lng:-122.3630, qr_token:"demo-cp-token-1-4"},
-    {id:"demo-cp-2-1", site_id:"demo-site-2", name:"Main Gate", seq:1, radius_m:30, lat:47.6143, lng:-122.3168, qr_token:"demo-cp-token-2-1"},
-    {id:"demo-cp-2-2", site_id:"demo-site-2", name:"Pool & Courtyard", seq:2, radius_m:30, lat:47.6141, lng:-122.3171, qr_token:"demo-cp-token-2-2"},
-    {id:"demo-cp-2-3", site_id:"demo-site-2", name:"Mailroom", seq:3, radius_m:30, lat:47.6140, lng:-122.3166, qr_token:"demo-cp-token-2-3"},
-    {id:"demo-cp-3-1", site_id:"demo-site-3", name:"North Entrance", seq:1, radius_m:30, lat:47.7108, lng:-122.3254, qr_token:"demo-cp-token-3-1"},
-    {id:"demo-cp-3-2", site_id:"demo-site-3", name:"Food Court", seq:2, radius_m:30, lat:47.7105, lng:-122.3251, qr_token:"demo-cp-token-3-2"},
-    {id:"demo-cp-3-3", site_id:"demo-site-3", name:"Rear Delivery Bay", seq:3, radius_m:30, lat:47.7104, lng:-122.3256, qr_token:"demo-cp-token-3-3"},
-    {id:"demo-cp-4-1", site_id:"demo-site-4", name:"Site Trailer", seq:1, radius_m:30, lat:47.6098, lng:-122.3468, qr_token:"demo-cp-token-4-1"},
-    {id:"demo-cp-4-2", site_id:"demo-site-4", name:"Crane Zone Perimeter", seq:2, radius_m:30, lat:47.6096, lng:-122.3465, qr_token:"demo-cp-token-4-2"},
-    {id:"demo-cp-5-1", site_id:"demo-site-5", name:"Main Box Office", seq:1, radius_m:30, lat:47.5981, lng:-122.3317, qr_token:"demo-cp-token-5-1"},
-    {id:"demo-cp-5-2", site_id:"demo-site-5", name:"Backstage Access", seq:2, radius_m:30, lat:47.5979, lng:-122.3314, qr_token:"demo-cp-token-5-2"},
-  ];
-
-  const patrols = [
-    {id:"demo-patrol-1", site_id:"demo-site-1", officer_id:"demo-officer-2", name:"Patrol", status:"active", started_at:minAgo(25), completed_at:null},
-    {id:"demo-patrol-2", site_id:"demo-site-3", officer_id:"demo-officer-6", name:"Patrol", status:"active", started_at:minAgo(40), completed_at:null},
-    {id:"demo-patrol-3", site_id:"demo-site-1", officer_id:"demo-officer-1", name:"Patrol", status:"completed", started_at:hrAgo(3), completed_at:hrAgo(2.3)},
-    {id:"demo-patrol-4", site_id:"demo-site-2", officer_id:"demo-officer-3", name:"Patrol", status:"completed", started_at:dayAgo(1), completed_at:dayAgo(1)},
-  ];
-
-  const scans = [
-    {id:"demo-scan-1", patrol_id:"demo-patrol-1", officer_id:"demo-officer-2", checkpoint_id:"demo-cp-1-1", scanned_at:minAgo(24), verified:true, lat:47.6206, lng:-122.3628, photo_url:null},
-    {id:"demo-scan-2", patrol_id:"demo-patrol-1", officer_id:"demo-officer-2", checkpoint_id:"demo-cp-1-2", scanned_at:minAgo(15), verified:true, lat:47.6203, lng:-122.3631, photo_url:null},
-    {id:"demo-scan-3", patrol_id:"demo-patrol-1", officer_id:"demo-officer-2", checkpoint_id:"demo-cp-1-3", scanned_at:minAgo(4), verified:false, lat:47.6215, lng:-122.3601, photo_url:null},
-    {id:"demo-scan-4", patrol_id:"demo-patrol-3", officer_id:"demo-officer-1", checkpoint_id:"demo-cp-1-1", scanned_at:hrAgo(2.9), verified:true, lat:47.6206, lng:-122.3628, photo_url:null},
-    {id:"demo-scan-5", patrol_id:"demo-patrol-3", officer_id:"demo-officer-1", checkpoint_id:"demo-cp-1-2", scanned_at:hrAgo(2.7), verified:true, lat:47.6203, lng:-122.3631, photo_url:null},
-    {id:"demo-scan-6", patrol_id:"demo-patrol-3", officer_id:"demo-officer-1", checkpoint_id:"demo-cp-1-3", scanned_at:hrAgo(2.5), verified:true, lat:47.6201, lng:-122.3625, photo_url:null},
-    {id:"demo-scan-7", patrol_id:"demo-patrol-3", officer_id:"demo-officer-1", checkpoint_id:"demo-cp-1-4", scanned_at:hrAgo(2.35), verified:true, lat:47.6207, lng:-122.3630, photo_url:null},
-  ];
-
-  const incidents = [
-    {id:"demo-incident-1", site_id:"demo-site-1", officer_id:"demo-officer-1", title:"Attempted forced entry — rear loading dock", category:"access", severity:"high", status:"investigating", description:"Found pry marks on the loading dock door frame during the 2am round. Door was secure but showed clear tool damage. Notified the property manager and increased patrol frequency on that entrance overnight.", occurred_at:hrAgo(26), lat:47.6201, lng:-122.3625, photo_urls:[img("inc1a"), img("inc1b")]},
-    {id:"demo-incident-2", site_id:"demo-site-3", officer_id:"demo-officer-5", title:"Broken glass door panel — north entrance", category:"property", severity:"medium", status:"open", description:"Tempered glass panel on the north entrance door cracked, cause unknown — possible attempted break-in or accidental impact. Taped off and maintenance notified.", occurred_at:hrAgo(5), lat:47.7108, lng:-122.3254, photo_urls:[img("inc2a")]},
-    {id:"demo-incident-3", site_id:"demo-site-2", officer_id:"demo-officer-3", title:"Vehicle parked in fire lane", category:"general", severity:"low", status:"resolved", description:"Silver sedan parked blocking the fire lane near building B. Left a courtesy notice; vehicle moved within the hour.", occurred_at:dayAgo(2), lat:47.6142, lng:-122.3169, photo_urls:[img("inc3a")]},
-    {id:"demo-incident-4", site_id:"demo-site-1", officer_id:"demo-officer-2", title:"Suspicious individual near parking garage", category:"safety", severity:"medium", status:"resolved", description:"Individual observed loitering near the Level 2 garage entrance for roughly 20 minutes, not a tenant or visitor on file. Approached and asked to leave; complied without incident.", occurred_at:dayAgo(3), lat:47.6203, lng:-122.3631, photo_urls:[]},
-    {id:"demo-incident-5", site_id:"demo-site-3", officer_id:"demo-officer-6", title:"Medical — visitor fall, EMS called", category:"medical", severity:"high", status:"resolved", description:"Visitor slipped on a wet floor near the food court entrance. Conscious and alert; EMS responded and transported for evaluation as a precaution. Area cordoned and wet-floor signage placed.", occurred_at:dayAgo(5), lat:47.7105, lng:-122.3251, photo_urls:[img("inc5a")]},
-    {id:"demo-incident-6", site_id:"demo-site-4", officer_id:"demo-officer-7", title:"Motion-activated light out — south stairwell", category:"property", severity:"low", status:"open", description:"South stairwell motion light not triggering. Flagged to the site super for bulb/sensor replacement.", occurred_at:hrAgo(1), lat:47.6098, lng:-122.3468, photo_urls:[img("inc6a")]},
-  ];
-
-  const patrolReports = [
-    {id:"demo-report-1", site_id:"demo-site-1", officer_id:"demo-officer-1", patrol_type:"foot", started_at:hrAgo(3), ended_at:hrAgo(2.3), areas_patrolled:"Lobby, Level 1–2 garage, rear loading dock", details:"Standard round, no issues. Loading dock door double-checked after this morning's incident report.", activity_types:["Nothing to report"], media_urls:[]},
-    {id:"demo-report-2", site_id:"demo-site-2", officer_id:"demo-officer-3", patrol_type:"vehicle", started_at:dayAgo(1), ended_at:dayAgo(1), areas_patrolled:"Perimeter loop, guest parking, pool area", details:"Noted one propped fire door near the building C stairwell — closed and reported to management for hinge repair.", activity_types:["Unlocked/broken door"], media_urls:[img("rep2a")]},
-    {id:"demo-report-3", site_id:"demo-site-4", officer_id:"demo-officer-7", patrol_type:"foot", started_at:hrAgo(2), ended_at:hrAgo(1.5), areas_patrolled:"Site trailer, crane zone perimeter, material laydown", details:"Fencing intact, no trespass. Generator running normally.", activity_types:["Nothing to report"], media_urls:[]},
-  ];
-
-  const messages = [
-    {id:"demo-msg-1", officer_id:"demo-officer-1", site_id:"demo-site-1", sender:"admin", body:"Radio check please, over.", is_priority:false, created_at:hrAgo(4)},
-    {id:"demo-msg-2", officer_id:"demo-officer-1", site_id:"demo-site-1", sender:"officer", body:"Copy, radio's five-by-five.", is_priority:false, created_at:hrAgo(3.98)},
-    {id:"demo-msg-3", officer_id:"demo-officer-1", site_id:"demo-site-1", sender:"admin", body:"10-4. Let me know when you start your midnight round.", is_priority:false, created_at:hrAgo(3.95)},
-    {id:"demo-msg-4", officer_id:"demo-officer-5", site_id:"demo-site-3", sender:"officer", body:"NEED ASSISTANCE — James Whitfield at Northgate Retail Plaza. Location: https://maps.google.com/?q=47.7106,-122.3253", is_priority:true, created_at:minAgo(3)},
-    {id:"demo-msg-5", officer_id:"demo-officer-5", site_id:"demo-site-3", sender:"admin", body:"On it — PD notified, ETA 4 min. Stay clear of the entrance.", is_priority:false, created_at:minAgo(2)},
-    {id:"demo-msg-6", officer_id:"demo-officer-6", site_id:"demo-site-3", sender:"officer", body:"Starting round", is_priority:false, created_at:minAgo(40)},
-    {id:"demo-msg-7", officer_id:"demo-officer-6", site_id:"demo-site-3", sender:"admin", body:"Copy — all clear reported at Emerald last week too, good work.", is_priority:false, created_at:minAgo(38)},
-  ];
-
-  const pings = [
-    {id:"demo-ping-1", officer_id:"demo-officer-1", lat:47.6206, lng:-122.3628, recorded_at:minAgo(1)},
-    {id:"demo-ping-2", officer_id:"demo-officer-2", lat:47.6209, lng:-122.3620, recorded_at:minAgo(1)},
-    {id:"demo-ping-3", officer_id:"demo-officer-3", lat:47.6144, lng:-122.3170, recorded_at:minAgo(2)},
-    {id:"demo-ping-4", officer_id:"demo-officer-5", lat:47.7108, lng:-122.3254, recorded_at:minAgo(1)},
-    {id:"demo-ping-5", officer_id:"demo-officer-6", lat:47.7101, lng:-122.3260, recorded_at:minAgo(9)},
-    {id:"demo-ping-6", officer_id:"demo-officer-7", lat:47.6098, lng:-122.3468, recorded_at:minAgo(1)},
-  ];
-
-  const shifts = [
-    {id:"demo-shift-1", officer_id:"demo-officer-1", site_id:"demo-site-1", starts_at:minAgo(42), clock_in_at:minAgo(42), clock_out_at:null},
-    {id:"demo-shift-2", officer_id:"demo-officer-2", site_id:"demo-site-1", starts_at:hrAgo(4), clock_in_at:hrAgo(4), clock_out_at:null},
-    {id:"demo-shift-3", officer_id:"demo-officer-1", site_id:"demo-site-1", starts_at:dayAgo(1), clock_in_at:dayAgo(1), clock_out_at:dayAgo(1)},
-    {id:"demo-shift-4", officer_id:"demo-officer-3", site_id:"demo-site-2", starts_at:minAgo(180), clock_in_at:minAgo(180), clock_out_at:null},
-    {id:"demo-shift-5", officer_id:"demo-officer-5", site_id:"demo-site-3", starts_at:hrAgo(6), clock_in_at:hrAgo(6), clock_out_at:null},
-  ];
-
-  const officer_directory = officers.filter(o=>o.active).map(o=>({id:o.id, name:o.name, callsign:o.callsign, photo_url:null}));
-
-  return {sites, officers, officer_directory, checkpoints, patrols, checkpoint_scans:scans, incidents, patrol_reports:patrolReports, messages, location_pings:pings, shifts, dispatches:[]};
-}
-
-// Generic in-memory stand-in for the Supabase query builder — enough of
-// select/eq/neq/gte/lte/order/limit/single/maybeSingle/insert/update/delete
-// to run this app's existing queries unmodified against demo data.
-function makeDemoClient(seed, rpcHandlers){
-  rpcHandlers = rpcHandlers || {};
-  function newId(){ return "demo-" + Math.random().toString(36).slice(2,10); }
-  function matchRow(row, filters){
-    return filters.every(f=>{
-      const v = row[f.col];
-      switch(f.op){
-        case "eq": return v === f.val;
-        case "neq": return v !== f.val;
-        case "gte": return v >= f.val;
-        case "lte": return v <= f.val;
-        default: return true;
-      }
-    });
-  }
-  function table(name){
-    let filters = [], orderCol = null, orderAsc = true, limitN = null;
-    let wantSingle = false, wantMaybeSingle = false;
-    let insertPayload = null, updatePayload = null, wantDelete = false;
-    const q = {
-      select(){ return q; },
-      eq(c,v){ filters.push({col:c,op:"eq",val:v}); return q; },
-      neq(c,v){ filters.push({col:c,op:"neq",val:v}); return q; },
-      gte(c,v){ filters.push({col:c,op:"gte",val:v}); return q; },
-      lte(c,v){ filters.push({col:c,op:"lte",val:v}); return q; },
-      order(c,opts){ orderCol=c; orderAsc = !(opts && opts.ascending===false); return q; },
-      limit(n){ limitN=n; return q; },
-      single(){ wantSingle=true; return q; },
-      maybeSingle(){ wantMaybeSingle=true; return q; },
-      insert(payload){ insertPayload=payload; return q; },
-      update(payload){ updatePayload=payload; return q; },
-      delete(){ wantDelete=true; return q; },
-      then(resolve){ resolve(run()); },
-    };
-    function run(){
-      if(!seed[name]) seed[name] = [];
-      const arr = seed[name];
-      if(insertPayload){
-        const rows = (Array.isArray(insertPayload) ? insertPayload : [insertPayload]).map(r=>({id:newId(), ...r}));
-        arr.push(...rows);
-        return {data: wantSingle ? rows[0] : rows, error:null};
-      }
-      if(updatePayload){
-        const matched = arr.filter(r=>matchRow(r, filters));
-        matched.forEach(r=>Object.assign(r, updatePayload));
-        return {data: matched, error:null};
-      }
-      if(wantDelete){
-        seed[name] = arr.filter(r=>!matchRow(r, filters));
-        return {data:null, error:null};
-      }
-      let rows = arr.filter(r=>matchRow(r, filters));
-      if(orderCol){
-        rows = rows.slice().sort((a,b)=>{
-          const av=a[orderCol], bv=b[orderCol];
-          if(av===bv) return 0;
-          return (av>bv ? 1 : -1) * (orderAsc ? 1 : -1);
-        });
-      }
-      if(limitN!=null) rows = rows.slice(0, limitN);
-      if(wantSingle) return rows.length ? {data:rows[0], error:null} : {data:null, error:{message:"No rows found"}};
-      if(wantMaybeSingle) return {data: rows[0] || null, error:null};
-      return {data: rows, error:null};
-    }
-    return q;
-  }
-  return {
-    from(name){ return table(name); },
-    rpc(name, params){
-      return { then(resolve){
-        const handler = rpcHandlers[name];
-        resolve(handler ? handler(params, seed) : {data:null, error:{message:`Demo mode: ${name} not implemented`}});
-      }};
-    },
-    storage: {
-      from(){
-        return {
-          upload: async ()=> ({data:{path:"demo"}, error:null}),
-          createSignedUrl: async (path)=> ({data:{signedUrl: path}, error:null}),
-        };
-      }
-    }
-  };
-}
-
-const DEMO_RPC = {
-  verify_officer_pin(params, seed){
-    if(params.p_pin !== DEMO_PIN) return {data:null, error:{message:"Invalid PIN"}};
-    const o = seed.officers.find(x=>x.callsign===params.p_callsign);
-    if(!o) return {data:null, error:{message:"Not found"}};
-    return {data:{id:o.id, name:o.name, callsign:o.callsign, photo_url:null}, error:null};
-  },
-  officer_clock_in(params, seed){
-    const o = seed.officers.find(x=>x.id===params.p_officer_id);
-    if(o){ o.status="on_duty"; o.site_id=params.p_site_id; o.status_changed_at=new Date().toISOString(); }
-    const shift = {id:"demo-shift-"+Date.now(), officer_id:params.p_officer_id, site_id:params.p_site_id, clock_in_at:new Date().toISOString(), clock_out_at:null, starts_at:new Date().toISOString()};
-    seed.shifts.push(shift);
-    return {data:shift, error:null};
-  },
-  officer_clock_out(params, seed){
-    const shift = seed.shifts.find(s=>s.id===params.p_shift_id) || seed.shifts.find(s=>s.officer_id===params.p_officer_id && !s.clock_out_at);
-    if(shift) shift.clock_out_at = new Date().toISOString();
-    const o = seed.officers.find(x=>x.id===params.p_officer_id);
-    if(o){ o.status="off_duty"; o.status_changed_at=new Date().toISOString(); }
-    return {data:{ok:true}, error:null};
-  },
-  officer_ping(params, seed){
-    seed.location_pings.unshift({id:"demo-ping-"+Date.now(), officer_id:params.p_officer_id, lat:params.p_lat, lng:params.p_lng, recorded_at:new Date().toISOString()});
-    return {data:{ok:true}, error:null};
-  },
-  officer_set_status(params, seed){
-    const o = seed.officers.find(x=>x.id===params.p_officer_id);
-    if(o){ o.status = params.p_status; o.status_changed_at = new Date().toISOString(); }
-    return {data:{ok:true}, error:null};
-  },
-  officer_switch_site(params, seed){
-    const o = seed.officers.find(x=>x.id===params.p_officer_id);
-    if(o) o.site_id = params.p_site_id;
-    return {data:{ok:true}, error:null};
-  },
-  officer_scan_checkpoint(params, seed){
-    seed.checkpoint_scans.push({id:"demo-scan-"+Date.now(), patrol_id:params.p_patrol_id, officer_id:params.p_officer_id, checkpoint_id:params.p_checkpoint_id, scanned_at:new Date().toISOString(), verified:true, lat:params.p_lat, lng:params.p_lng, photo_url:params.p_photo_url||null});
-    return {data:{verified:true}, error:null};
-  },
-  officer_manual_checkpoint(params, seed){
-    seed.checkpoint_scans.push({id:"demo-scan-"+Date.now(), patrol_id:params.p_patrol_id, officer_id:params.p_officer_id, checkpoint_id:params.p_checkpoint_id, scanned_at:new Date().toISOString(), verified:true, lat:params.p_lat, lng:params.p_lng, photo_url:null});
-    return {data:{verified:true}, error:null};
-  },
-  officer_submit_incident(params, seed){
-    seed.incidents.unshift({id:"demo-incident-"+Date.now(), site_id:params.p_site_id, officer_id:params.p_officer_id, title:params.p_title, category:params.p_category, severity:params.p_severity, status:"open", description:params.p_description, occurred_at:new Date().toISOString(), lat:params.p_lat, lng:params.p_lng, photo_urls:params.p_photo_urls||[]});
-    return {data:{ok:true}, error:null};
-  },
-  officer_submit_patrol_report(params, seed){
-    seed.patrol_reports.unshift({id:"demo-report-"+Date.now(), site_id:params.p_site_id, officer_id:params.p_officer_id, patrol_type:params.p_patrol_type, started_at:params.p_started_at, ended_at:new Date().toISOString(), areas_patrolled:params.p_areas_patrolled, details:params.p_details, activity_types:params.p_activity_types||[], media_urls:params.p_media_urls||[]});
-    return {data:{ok:true}, error:null};
-  },
-  officer_send_message(params, seed){
-    seed.messages.push({id:"demo-msg-"+Date.now(), officer_id:params.p_officer_id, sender:"officer", body:params.p_body, is_priority:false, created_at:new Date().toISOString()});
-    return {data:{ok:true}, error:null};
-  },
-  officer_send_priority_message(params, seed){
-    seed.messages.push({id:"demo-msg-"+Date.now(), officer_id:params.p_officer_id, sender:"officer", body:params.p_body, is_priority:true, created_at:new Date().toISOString()});
-    return {data:{ok:true}, error:null};
-  },
-};
-
-const sb = DEMO_MODE ? makeDemoClient(buildDemoSeed(), DEMO_RPC) : supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // =========================================================
 // State
@@ -476,10 +211,6 @@ function toast(msg, kind="default"){
 }
 
 async function sendShiftReportEmail(clockInAt, site, finalNote){
-  if(DEMO_MODE){
-    console.log("Demo mode — skipping real shift report email.");
-    return;
-  }
   if(!window.emailjs || EMAILJS_PUBLIC_KEY === "YOUR_EMAILJS_PUBLIC_KEY"){
     console.warn("EmailJS not configured yet — skipping shift report email.");
     return;
@@ -1829,29 +1560,43 @@ const INCIDENT_CATEGORIES = {
   ],
 };
 
-async function renderIncident(){
-  let category = "General Observation", severity = "low", photoFile = null, photoPreview = null;
+function renderIncident(){
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Home</div>
+      <h1>Report Incident</h1>
+      <p class="sub">${state.site.name} — select a category to continue</p>
+      ${Object.entries(INCIDENT_CATEGORIES).map(([group, items])=>`
+        <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; margin:14px 0 6px;">${group}</div>
+        <div class="chip-row">
+          ${items.map(([name, rgb])=>`
+            <div class="chip cat-chip" data-c="${name}" style="background:rgba(${rgb},.18); border:1.5px solid rgb(${rgb});">${name}</div>
+          `).join("")}
+        </div>
+      `).join("")}
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+  document.querySelectorAll(".cat-chip").forEach(c=>c.onclick=()=>{
+    vibrate(30);
+    renderIncidentDetails(c.dataset.c);
+  });
+}
+
+function renderIncidentDetails(category){
+  let severity = "low", photoFile = null, photoPreview = null;
 
   function draw(){
     app.innerHTML = `
       <div class="screen">
-        <div class="backbar" id="backBtn">‹ Home</div>
+        <div class="backbar" id="backBtn">‹ Category</div>
         <h1>Report Incident</h1>
         <p class="sub">${state.site.name}</p>
 
+        <label>Category</label>
+        <div class="chip cat-chip" id="selectedCatChip" style="display:inline-block; cursor:pointer;">${category} — change</div>
+
         <label>Title</label>
         <input type="text" id="title" placeholder="Brief summary" />
-
-        <label>Category</label>
-        ${Object.entries(INCIDENT_CATEGORIES).map(([group, items])=>`
-          <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; margin:12px 0 6px;">${group}</div>
-          <div class="chip-row">
-            ${items.map(([name, rgb])=>`
-              <div class="chip cat-chip" data-c="${name}" style="background:rgba(${rgb},.18); border:1.5px solid rgb(${rgb});
-                ${category===name ? `box-shadow:0 0 0 2px var(--gold), 0 0 12px rgba(201,168,106,.3);` : ""}">${name}</div>
-            `).join("")}
-          </div>
-        `).join("")}
 
         <label>Severity</label>
         <div class="chip-row" id="sevRow">
@@ -1869,8 +1614,8 @@ async function renderIncident(){
         <button class="btn btn-primary" id="submitBtn" style="margin-top:18px;">Submit Report</button>
       </div>`;
 
-    document.getElementById("backBtn").onclick = renderHome;
-    document.querySelectorAll(".cat-chip").forEach(c=>c.onclick=()=>{category=c.dataset.c; draw();});
+    document.getElementById("backBtn").onclick = renderIncident;
+    document.getElementById("selectedCatChip").onclick = renderIncident;
     document.querySelectorAll("#sevRow .chip").forEach(c=>c.onclick=()=>{severity=c.dataset.s; draw();});
     document.getElementById("photoInput").onchange = (e)=>{
       photoFile = e.target.files[0] || null;
