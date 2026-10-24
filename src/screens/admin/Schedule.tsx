@@ -34,7 +34,7 @@ export function Schedule() {
   };
   return (
     <Screen tabbar>
-      <TopBar title="Schedule" large right={<><Button variant="primary" icon="plus" onClick={() => setEdit(newShift())} data-testid="add-shift">Shift</Button><SyncPill /></>} />
+      <TopBar title="Schedule" large right={<SyncPill />} action={<Button variant="primary" icon="plus" onClick={() => setEdit(newShift())} data-testid="add-shift">Shift</Button>} />
       <div class="screen-body stack">
         <div class="row-between">
           <button class="icon-btn" aria-label="Previous week" onClick={() => setWeek(week - 1)}><Icon name="chevron-left" /></button>

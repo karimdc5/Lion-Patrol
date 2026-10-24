@@ -47,14 +47,16 @@ h1, h2, h3, p { margin: 0; }
 /* ---------- top bar ---------- */
 .topbar {
   position: sticky; top: 0; z-index: 20;
-  padding: calc(var(--safe-top) + 6px) calc(var(--pad) + var(--safe-right)) 6px calc(var(--pad) + var(--safe-left));
-  background: rgba(10, 15, 28, 0.94);
+  padding: calc(var(--safe-top) + 10px) calc(var(--pad) + var(--safe-right)) 8px calc(var(--pad) + var(--safe-left));
+  background: rgba(10, 15, 28, 0.96);
   -webkit-backdrop-filter: saturate(160%) blur(20px); backdrop-filter: saturate(160%) blur(20px);
   border-bottom: 1px solid transparent;
   transition: border-color var(--dur);
 }
 .topbar.scrolled { border-bottom-color: var(--hairline); }
-.topbar-row { height: 40px; display: flex; align-items: center; gap: 8px; }
+.topbar-row { height: 44px; display: flex; align-items: center; gap: 8px; }
+.topbar-large-row { display: flex; align-items: center; gap: 12px; }
+.topbar-large-row .large-title { flex: 1; min-width: 0; }
 .topbar-title { font-size: var(--fs-headline); font-weight: 600; flex: 1; text-align: center; }
 .topbar-large { padding: 2px 0 6px; }
 .icon-btn {
@@ -211,8 +213,8 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---------- toast ---------- */
-.toast-wrap { position: fixed; left: 0; right: 0; top: calc(var(--safe-top) + 8px); z-index: 90; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 16px; }
-.toast { pointer-events: auto; max-width: 420px; width: 100%; background: rgba(34, 44, 68, 0.96); border: 1px solid var(--hairline-strong); border-radius: 16px; padding: 12px 14px; box-shadow: var(--shadow-pop); display: flex; gap: 10px; align-items: center; font-size: 15px; font-weight: 500; animation: toast-in 240ms var(--ease); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.toast-wrap { position: fixed; left: 0; right: 0; top: calc(var(--safe-top) + 12px); z-index: 90; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 16px; }
+.toast { pointer-events: auto; max-width: 420px; width: 100%; background: #222C44; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.6), 0 2px 6px rgba(0,0,0,.4); display: flex; gap: 10px; align-items: center; font-size: 15px; font-weight: 500; animation: toast-in 240ms var(--ease); }
 .toast svg { width: 20px; height: 20px; flex: none; }
 .toast-success svg { color: var(--success); }
 .toast-error svg { color: var(--danger); }
@@ -425,6 +427,9 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
 .week-day .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); }
 .map-box { height: 260px; border-radius: 16px; overflow: hidden; border: 1px solid var(--hairline); background: var(--raised); }
 .leaflet-container { background: #0b1220 !important; font: inherit; }
-.topbar .btn { height: 36px; padding: 0 12px; font-size: 15px; border-radius: 12px; gap: 6px; }
+.topbar .btn { height: 38px; padding: 0 14px; font-size: 15px; border-radius: 999px; gap: 6px; }
 .topbar .btn svg { width: 18px; height: 18px; }
 .list-row .wrap2 { white-space: normal; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+.row-ctrls { display: flex; gap: 4px; flex: none; }
+.row-ctrls .mini-btn { width: 32px; height: 32px; border-radius: 9px; }

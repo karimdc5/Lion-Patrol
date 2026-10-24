@@ -24,7 +24,7 @@ export function SitesList() {
   const list = (sites.data ?? []).sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
   return (
     <Screen tabbar>
-      <TopBar title="Sites" large right={<>{isAdmin.value && <Button variant="primary" icon="plus" onClick={() => navigate('/a/sites/new')} data-testid="add-site">Add</Button>}<SyncPill /></>} />
+      <TopBar title="Sites" large right={<SyncPill />} action={isAdmin.value ? <Button variant="primary" icon="plus" onClick={() => navigate('/a/sites/new')} data-testid="add-site">Add site</Button> : undefined} />
       <div class="screen-body">
         {sites.loading ? <SkeletonList /> : list.length ? (
           <List>
