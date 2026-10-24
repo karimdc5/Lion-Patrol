@@ -16,6 +16,7 @@ import { shouldShowInstallGuide } from './lib/platform';
 
 const AdminShell = lazyScreen(() => import('./screens/admin/AdminShell'));
 const ClientShell = lazyScreen(() => import('./screens/client/ClientShell'));
+const PortalPage = lazyScreen<{ token: string }>(() => import('./screens/public/Portal'));
 
 export const updateReady = signal<null | (() => void)>(null);
 const installGate = signal(shouldShowInstallGuide());
@@ -44,6 +45,8 @@ function Routes() {
   const p = path.value;
   document.documentElement.dataset.lp = `${ph}|${p}|${uiMode.value}|${identity.value?.memberships.length ?? '-'}`;
   if (p === '/install') return <Install />;
+  const portal = p.match(/^\/p\/([A-Za-z0-9_-]+)/);
+  if (portal) return <PortalPage token={portal[1]!} />;
   if (ph === 'booting') return <div class="screen" aria-busy="true" />;
   if (ph === 'signedOut') {
     if (installGate.value) return <Install onContinue={() => { installGate.value = false; }} />;

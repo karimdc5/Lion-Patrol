@@ -197,3 +197,16 @@ export async function fetchIncidentExtras(incidentId: string) {
     await putServerRows('patrol_incident_events', events);
   } catch { /* offline */ }
 }
+
+// ---------------------------------------------------------------- client portal links
+export async function listPortalLinks(siteId: string): Promise<Row[]> {
+  const { orgId } = ctx();
+  try { await putServerRows('patrol_portal_links', await getBackend().select<Row>('patrol_portal_links', { eq: { site_id: siteId }, order: ['created_at', 'desc'] })); } catch { /* offline */ }
+  return (await listRecords<Row>('patrol_portal_links', orgId)).filter((l) => l.site_id === siteId).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
+export async function createPortalLink(siteId: string, days: number): Promise<{ id: string; token: string; expires_at: string | null }> {
+  return getBackend().rpc('patrol_create_portal_link', { p_site: siteId, p_days: days, p_label: 'Client portal' });
+}
+export async function revokePortalLink(id: string) {
+  await getBackend().rpc('patrol_revoke_portal_link', { p_id: id });
+}

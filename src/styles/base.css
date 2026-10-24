@@ -433,3 +433,5 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
 
 .row-ctrls { display: flex; gap: 4px; flex: none; }
 .row-ctrls .mini-btn { width: 32px; height: 32px; border-radius: 9px; }
+.portal { min-height: 100dvh; padding: calc(var(--safe-top) + 16px) calc(16px + var(--safe-right)) calc(var(--safe-bottom) + 32px) calc(16px + var(--safe-left)); }
+.portal-inner { max-width: 720px; margin: 0 auto; }

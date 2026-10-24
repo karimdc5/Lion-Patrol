@@ -6,7 +6,9 @@ import { lazyScreen } from '../../ui/lazy';
 import { currentOrgId, isAdmin } from '../../auth/session';
 import { sitesFor, checkpointsFor, membersFor } from '../../data/repos/queries';
 import { getRecord, listRecords } from '../../data/repos/records';
-import { newSite, saveSite, saveCheckpoint, reorderCheckpoints, genCode, setSiteAccess } from '../../data/admin';
+import { newSite, saveSite, saveCheckpoint, reorderCheckpoints, genCode, setSiteAccess, listPortalLinks, createPortalLink, revokePortalLink } from '../../data/admin';
+import { PUBLIC_URL } from '../../config';
+import { isNetworkError } from '../../data/backend/types';
 import { getFix } from '../../lib/geo';
 import { sanitizeHtml } from '../../lib/sanitize';
 import { navigate } from '../../router';
@@ -40,7 +42,7 @@ export function SitesList() {
   );
 }
 
-type Tab = 'details' | 'orders' | 'checkpoints' | 'contacts' | 'access';
+type Tab = 'details' | 'orders' | 'checkpoints' | 'contacts' | 'access' | 'portal';
 
 export function SiteEditor({ id }: { id: string }) {
   const isNew = id === 'new';
@@ -67,7 +69,7 @@ export function SiteEditor({ id }: { id: string }) {
       <div class="screen-body stack" style={{ paddingBottom: 110 }}>
         {!isNew && (
           <div class="tabs" role="tablist">
-            {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People']] as Array<[Tab, string]>).map(([k, l]) => (
+            {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People'], ['portal', 'Client portal']] as Array<[Tab, string]>).map(([k, l]) => (
               <button key={k} class={tab === k ? 'active' : ''} onClick={() => setTab(k)} data-testid={`site-tab-${k}`}>{l}</button>
             ))}
           </div>
@@ -106,6 +108,7 @@ export function SiteEditor({ id }: { id: string }) {
         {tab === 'checkpoints' && <CheckpointsTab site={site} />}
         {tab === 'contacts' && <ContactsTab site={site} disabled={!admin} onChange={(contacts) => up({ contacts })} />}
         {tab === 'access' && <AccessTab site={site} disabled={!admin} />}
+        {tab === 'portal' && <PortalTab site={site} />}
       </div>
       {admin && (dirty || isNew) && (tab === 'details' || tab === 'orders' || tab === 'contacts') && (
         <div class="sticky-bar"><Button variant="primary" size="lg" block onClick={() => void save()} disabled={!dirty && !isNew} data-testid="site-save">{isNew ? 'Create site' : 'Save changes'}</Button></div>
@@ -256,6 +259,52 @@ function AccessTab({ site, disabled }: { site: Site; disabled: boolean }) {
           ) : <p class="muted sub" style={{ padding: '0 4px' }}>No {String(label).toLowerCase()} yet. Invite them from People.</p>}
         </div>
       ))}
+    </div>
+  );
+}
+
+function PortalTab({ site }: { site: Site }) {
+  const [tick, setTick] = useState(0);
+  const links = useData(() => listPortalLinks(site.id), [site.id, tick]);
+  const [days, setDays] = useState(90);
+  const [fresh, setFresh] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const base = location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? `${location.origin}${import.meta.env.BASE_URL}` : PUBLIC_URL;
+  const url = fresh ? `${base}p/${fresh}` : '';
+  const active = (links.data ?? []).filter((l) => !l.revoked_at && (!l.expires_at || Date.parse(String(l.expires_at)) > Date.now()));
+  return (
+    <div class="stack">
+      <p class="foot muted">A read-only page for this site’s client: shared incident reports, daily reports and patrol proof, with PDF downloads. No login needed. Internal notes are never included. Copy or share it yourself; Lion Patrol never sends it.</p>
+      {fresh ? (
+        <div class="card stack" data-testid="portal-link-ready">
+          <b>Link ready</b>
+          <div class="foot" style={{ wordBreak: 'break-all', color: 'var(--gold)' }} data-testid="portal-url">{url}</div>
+          <div class="grid-2">
+            <Button icon="copy" onClick={async () => { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { toast('Copy failed — select the link to copy', 'error'); } }}>Copy</Button>
+            {typeof navigator.share === 'function' ? <Button variant="primary" icon="share" onClick={() => void navigator.share({ title: `${site.name} — security reports`, url }).catch(() => undefined)}>Share</Button> : <a class="btn" href={url} target="_blank" rel="noopener">Open</a>}
+          </div>
+          <p class="foot faint">This is the only time the full link is shown.</p>
+        </div>
+      ) : (
+        <div class="card stack">
+          <Field label="Link valid for"><select class="input" value={String(days)} onChange={(e) => setDays(Number((e.target as HTMLSelectElement).value))}><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></Field>
+          <Button variant="primary" block icon="share" loading={busy} data-testid="portal-create" onClick={async () => {
+            setBusy(true);
+            try { const r = await createPortalLink(site.id, days); setFresh(r.token); setTick((t) => t + 1); }
+            catch (e) { toast(isNetworkError(e) ? 'Creating a link needs an internet connection.' : (e as Error).message, 'error'); }
+            finally { setBusy(false); }
+          }}>Create client portal link</Button>
+        </div>
+      )}
+      <SectionLabel>Active links</SectionLabel>
+      {active.length ? (
+        <List>
+          {active.map((l) => (
+            <Row key={l.id} icon="share" testid="portal-link-row" title={`Created ${fmtDate(String(l.created_at))}`} sub={`${l.expires_at ? `Expires ${fmtDate(String(l.expires_at))}` : 'No expiry'} · ${Number(l.view_count ?? 0)} views`}
+              right={<Button variant="ghost" data-testid="portal-revoke" onClick={async () => { await revokePortalLink(l.id); setFresh(null); setTick((t) => t + 1); toast('Link revoked'); }}>Revoke</Button>} />
+          ))}
+        </List>
+      ) : <p class="muted sub" style={{ padding: '0 4px' }}>No active links.</p>}
     </div>
   );
 }
