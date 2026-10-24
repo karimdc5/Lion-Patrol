@@ -56,7 +56,9 @@ async function applyIdentity(ident: IdentityRecord) {
   const ms = ident.memberships as unknown as Member[];
   const lastOrg = await kvGet<string>(`org:${ident.userId}`);
   currentOrgId.value = ms.find((m) => m.org_id === lastOrg)?.org_id ?? ms[0]?.org_id ?? null;
-  const savedMode = await kvGet<UiMode>(`mode:${ident.userId}`);
+  let savedMode: UiMode | undefined;
+  try { savedMode = (localStorage.getItem(`lp-uimode:${ident.userId}`) as UiMode | null) ?? undefined; } catch { /* ignore */ }
+  savedMode ??= await kvGet<UiMode>(`mode:${ident.userId}`);
   const r = (ms.find((m) => m.org_id === currentOrgId.value) ?? ms[0])?.role ?? null;
   const allowed: UiMode[] = r === 'client' ? ['client'] : r === 'guard' ? ['guard'] : ['admin', 'guard'];
   uiMode.value = savedMode && allowed.includes(savedMode) ? savedMode : defaultMode(r);
@@ -65,7 +67,10 @@ async function applyIdentity(ident: IdentityRecord) {
 
 export async function setUiMode(m: UiMode) {
   uiMode.value = m;
-  if (identity.value) await kvSet(`mode:${identity.value.userId}`, m);
+  if (identity.value) {
+    try { localStorage.setItem(`lp-uimode:${identity.value.userId}`, m); } catch { /* ignore */ }
+    await kvSet(`mode:${identity.value.userId}`, m);
+  }
 }
 export async function setOrg(orgId: string) {
   currentOrgId.value = orgId;
