@@ -3,8 +3,8 @@ import type { PDFFont } from 'pdf-lib';
 /** Map characters outside WinAnsi (standard PDF fonts) to safe equivalents. */
 export function safe(s: string): string {
   return s
-    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/…/g, '...')
-    .replace(/[→➔➡]/g, '>').replace(/[^\x09\x0A\x0D\x20-\x7E -ÿ–—•€]/g, '?');
+    .replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/\u2026/g, '...')
+    .replace(/[\u2192\u2794\u27A1]/g, '>').replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u00FF\u2013\u2014\u2022\u20AC]/gu, '?');
 }
 
 export function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
