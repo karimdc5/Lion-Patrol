@@ -183,6 +183,8 @@ async function execute(op: OutboxOp, backend: Backend) {
     }
     case 'update':
       return backend.update(op.table!, op.payload as object, op.match ?? {});
+    case 'delete':
+      return backend.remove(op.table!, op.match ?? {});
     case 'rpc':
       await backend.rpc(op.rpc!, (op.payload ?? {}) as Record<string, unknown>);
       return;
