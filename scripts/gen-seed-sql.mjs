@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const root = fileURLToPath(new URL('..', import.meta.url));
+const root = import.meta.url.startsWith('file:') ? fileURLToPath(import.meta.url).replace(/scripts[\/]gen-seed-sql.mjs$/, '') : process.cwd() + '/';
 const seed = JSON.parse(readFileSync(root + 'src/domain/categories.seed.json', 'utf8'));
 const json = JSON.stringify(seed).replaceAll("'", "''");
 
@@ -54,7 +54,7 @@ revoke all on function public.patrol_seed_categories_internal(uuid) from public,
 commit;
 `;
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (import.meta.url.startsWith('file:') && process.argv[1] === fileURLToPath(import.meta.url)) {
   writeFileSync(root + 'supabase/migrations/20261024000500_patrol_seed.sql', sql);
   console.log('wrote 20261024000500_patrol_seed.sql');
 }
