@@ -391,6 +391,29 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       (s.tables.patrol_incident_events ??= []).push({ id: uuidv7(), org_id: inc.org_id, incident_id: inc.id, actor_id: c.memberIn(inc.org_id), actor_name: c.members.find((m) => m.org_id === inc.org_id)?.display_name ?? '', kind: 'status', to_status: a.p_status, body: a.p_note ?? null, created_at: nowIso() });
       return inc;
     },
+    patrol_set_incident_client_visible(s, c, a) {
+      const inc = (s.tables.patrol_incidents ?? []).find((x) => x.id === a.p_id);
+      if (!inc || !c.staffOrgs.includes(inc.org_id) || inc.status === 'draft') throw new BackendError('42501', 'not_found', 403);
+      inc.client_visible = !!a.p_visible; if (a.p_visible) inc.sent_to_client_at ??= nowIso(); inc.updated_at = nowIso();
+      return null;
+    },
+    patrol_add_incident_note(s, c, a) {
+      const inc = (s.tables.patrol_incidents ?? []).find((x) => x.id === a.p_id);
+      if (!inc || inc.status === 'draft') throw new BackendError('42501', 'not_found', 403);
+      const staff = c.staffOrgs.includes(inc.org_id);
+      const internal = a.p_internal !== false && staff;
+      (s.tables.patrol_incident_events ??= []).push({ id: uuidv7(), org_id: inc.org_id, incident_id: inc.id, actor_id: c.memberIn(inc.org_id), actor_name: c.members.find((m) => m.org_id === inc.org_id)?.display_name ?? '', kind: internal ? 'note' : 'addendum', body: a.p_body, created_at: nowIso() });
+      if (internal) { inc.review_notes = [inc.review_notes, a.p_body].filter(Boolean).join('\n'); inc.updated_at = nowIso(); }
+      return null;
+    },
+    patrol_set_dar_status(s, c, a) {
+      const d = (s.tables.patrol_dars ?? []).find((x) => x.id === a.p_id);
+      if (!d || !c.staffOrgs.includes(d.org_id) || d.status === 'open') throw new BackendError('42501', 'not_found', 403);
+      d.status = a.p_status; d.reviewed_at ??= nowIso();
+      if (a.p_status === 'sent_to_client') { d.client_visible = true; d.sent_to_client_at ??= nowIso(); }
+      d.updated_at = nowIso();
+      return d;
+    },
     patrol_alert_set_status(s, c, a) {
       const al = (s.tables.patrol_alerts ?? []).find((x) => x.id === a.p_id);
       if (!al) throw new BackendError('42501', 'not_found', 403);
@@ -451,7 +474,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const c = ctx(s, userId);
       const list = (s.tables[table] ??= []);
       for (const raw of rows as R[]) {
-        const row = { ...raw, id: raw.id ?? uuidv7() };
+        const row = { ...raw, id: raw.id ?? (table === 'patrol_site_access' ? `${raw.site_id}:${raw.member_id}` : uuidv7()) };
         const existing = list.find((r) => r.id === row.id);
         if (existing) {
           if (opts?.ignoreDuplicates) continue;
@@ -470,7 +493,8 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const s = load();
       const c = ctx(s, userId);
       const list = (s.tables[table] ??= []);
-      for (const raw of rows as R[]) {
+      for (const raw0 of rows as R[]) {
+        const raw = table === 'patrol_org_settings' ? { ...raw0, id: raw0.org_id } : raw0;
         const idx = list.findIndex((r) => r.id === raw.id);
         const prev = idx >= 0 ? list[idx] : undefined;
         if (!canWrite(c, table, prev ? { ...prev, ...raw } : raw, prev ? 'update' : 'insert')) {
