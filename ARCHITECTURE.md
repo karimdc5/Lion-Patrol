@@ -28,7 +28,7 @@ Sources: `docs/BRIEF.md`, `docs/design-refs/DESIGN_BRIEF.md`, and the legacy `in
 | Build | **Vite 8.3.x** | Fast, first-class code splitting, `base: '/Lion-Patrol/'`. |
 | Language | **TypeScript 5.9.x** (`strict`, `noUncheckedIndexedAccess`) | TS 7 (native) is out, but 5.9 is the stable typecheck target for the Vite/Preact plugin ecosystem. Re-evaluate later. Vite strips types itself, so TS is only used for `tsc --noEmit`. |
 | UI | **Preact 10.29.x** + `@preact/preset-vite` 2.10.x | About 4.5 KB gz and React-compatible. Preact 11 is newly released. We stay on 10.29 (every dependency below is tested against it) and upgrade in a later pass. |
-| Routing | **preact-iso 2.11.x** (`Router`, `Route`, `lazy`, `LocationProvider`) | Tiny, built-in `lazy()` route splitting. |
+| Routing | **In-house router** (`src/router.ts`, ~60 lines, signals) + `lazyScreen()` helper | Pass 2 change: base-path (`/Lion-Patrol/`) aware with no compat layer or Suspense. preact-iso was dropped. |
 | State | **@preact/signals 2.x** | Fine-grained reactive stores without context churn. Sync status, session, and the current shift are global signals. |
 | Local DB | **idb 8.0.x** (about 1.3 KB gz) | Dexie (about 26 KB gz) would eat a fifth of the budget. Our schema is small and hand-written repositories over `idb` are enough. |
 | Backend client | **`@supabase/auth-js`, `@supabase/postgrest-js`, `@supabase/storage-js` 2.118.x** composed directly. `@supabase/realtime-js` 2.118.x is **lazy**, dashboard only. | `@supabase/supabase-js` always bundles realtime and functions. Composing the parts saves about 15 KB gz from the guard's initial load. Same versions as supabase-js 2.118 for compatibility. |
@@ -40,9 +40,9 @@ Sources: `docs/BRIEF.md`, `docs/design-refs/DESIGN_BRIEF.md`, and the legacy `in
 | Resumable upload (lazy) | **tus-js-client 4.3.x** | Supabase TUS endpoint `/storage/v1/upload/resumable`. Loaded only when a file is ≥ 6 MB. |
 | Image compression | **In-house** (`createImageBitmap` + canvas), about 2 KB | No library needed. See §4.4. |
 | Email | **EmailJS REST** (`POST https://api.emailjs.com/api/v1.0/email/send`) | Same account as the brief. Zero bundle cost. |
-| Styling | Plain CSS with custom properties (design tokens) + CSS Modules per component | No runtime, no Tailwind build step. Tokens map 1:1 to the design brief. |
+| Styling | Plain CSS with custom properties (design tokens) in `styles/tokens.css` + one global `styles/base.css` with component class prefixes | No runtime, no Tailwind build step. Tokens map 1:1 to the design brief. (Pass 2 change: global CSS instead of CSS Modules; the whole sheet is ~4.6 KB gz.) |
 | Icons | Hand-picked inline SVG set (Lucide-derived, ISC) as a TS map, about 60 icons | Category icons are needed offline and in PDFs. |
-| Unit tests | **Vitest 5.0.x** + **fake-indexeddb 6.2.x** + jsdom | |
+| Unit tests | **Vitest 4.1.x** + **fake-indexeddb 6.2.x** + jsdom | Pass 2 change: Vitest 5 requires Node ≥ 22, and CI is pinned to Node 20. |
 | E2E | **@playwright/test 1.64.1** (its WebKit revision **2370** is already in `~/.cache/ms-playwright`). Chromium is installed with `npx playwright install chromium`. | Verified from `playwright-core@1.64.1/browsers.json`. |
 | Lint | ESLint 9 flat config + `eslint-plugin-preact`-compatible rules. A custom `no-restricted-properties` rule bans `window.print`. | |
 
@@ -56,7 +56,7 @@ Estimated initial load for the guard Home route:
 
 | Piece | ≈ KB gz |
 |---|---|
-| preact + hooks + preact-iso + signals | 12 |
+| preact + hooks + router + signals | 10 |
 | auth-js + postgrest-js + storage-js | 30 |
 | idb + outbox + sync + repositories | 10 |
 | shell, tokens, icons, home screen | 30 |
@@ -135,11 +135,12 @@ are **prefetched on idle** after first paint, so changing screens feels instant.
 │  ├─ migrations/
 │  │  ├─ 20261024000100_patrol_core.sql        # enums, tables, indexes, updated_at triggers
 │  │  ├─ 20261024000200_patrol_helpers.sql     # security-definer helpers
-│  │  ├─ 20261024000300_patrol_rls.sql         # enable RLS + policies
-│  │  ├─ 20261024000400_patrol_rpc.sql         # RPCs + guard triggers
-│  │  ├─ 20261024000500_patrol_seed_fn.sql     # patrol_seed_categories
-│  │  ├─ 20261024000600_patrol_storage.sql     # bucket + storage.objects policies
-│  │  └─ 20261024000700_patrol_realtime.sql    # publication
+│  │  ├─ 20261024000300_patrol_triggers.sql    # snapshots, column guards, report numbers, live status
+│  │  ├─ 20261024000400_patrol_rls.sql         # enable RLS + policies
+│  │  ├─ 20261024000500_patrol_seed.sql        # GENERATED default categories + seed function
+│  │  ├─ 20261024000600_patrol_rpc.sql         # RPCs
+│  │  ├─ 20261024000700_patrol_storage.sql     # bucket + storage.objects policies
+│  │  └─ 20261024000800_patrol_realtime.sql    # publication
 │  └─ tests/rls_test.sql
 ├─ tests/
 │  ├─ unit/                        # *.test.ts (Vitest)
@@ -179,7 +180,7 @@ Rules:
 
 ```sql
 patrol_role            : 'owner','admin','supervisor','guard','client'
-patrol_member_status   : 'active','disabled'
+patrol_membership_status : 'active','disabled'   -- (renamed in Pass 2: the table patrol_member_status owns that type name)
 patrol_incident_status : 'draft','submitted','reviewed','sent_to_client','closed'
 patrol_severity        : 'low','medium','high','critical'
 patrol_dar_status      : 'open','submitted','reviewed','sent_to_client'
@@ -694,7 +695,7 @@ Each RPC checks the caller's role itself; RLS is bypassed inside it.
 | `patrol_create_org(p_org_id uuid, p_name text, p_timezone text default 'America/Los_Angeles', p_display_name text default null) returns uuid` | `if not public.is_admin() then raise exception 'not_app_admin' using errcode='42501'`. Idempotent: if `p_org_id` already exists and was created by the caller, it returns it. Inserts patrol_orgs, patrol_org_settings (`notify_emails = array[auth.jwt()->>'email']`), and patrol_members (`role='owner'`), then calls `patrol_seed_categories_internal(org)`. |
 | `patrol_bootstrap() returns jsonb` | A single round trip after login and on every foreground. Returns `{memberships:[{org, member, role}], orgs, settings_public (ping interval, video limits, tour defaults; never emails), sites, site_access, checkpoints, categories, subtypes, my_shifts (now-1d … now+14d), open_time_entry, open_dar, open_tour_runs, consents, is_app_admin}`, filtered by role. Staff also get `members` and `settings` (with emails). |
 | `patrol_create_invite(p_org uuid, p_role patrol_role, p_site_ids uuid[] default '{}', p_email text default null, p_display_name text default null, p_ttl_hours int default 168, p_max_uses int default 1) returns jsonb` | Requires admin of p_org. Rejects `owner`. `client` requires sites, and all `p_site_ids` must belong to p_org. Generates an 8-char Crockford code shown as `LION-XXXX-XXXX` (40 bits; brute force is made impractical by the 10-failures-per-hour throttle plus the expiry), stores the sha256, and returns `{invite_id, code, url}`. |
-| `patrol_redeem_invite(p_code text, p_display_name text, p_phone text default null) returns jsonb` | Requires `auth.uid()`. Throttle: more than 10 rows in patrol_invite_failures for this user in the last hour raises `too_many_attempts`. Looks up the hash `for update`. If it is missing, expired, revoked, or `uses >= max_uses`, it records a failure and raises `invalid_invite`. If `email` is set, it must equal `lower(auth.jwt()->>'email')`. Upserts the member: if one already exists in the org, it keeps the higher-ranked role and never downgrades. Inserts site_access rows (`on conflict do nothing`), increments `uses`, and returns `{org_id, member_id, role}`. |
+| `patrol_redeem_invite(p_code text, p_display_name text, p_phone text default null) returns jsonb` | Requires `auth.uid()`. Throttle: 10 or more rows in patrol_invite_failures for this user in the last hour returns `{ok:false, error:'too_many_attempts'}`. Looks up the hash `for update`. If it is missing, expired, revoked, or `uses >= max_uses`, it records a failure and returns `{ok:false, error:'invalid_invite'}`. (Pass 2 change: it returns an error instead of raising, because a raise would roll back the failure row and defeat the throttle.) If `email` is set, it must equal `lower(auth.jwt()->>'email')`. Upserts the member: if one already exists in the org, it keeps the higher-ranked role and never downgrades. Inserts site_access rows (`on conflict do nothing`), increments `uses`, and returns `{org_id, member_id, role}`. |
 | `patrol_seed_categories(p_org uuid) returns int` | Admin only. Inserts the default set (§3.8) `on conflict do nothing` on `(org_id, lower(name))`, so it is safe to re-run. Returns the rows added. |
 | `patrol_reorder_categories(p_org uuid, p_ids uuid[]) returns void` | Admin only. `update … set sort = idx from unnest(p_ids) with ordinality`. Same for `patrol_reorder_subtypes(p_category uuid, p_ids uuid[])`. |
 | `patrol_set_incident_status(p_id uuid, p_status patrol_incident_status, p_note text default null) returns void` | Staff of the incident's org. Valid transitions: submitted→reviewed→sent_to_client→closed, plus reopen→reviewed. Sets reviewed_* and `client_visible = (p_status in ('sent_to_client','closed'))` unless already true, and inserts a patrol_incident_events row. `patrol_set_dar_status` is analogous. |
@@ -786,7 +787,7 @@ Format: name → subtypes, with **required fields** in bold. Colors come from a 
 24. Other → General observation, Other
 
 The seed set lives in **one** source of truth, `src/domain/categories.seed.ts`. The SQL seed
-in `20261024000500_patrol_seed_fn.sql` is generated from it by `scripts/gen-seed-sql.mjs`,
+in `20261024000500_patrol_seed.sql` is generated from it by `scripts/gen-seed-sql.mjs`,
 and a unit test asserts the two stay identical.
 
 ---
@@ -1617,7 +1618,7 @@ Assertions. Each one runs `select pg_temp.as_user(…)`, then asserts with
   org B; can call `patrol_set_incident_status`; cannot create invites.
 - **owner-b**: sees nothing of org A.
 - **outsider** (no membership): zero rows in every patrol table; `patrol_create_org` raises
-  `not_app_admin`; redeeming a bad code raises `invalid_invite`; 11 bad codes raise
+  `not_app_admin`; redeeming a bad code returns `invalid_invite`; the 11th attempt returns
   `too_many_attempts`.
 - **owner-a**:
   - `patrol_create_org` works (is_admin) and seeds about 24 categories
@@ -1646,66 +1647,29 @@ inside one transaction that rolls back, it leaves zero data behind.
 
 ---
 
-## 10. Build order (next passes)
+## 10. Build order (consolidated by the coordinator into 5 build passes)
 
-Each pass ends green (`typecheck`, `test`, `build`, budget, relevant e2e), is committed in
-logical chunks, and is pushed to `origin feature/lion-patrol-v2`.
+Each pass ends green (`typecheck`, `test`, `test:sql`, `build`, `check:bundle`, relevant e2e on
+**WebKit iPhone 13 first**, then Chromium), is committed in logical chunks, and is pushed.
 
-1. **Pass 2 — Scaffold and platform**
-   - Vite + Preact + TS, tokens and base CSS, UI kit (Button, Sheet, TabBar, ListGroup,
-     Skeleton, SyncPill, Toast, HoldButton, Ring), router shells for `/g`, `/a`, `/c`, public.
-   - Icon/splash generation from `logo.png`, manifest, SW (`injectManifest`, prompt update),
-     iOS meta and splash links, the A2HS guide, `public/legacy/` copies, `404.html`.
-   - Updated Pages workflow, `check-bundle.mjs`, Vitest + Playwright configs, smoke e2e on
-     WebKit and Chromium.
-2. **Pass 3 — SQL**
-   - All migrations in §3, `rls_test.sql`, and the seed generator plus its parity unit test.
-   - Coordinator applies them and runs the RLS test. Fixes follow in the same pass.
-3. **Pass 4 — Data layer**
-   - IDB schema, Backend interface, SupabaseBackend, MemoryBackend with fault injection and
-     the demo seed (Kent retail store, Federal Way apartment complex).
-   - Outbox, sync status, bootstrap and delta. Units for outbox, classify, db.
-4. **Pass 5 — Auth**
-   - Durable session storage, offline cold start, login, signup, join, setup (create org),
-     role routing, PIN vault and lock screen, multi-guard switching.
-   - Units for vault and storage. e2e for auth and PIN.
-5. **Pass 6 — Guard core**
-   - Clock in/out with GPS notice and consent, geo watch and pings, Home hero, post orders
-     offline, Activity timeline, DAR quick entries.
-   - e2e: clock-in, offline DAR.
-6. **Pass 7 — Patrol**
-   - Checkpoints and tour runs, `domain/tour.ts`, the manual-entry scanner path, then the
-     camera scanner (lazy qr-scanner), `/q/:code`.
-   - Units for tour. e2e for scan.
-7. **Pass 8 — Incidents and media**
-   - Category grid (recent/favorites/search), subtypes, required fields, people and vehicle
-     cards, dictation.
-   - Media pipeline (compress, blobs, tray, upload, TUS), the voice recorder with the audio
-     notice, the lightbox and players.
-   - e2e: offline-sync, kill-resume, upload-retry, required fields. Units for compression.
-8. **Pass 9 — SOS and notifications**
-   - Hold button, SOS screen, priority outbox, EmailJS owner-only notify with the hard client
-     guard, realtime alert banner.
-   - e2e for SOS. Units for notify.
-9. **Pass 10 — Admin**
-   - Sites (info, map pin, post-orders editor, contacts, access), checkpoints and QR sheet PDF,
-     people and invites, schedule week and list, settings with the storage meter, the category
-     manager with drag reorder.
-   - e2e for categories.
-10. **Pass 11 — Dashboard and review**
-    - Live map (Leaflet lazy, realtime member_status), feed with filters, patrol completion,
-      incident and DAR review flows, alerts.
-11. **Pass 12 — PDFs, client portal, sharing**
-    - Incident and DAR PDF layouts, the share-sheet delivery flow, the client portal, share
-      links (`/s/:token`).
-    - e2e for pdf, client and share-link. `scripts/pdfs.mjs`.
-12. **Pass 13 — Polish and hardening**
-    - `scripts/screens.mjs` across all screens, transitions and skeletons audit,
-      reduced-motion, accessibility labels.
-    - Performance pass (prefetch, budget), iPhone checklist (safe areas, 100dvh, inputs
-      ≥ 16px, bounce), and a final README for the owner.
+1. **Pass 2 — Scaffold, SQL, data layer, auth** ✅
+   - Vite/Preact/TS, tokens and UI kit, icons/splash from `logo.png`, manifest, SW, iOS meta, A2HS guide, `public/legacy/`, `404.html`, Pages workflow, bundle check.
+   - All migrations plus `rls_test.sql`, verified locally in PGlite (`npm run test:sql`) against a Supabase shim: migrations applied twice, mutation-checked.
+   - IDB, Backend interface, SupabaseBackend, MemoryBackend with the demo seed, outbox, sync status, bootstrap.
+   - Durable session, offline cold start, login/signup/join/setup, role routing (owners get Admin + Guard mode), PIN vault, lock screen, multi-guard switching, demo mode.
+2. **Pass 3 — Guard core.** Clock in/out (GPS notice and consent, watch and pings), Home hero, DAR quick log, patrol tours and QR (manual entry plus lazy camera scanner, `/q/:code`), the incident form with categories and required fields, the media pipeline (compress, blobs, tray, upload, TUS), voice notes with the audio notice, SOS and owner EmailJS notification, the Activity timeline. e2e: clock-in notice, QR manual, offline sync with media, kill/reload mid-report, upload retry, SOS.
+3. **Pass 4 — Admin.** Sites (map pin, post-orders editor, contacts, access), checkpoints and the QR sheet PDF, people and invites, schedule week and list, settings with the storage meter, the category manager (add/edit/drag reorder/hide/subtypes/required fields). e2e: categories.
+4. **Pass 5 — Dashboard, review, PDFs, client portal.** Live map (Leaflet lazy, realtime), feed with filters, patrol completion, incident and DAR review, alerts; incident and DAR PDFs with share-sheet delivery; client portal and share links `/s/:token`. e2e: pdf, client, share link. `scripts/pdfs.mjs`.
+5. **Pass 6 — Polish and hardening.** Screenshots of every screen (`npm run screens`), transitions and skeletons audit, accessibility, performance and budget, iPhone checklist, owner README.
 
----
+### Pass 2 implementation notes (decisions refined while building)
+- **Trigger guards and RPCs.** Column/transition guards act only when `current_user = 'authenticated'` (direct PostgREST writes). SECURITY DEFINER RPCs run as the owner, so their writes pass. Guards that look up parents for authorization (`patrol_attachment_before_insert`, `patrol_dar_entries_guard`) are **invoker-rights**, so the lookup itself goes through RLS.
+- **Staff review changes go only through RPCs** (`patrol_set_incident_status`, `patrol_set_incident_client_visible`, `patrol_add_incident_note`, `patrol_set_dar_status`). The direct UPDATE policy on incidents and DARs is author-only. A stale author replay after submit is a silent no-op (`client_rev`), so outbox resends never go dead.
+- **Own-row SELECT on append-only tables.** Guards can SELECT their own pings, because `INSERT … ON CONFLICT DO NOTHING` (idempotent outbox replays) must see the conflicting row through RLS.
+- **`patrol_bootstrap` is SECURITY INVOKER**, so RLS does the filtering. Owner emails come back only to staff (`settings`). Everyone gets `public_settings`.
+- **PIN unlock is required at cold start** once a user has enrolled on the device. The vault key must be in memory so rotated refresh tokens are re-wrapped on every `TOKEN_REFRESHED`; otherwise a stale stored refresh token could trip reuse detection. Switching guards writes the stored session into auth storage (`auth.adopt`), which works offline.
+- **Per-backend isolation.** IndexedDB and auth keys are namespaced: `lion-patrol`/`lp-auth` (real), `lion-patrol-demo`/`lp-auth-demo`, `lion-patrol-mem`/`lp-auth-mem` (e2e). Demo mode is shown as a thin gold stripe at the very top, clear of the Dynamic Island, plus labels on Login and More.
+- **Service worker in e2e builds.** The SW is enabled in e2e builds so the offline cold-start test is real (precache under `vite preview`).
 
 ## Appendix A — Decisions made without asking
 
