@@ -37,8 +37,8 @@ test('clock in requires accepting the GPS notice; consent + time entry + DAR syn
   await page.getByTestId('clock-in-btn').click();
   await page.getByTestId('gps-accept').click();
   await expect(page.getByTestId('duty-status')).toHaveText(/\d\d:\d\d:\d\d/);
-  await expect.poll(async () => (await rows(page, 'patrol_time_entries')).filter((t) => !t.clock_out_at).length).toBe(1);
-  const te = (await rows(page, 'patrol_time_entries')).find((t) => !t.clock_out_at)!;
+  await expect.poll(async () => (await rows(page, 'patrol_time_entries')).filter((t) => !t.clock_out_at && t.device_id).length).toBe(1);
+  const te = (await rows(page, 'patrol_time_entries')).find((t) => !t.clock_out_at && t.device_id)!;
   expect(te.clock_in_lat).toBeCloseTo(47.3826, 3);
   expect(te.gps_notice_accepted_at).toBeTruthy();
   expect((await rows(page, 'patrol_consents')).some((c) => c.kind === 'gps_notice')).toBe(true);
@@ -163,11 +163,11 @@ test('SOS hold creates a high-priority alert with location; 911 is one tap away'
   await expect(page.getByTestId('sos-screen')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Call 911' })).toHaveAttribute('href', 'tel:911');
   await expect(page.getByRole('heading', { name: 'Owners notified' })).toBeVisible({ timeout: 10_000 });
-  const alert = (await rows(page, 'patrol_alerts'))[0]!;
+  const alert = (await rows(page, 'patrol_alerts')).find((a) => a.device_id)!;
   expect(alert.status).toBe('open');
   expect(alert.lat).toBeCloseTo(47.3826, 3);
   await page.getByTestId('sos-safe').click();
-  await expect.poll(async () => (await rows(page, 'patrol_alerts'))[0]!.status).toBe('cancelled');
+  await expect.poll(async () => (await rows(page, 'patrol_alerts')).find((a) => a.device_id)!.status).toBe('cancelled');
 });
 
 test('SOS is reachable from other guard screens (top-bar chip)', async ({ page }) => {
