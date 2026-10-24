@@ -384,3 +384,44 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
 .site-card.selected { border-color: var(--gold); background: var(--gold-soft); }
 .ring-icon { width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
 .ring-icon svg { width: 26px; height: 26px; }
+
+/* ---------- admin ---------- */
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.sos-alert { border-radius: 20px; padding: 16px; background: linear-gradient(135deg, #B91C1C, #7F1D1D); color: #fff; border: 1px solid rgba(255,255,255,.18); }
+.sos-alert.open { background: linear-gradient(135deg, #EF4444, #B91C1C); animation: sos-glow 1.4s ease-in-out infinite; }
+@keyframes sos-glow { 50% { box-shadow: 0 0 0 6px rgba(239,68,68,.25), 0 10px 40px rgba(239,68,68,.45); } }
+.sos-alert-icon { width: 46px; height: 46px; border-radius: 14px; background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; flex: none; }
+.sos-ack { background: #fff; color: #B91C1C; border: 0; }
+.sos-res { background: rgba(0,0,0,.25); color: #fff; border-color: rgba(255,255,255,.3); }
+.filter-row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; }
+.filter-row::-webkit-scrollbar { display: none; }
+.filter-row select.chip { -webkit-appearance: none; appearance: none; padding-right: 14px; color: var(--text); }
+.kv { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.kv > div > span { display: block; font-size: 12px; color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+.tabs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { height: 36px; padding: 0 14px; border-radius: 999px; font-weight: 600; font-size: 14px; color: var(--text-2); background: var(--raised); white-space: nowrap; }
+.tabs button.active { background: var(--gold); color: #1A1305; }
+.swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.swatch { aspect-ratio: 1; border-radius: 12px; border: 2px solid transparent; }
+.swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--bg) inset; }
+.icon-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.icon-grid button { aspect-ratio: 1; border-radius: 12px; background: var(--raised); display: flex; align-items: center; justify-content: center; color: var(--text-2); border: 1.5px solid transparent; }
+.icon-grid button.on { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); }
+.icon-grid svg { width: 22px; height: 22px; }
+.mini-btn { width: 36px; height: 36px; border-radius: 10px; background: var(--raised-2); display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
+.mini-btn svg { width: 18px; height: 18px; }
+.mini-btn[disabled] { opacity: .3; }
+.code-big { font-size: 30px; font-weight: 800; letter-spacing: .08em; font-variant-numeric: tabular-nums; text-align: center; padding: 18px; border-radius: 16px; background: var(--gold-soft); color: var(--gold); border: 1px dashed rgba(212,165,55,.5); }
+.editor { min-height: 220px; padding: 14px; border-radius: 14px; background: var(--raised); border: 1px solid var(--hairline); outline: none; line-height: 24px; }
+.editor:focus { border-color: rgba(212,165,55,.6); }
+.editor-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+.week-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.week-day { border-radius: 12px; padding: 8px 0; text-align: center; background: var(--surface); border: 1px solid var(--hairline); font-size: 12px; color: var(--text-2); }
+.week-day b { display: block; font-size: 17px; color: var(--text); margin-top: 2px; }
+.week-day.on { background: var(--gold-soft); border-color: var(--gold); color: var(--gold); }
+.week-day.on b { color: var(--gold); }
+.week-day .dots { display: flex; justify-content: center; gap: 3px; height: 6px; margin-top: 4px; }
+.week-day .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); }
+.map-box { height: 260px; border-radius: 16px; overflow: hidden; border: 1px solid var(--hairline); background: var(--raised); }
+.leaflet-container { background: #0b1220 !important; font: inherit; }
