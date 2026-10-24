@@ -31,7 +31,6 @@ do $$ begin
   perform public.patrol_create_org('10000000-0000-4000-8000-00000000000a', 'RLS Org A');
   if (select count(*) from public.patrol_categories) < 20 then raise exception 'RLS FAIL: categories not seeded'; end if;
   if (select count(*) from public.patrol_subtypes) < 60 then raise exception 'RLS FAIL: subtypes not seeded'; end if;
-  if public.patrol_seed_categories('10000000-0000-4000-8000-00000000000a') <> 0 then raise exception 'RLS FAIL: reseed should add 0'; end if;
   if (select notify_emails from public.patrol_org_settings) <> array['rls-owner-a@test.invalid'] then raise exception 'RLS FAIL: notify_emails'; end if;
 end $$;
 reset role;
@@ -392,6 +391,24 @@ do $$ declare ok boolean; begin
   if not ok then raise exception 'RLS FAIL: disabled member wrote data'; end if;
 end $$;
 reset role;
+
+-- ===================================================================== function privileges (hardening)
+do $$
+declare f text;
+begin
+  foreach f in array array['patrol_on_submit()','patrol_scan_before_insert()','patrol_scan_after_insert()',
+    'patrol_snapshot_names()','patrol_status_from_ping()','patrol_status_from_time_entry()','patrol_prune_pings()',
+    'patrol_gen_code(integer)','patrol_seed_categories(uuid)','patrol_seed_categories_internal(uuid)',
+    'patrol_incidents_guard()','patrol_attachment_before_insert()','patrol_touch_updated_at()'] loop
+    if has_function_privilege('authenticated', 'public.' || f, 'execute') then raise exception 'RLS FAIL: authenticated can execute %', f; end if;
+    if has_function_privilege('anon', 'public.' || f, 'execute') then raise exception 'RLS FAIL: anon can execute %', f; end if;
+  end loop;
+  foreach f in array array['patrol_bootstrap()','patrol_staff_orgs()','patrol_create_invite(uuid,patrol_role,uuid[],text,text,integer,integer)','patrol_create_org(uuid,text,text,text)'] loop
+    if has_function_privilege('anon', 'public.' || f, 'execute') then raise exception 'RLS FAIL: anon can execute %', f; end if;
+  end loop;
+  if not has_function_privilege('anon', 'public.patrol_get_shared_report(text)', 'execute') then raise exception 'RLS FAIL: anon lost share link RPC'; end if;
+  if not has_function_privilege('authenticated', 'public.patrol_bootstrap()', 'execute') then raise exception 'RLS FAIL: authenticated lost bootstrap'; end if;
+end $$;
 
 do $$ begin raise notice 'RLS TESTS PASSED'; end $$;
 select 'RLS TESTS PASSED' as result;
