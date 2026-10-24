@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks';
 import { signal } from '@preact/signals';
-import { phase, identity, uiMode, offerEnroll, backendMode } from './auth/session';
+import { phase, identity, uiMode, offerEnroll, backendMode, setUiMode } from './auth/session';
 import { path, navigate } from './router';
 import { Login } from './screens/public/Login';
 import { Join } from './screens/public/Join';
@@ -60,6 +60,11 @@ function Routes() {
 function RoleShell() {
   const mode = uiMode.value;
   const p = path.value;
+  // QR deep link (iOS Camera → /q/CODE): log it as a scan in Guard mode.
+  useEffect(() => {
+    const m = p.match(/^\/q\/([A-Za-z0-9-]+)/);
+    if (m && mode !== 'client') { if (mode === 'admin') void setUiMode('guard'); navigate(`/g/scan?code=${m[1]}`, { replace: true }); }
+  }, [p]);
   const prefix = mode === 'admin' ? '/a' : mode === 'client' ? '/c' : '/g';
   const inShell = p === prefix || p.startsWith(prefix + '/');
   // No deps on purpose: a screen may navigate('/') in the same tick as this redirect.
