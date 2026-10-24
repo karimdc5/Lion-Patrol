@@ -13,7 +13,7 @@ import { ScanScreen } from './Scan';
 import { DarScreen } from './Dar';
 import { GuardIncidentView, GuardDarView } from './Reports';
 import { SosScreen, SosSheet, sosSheetOpen } from './Sos';
-import { loadOpenEntry } from '../../data/guard';
+import { loadOpenEntry, refreshGuardHistory } from '../../data/guard';
 import { dataVersion } from '../../data/repos/records';
 import { currentOrgId, memberId } from '../../auth/session';
 
@@ -29,6 +29,7 @@ export function GuardShell() {
   const p = path.value;
   const v = dataVersion.value;
   useEffect(() => { void loadOpenEntry(); }, [v, currentOrgId.value, memberId.value]);
+  useEffect(() => { void refreshGuardHistory(true); }, [currentOrgId.value, memberId.value]);
   let screen;
   let m: Record<string, string> | null;
   if (p === '/g/patrol') screen = <PatrolScreen />;

@@ -185,7 +185,7 @@ async function execute(op: OutboxOp, backend: Backend) {
       return backend.update(op.table!, op.payload as object, op.match ?? {});
     case 'email': {
       const { deliverEmail } = await import('../../notify/emailjs');
-      const demo = backend.kind === 'memory' && !__E2E__;
+      const demo = localStorage.getItem('lp-mode') === 'demo' || (backend.kind === 'memory' && !__E2E__);
       await deliverEmail(op.payload as import('../../notify/emailjs').EmailEvent, backend, { demo });
       return;
     }

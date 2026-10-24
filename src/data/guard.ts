@@ -369,3 +369,24 @@ export async function opState(table: string, id: string): Promise<'pending' | 'd
   if (!op || op.status === 'done') return 'done';
   return op.status === 'dead' ? 'dead' : 'pending';
 }
+
+// ---------------------------------------------------------------- own history from the server
+let lastGuardRefresh = 0;
+/** Pull this guard's own recent incidents, DARs and shifts (RLS limits to own rows for guards). */
+export async function refreshGuardHistory(force = false) {
+  const mid = memberId.value;
+  const orgId = currentOrgId.value;
+  if (!mid || !orgId || (!force && Date.now() - lastGuardRefresh < 60_000)) return;
+  lastGuardRefresh = Date.now();
+  const { getBackend } = await import('../auth/session');
+  const { putServerRows } = await import('./repos/records');
+  const b = getBackend();
+  const since = new Date(Date.now() - 30 * 864e5).toISOString();
+  await Promise.all([
+    b.select<Row>('patrol_incidents', { eq: { member_id: mid }, gte: { occurred_at: since }, order: ['occurred_at', 'desc'], limit: 50 }).then((r) => putServerRows('patrol_incidents', r)),
+    b.select<Row>('patrol_dars', { eq: { member_id: mid }, gte: { report_date: since.slice(0, 10) }, order: ['report_date', 'desc'], limit: 30 }).then((r) => putServerRows('patrol_dars', r)),
+    b.select<Row>('patrol_time_entries', { eq: { member_id: mid }, gte: { clock_in_at: since }, order: ['clock_in_at', 'desc'], limit: 30 }).then((r) => putServerRows('patrol_time_entries', r)),
+    b.select<Row>('patrol_tour_runs', { eq: { member_id: mid }, gte: { started_at: since }, limit: 200 }).then((r) => putServerRows('patrol_tour_runs', r)),
+    b.select<Row>('patrol_scans', { eq: { member_id: mid }, gte: { scanned_at: since }, limit: 800 }).then((r) => putServerRows('patrol_scans', r)),
+  ].map((p) => p.catch(() => undefined)));
+}
