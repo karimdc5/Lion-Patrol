@@ -6,6 +6,8 @@ import { durableStorage } from '../../auth/storage-adapter';
 import { BackendError, type AuthApi, type AuthEvent, type Backend, type SelectQuery, type StoredSession } from './types';
 
 const STORAGE_KEY = 'lp-auth';
+/** Tables whose primary key isn't `id`. */
+const CONFLICT: Record<string, string> = { patrol_site_access: 'site_id,member_id', patrol_org_settings: 'org_id', patrol_member_status: 'member_id' };
 const TIMEOUT_MS = 15_000;
 
 function toStored(s: Session | null): StoredSession | null {
@@ -134,13 +136,13 @@ export function createSupabaseBackend(): Backend {
     },
     async insert(table, rows, opts) {
       if (opts?.ignoreDuplicates) {
-        await check(rest.from(table).upsert(rows, { onConflict: 'id', ignoreDuplicates: true }));
+        await check(rest.from(table).upsert(rows, { onConflict: CONFLICT[table] ?? 'id', ignoreDuplicates: true }));
       } else {
         await check(rest.from(table).insert(rows));
       }
     },
     async upsert(table, rows) {
-      await check(rest.from(table).upsert(rows, { onConflict: 'id' }));
+      await check(rest.from(table).upsert(rows, { onConflict: CONFLICT[table] ?? 'id' }));
     },
     async update(table, patch, eq) {
       let b = rest.from(table).update(patch);
