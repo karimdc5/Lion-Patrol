@@ -107,7 +107,7 @@ export function SiteEditor({ id }: { id: string }) {
         {tab === 'contacts' && <ContactsTab site={site} disabled={!admin} onChange={(contacts) => up({ contacts })} />}
         {tab === 'access' && <AccessTab site={site} disabled={!admin} />}
       </div>
-      {admin && (tab === 'details' || tab === 'orders' || tab === 'contacts') && (
+      {admin && (dirty || isNew) && (tab === 'details' || tab === 'orders' || tab === 'contacts') && (
         <div class="sticky-bar"><Button variant="primary" size="lg" block onClick={() => void save()} disabled={!dirty && !isNew} data-testid="site-save">{isNew ? 'Create site' : 'Save changes'}</Button></div>
       )}
       <Sheet open={mapOpen} onClose={() => setMapOpen(false)} title="Tap to place the pin">

@@ -103,7 +103,7 @@ test('app admin without an org creates one (categories seeded)', async ({ page }
   await page.getByRole('button', { name: 'Create organization' }).click();
   await dismissEnroll(page);
   await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
-  await page.goto('a/settings');
+  await page.goto('a/settings/categories');
   await expect(page.getByText('Theft & Shoplifting')).toBeVisible();
   await expect(page.getByText('Welfare Check (Unhoused Persons)')).toBeVisible();
 });
