@@ -15,6 +15,7 @@ export interface EnqueueInput {
   label: string;
   priority?: number;
   id?: string;
+  noCoalesce?: boolean;
 }
 
 export interface LocalWrite {
@@ -54,7 +55,7 @@ export async function enqueue(input: EnqueueInput, writes: LocalWrite[] = [], bl
   for (const b of blobs) await tx.objectStore('blobs').put(b);
 
   let coalesced = false;
-  if (input.kind === 'upsert') {
+  if (input.kind === 'upsert' && !input.noCoalesce) {
     const same = await outbox.index('byEntity').getAll(input.entityKey);
     const target = same
       .filter((o) => o.kind === 'upsert' && o.status === 'pending' && o.userId === input.userId)
