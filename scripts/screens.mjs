@@ -23,7 +23,7 @@ async function shot(page, name) {
 try {
   await waitUp();
   const browser = await webkit.launch();
-  const ctx = async (opts = {}) => browser.newContext({ ...devices['iPhone 13'], colorScheme: 'dark', geolocation: { latitude: 47.3826, longitude: -122.2346 }, permissions: ['geolocation'], ...opts });
+  const ctx = async (opts = {}) => { const c = await browser.newContext({ ...devices['iPhone 13'], colorScheme: 'dark', geolocation: { latitude: 47.3826, longitude: -122.2346 }, permissions: ['geolocation'], ...opts }); await c.route('https://api.emailjs.com/**', (r) => r.fulfill({ status: 200, body: 'OK' })); return c; };
 
   // install guide (fresh iPhone Safari)
   {
@@ -53,7 +53,7 @@ try {
     await p.getByTestId('manual-submit').click(); await p.getByTestId('scan-result-name').waitFor(); await shot(p, 'guard-scan-result');
     await p.getByTestId('scan-done').click(); await p.getByTestId('tour-progress').waitFor(); await shot(p, 'guard-patrol');
     await p.goto(BASE + 'g/dar'); await p.getByTestId('dar-text').fill('East fire exit checked and secured.'); await p.getByTestId('dar-add').click(); await p.getByTestId('dar-entry').waitFor(); await shot(p, 'guard-dar');
-    await p.getByRole('button', { name: 'Report' }).click(); await shot(p, 'guard-report-categories');
+    await p.getByRole('button', { name: 'Report', exact: true }).click(); await shot(p, 'guard-report-categories');
     await p.getByTestId('cat-search').fill('trespass'); await p.getByTestId('category-tile').first().click(); await p.getByTestId('incident-form').waitFor();
     await p.getByTestId('subtype-chip').first().click(); await p.getByTestId('inc-description').fill('Adult male sleeping at the loading dock. Gave a verbal warning; he left north on Ramsay Way.');
     await shot(p, 'guard-incident-top');
@@ -95,6 +95,8 @@ try {
     await p.getByRole('link', { name: 'Incidents' }).click(); await p.getByTestId('incident-row').first().waitFor(); await shot(p, 'admin-incidents');
     await p.getByTestId('incident-row').filter({ hasText: 'Vehicle idling' }).click(); await p.getByTestId('incident-review').waitFor(); await shot(p, 'admin-incident-review');
     await p.evaluate(() => window.scrollTo(0, 2000)); await shot(p, 'admin-incident-review-actions');
+    await p.getByTestId('incident-pdf').click(); await p.getByTestId('pdf-ready').waitFor(); await shot(p, 'admin-incident-pdf-ready'); await p.keyboard.press('Escape');
+    await p.goto(BASE + 'a/dars'); await p.getByTestId('dar-row').first().waitFor(); await shot(p, 'admin-daily-reports');
     await p.goto(BASE + 'a/sites'); await p.getByTestId('site-admin-row').first().waitFor(); await shot(p, 'admin-sites');
     await p.getByTestId('site-admin-row').first().click(); await p.getByTestId('site-name').waitFor(); await shot(p, 'admin-site-details');
     await p.getByTestId('site-tab-orders').click(); await shot(p, 'admin-site-post-orders');
@@ -102,6 +104,9 @@ try {
     await p.getByTestId('qr-sheet').click(); await p.getByTestId('pdf-ready').waitFor(); await shot(p, 'admin-qr-pdf-ready');
     await p.keyboard.press('Escape');
     await p.getByTestId('site-tab-access').click(); await shot(p, 'admin-site-access');
+    await p.getByTestId('site-tab-portal').click(); await p.getByTestId('portal-create').click(); await p.getByTestId('portal-url').waitFor(); await shot(p, 'admin-portal-link');
+    { const url = (await p.getByTestId('portal-url').textContent()).trim(); const q = await c.newPage(); await q.goto(url); await q.getByTestId('portal-site').waitFor(); await q.waitForTimeout(400); await shot(q, 'client-portal');
+      await q.evaluate(() => window.scrollTo(0, 900)); await shot(q, 'client-portal-reports'); await q.close(); }
     await p.goto(BASE + 'a/people'); await p.getByTestId('member-row').first().waitFor(); await shot(p, 'admin-people');
     await p.getByTestId('invite-btn').click(); await p.getByTestId('invite-site').first().click(); await shot(p, 'admin-invite-form');
     await p.getByTestId('invite-create').click(); await p.getByTestId('invite-code').waitFor(); await shot(p, 'admin-invite-code');
@@ -109,6 +114,7 @@ try {
     await p.goto(BASE + 'a/schedule'); await p.getByTestId('add-shift').waitFor(); await shot(p, 'admin-schedule');
     await p.getByTestId('add-shift').click(); await p.getByTestId('shift-sheet').waitFor(); await shot(p, 'admin-shift-sheet');
     await p.goto(BASE + 'a/settings'); await shot(p, 'admin-settings');
+    await p.getByTestId('email-settings').evaluate((el) => el.scrollIntoView({ block: 'start' })); await p.evaluate(() => window.scrollBy(0, -70)); await shot(p, 'admin-email-settings');
     await p.goto(BASE + 'a/settings/categories'); await p.getByTestId('category-row').first().waitFor(); await shot(p, 'admin-categories');
     await p.getByTestId('category-edit').nth(5).click(); await p.getByTestId('category-sheet').waitFor(); await shot(p, 'admin-category-edit');
     await p.goto(BASE + 'a/more'); await shot(p, 'admin-more');
