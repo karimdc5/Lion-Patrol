@@ -67,12 +67,12 @@ export function AttachmentTray({ parentType, parentId, ensureParent, editable = 
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<AttachmentRow | null>(null);
   const [recOpen, setRecOpen] = useState(false);
-  const add = async (files: FileList | File[] | null, voice = false, durationS?: number) => {
-    if (!files || !files.length) return;
+  const add = async (files: File[], voice = false, durationS?: number) => {
+    if (!files.length) return;
     setBusy(true);
     try {
       const parentOp = ensureParent ? await ensureParent() : null;
-      for (const f of Array.from(files)) {
+      for (const f of files) {
         const p = await prepareWithLimits(f, voice, durationS);
         await addAttachment(parentType, parentId, p, parentOp);
       }
@@ -91,14 +91,14 @@ export function AttachmentTray({ parentType, parentId, ensureParent, editable = 
       {editable && (
         <div class="att-actions">
           <label class="att-action"><Icon name="camera" />Camera
-            <input type="file" accept="image/*" capture="environment" aria-label="Take photo" data-testid="att-camera" onChange={(e) => { void add((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }} />
+            <input type="file" accept="image/*" capture="environment" aria-label="Take photo" data-testid="att-camera" onChange={(e) => { const fl = Array.from((e.target as HTMLInputElement).files ?? []); (e.target as HTMLInputElement).value = ''; void add(fl); }} />
           </label>
           <label class="att-action"><Icon name="layers" />Library
-            <input type="file" accept="image/*,video/*" multiple aria-label="Photo or video from library" data-testid="att-library" onChange={(e) => { void add((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }} />
+            <input type="file" accept="image/*,video/*" multiple aria-label="Photo or video from library" data-testid="att-library" onChange={(e) => { const fl = Array.from((e.target as HTMLInputElement).files ?? []); (e.target as HTMLInputElement).value = ''; void add(fl); }} />
           </label>
           <button type="button" class="att-action" onClick={() => setRecOpen(true)} data-testid="att-voice"><Icon name="mic" />Voice</button>
           <label class="att-action"><Icon name="file" />File
-            <input type="file" accept="audio/*,application/pdf" aria-label="Audio or PDF file" data-testid="att-file" onChange={(e) => { void add((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }} />
+            <input type="file" accept="audio/*,application/pdf" aria-label="Audio or PDF file" data-testid="att-file" onChange={(e) => { const fl = Array.from((e.target as HTMLInputElement).files ?? []); (e.target as HTMLInputElement).value = ''; void add(fl); }} />
           </label>
         </div>
       )}
