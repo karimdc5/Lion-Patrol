@@ -3,7 +3,8 @@ import { Screen, TopBar, List, Row, SectionLabel, Button, Field, Toggle, Sheet, 
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
 import { currentOrgId, isAdmin, getBackend } from '../../auth/session';
-import { categoriesFor, subtypesFor, orgSettings, orgById } from '../../data/repos/queries';
+import { categoriesFor, subtypesFor, orgSettings, orgById, membersFor } from '../../data/repos/queries';
+import { EMAIL_TESTING_OWNERS_ONLY } from '../../config';
 import { saveCategory, reorderCategories, saveSubtype, saveOrgSettings } from '../../data/admin';
 import { uuidv7 } from '../../lib/uuid';
 import { fmtBytes } from '../../lib/format';
@@ -11,13 +12,49 @@ import { navigate } from '../../router';
 import { REQUIRED_LABELS } from '../../domain/incident';
 import type { Category, OrgSettings, Subtype } from '../../data/types';
 
+function EmailSettings() {
+  const org = currentOrgId.value;
+  const s = useData(() => orgSettings(org), [org]);
+  const members = useData(() => membersFor(org), [org]);
+  const [addr, setAddr] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const admin = isAdmin.value;
+  const owners = (members.data ?? []).filter((m) => (m.role === 'owner' || m.role === 'admin') && m.status === 'active' && m.email).map((m) => String(m.email).toLowerCase());
+  const list = s.data?.notify_emails ?? [];
+  const save = async (patch: Partial<OrgSettings>) => { if (!s.data) return; await saveOrgSettings({ ...s.data, ...patch, id: s.data.org_id } as never); toast('Email settings saved'); };
+  return (
+    <div class="card stack" data-testid="email-settings">
+      <div class="row-between"><span>Email owners about incidents & SOS<div class="foot muted">Sent from the guard’s phone through EmailJS.</div></span>
+        <Toggle label="Email notifications" checked={!!s.data?.email_enabled} onChange={(v) => admin && void save({ email_enabled: v })} /></div>
+      <Field label="Email incidents at or above"><select class="input" value={s.data?.email_min_severity ?? 'medium'} disabled={!admin} onChange={(e) => void save({ email_min_severity: (e.target as HTMLSelectElement).value })} data-testid="email-severity"><option value="low">Low (every incident)</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical only</option></select></Field>
+      <div class="banner banner-warning" data-testid="testing-guard"><Icon name="lock" /><div><b>Testing: owners only.</b> Notifications can only go to owner or admin accounts. Client addresses can’t be added in this version. SOS alerts are always sent when email is on.</div></div>
+      <div class="field"><span class="field-label">Recipients</span>
+        {list.length ? <div class="chip-row">{list.map((e) => <span key={e} class="pill pill-gold" data-testid="recipient">{e}{admin && <button aria-label={`Remove ${e}`} onClick={() => void save({ notify_emails: list.filter((x) => x !== e) })}><Icon name="x" size={12} /></button>}</span>)}</div> : <p class="foot muted">No recipients yet.</p>}
+      </div>
+      {admin && (
+        <Field label="Add owner/admin email" error={err}>
+          <div class="row">
+            <input class="input grow" type="email" value={addr} autoCapitalize="off" placeholder="owner@lionsecurity.com" onInput={(e) => { setAddr((e.target as HTMLInputElement).value); setErr(null); }} data-testid="recipient-input" />
+            <Button data-testid="recipient-add" onClick={() => {
+              const e = addr.trim().toLowerCase();
+              if (!/.+@.+\..+/.test(e)) { setErr('Enter a valid email address.'); return; }
+              if (EMAIL_TESTING_OWNERS_ONLY && !owners.includes(e)) { setErr('Testing mode: only owner or admin account emails can receive notifications.'); return; }
+              if (list.includes(e)) { setErr('Already on the list.'); return; }
+              setAddr(''); void save({ notify_emails: [...list, e] });
+            }}>Add</Button>
+          </div>
+        </Field>
+      )}
+      <div class="row-between"><span>Client email notifications<div class="foot muted">Not available in this version.</div></span><Toggle label="Client notifications" checked={false} onChange={() => toast('Client emails are disabled in this version.', 'info')} /></div>
+    </div>
+  );
+}
+
 export function SettingsScreen() {
   const org = currentOrgId.value;
   const o = useData(() => orgById(org), [org]);
   const s = useData(() => orgSettings(org), [org]);
-  const [emails, setEmails] = useState('');
   const [usage, setUsage] = useState<number | null>(null);
-  useEffect(() => { if (s.data) setEmails(s.data.notify_emails.join(', ')); }, [s.data?.notify_emails.join(',')]);
   useEffect(() => { void getBackend().rpc<{ total_bytes: number } | null>('patrol_storage_usage', { p_org: org }).then((r) => setUsage(r?.total_bytes ?? 0)).catch(() => undefined); }, [org]);
   const save = async (patch: Partial<OrgSettings>) => {
     if (!s.data) return;
@@ -31,12 +68,8 @@ export function SettingsScreen() {
       <div class="screen-body">
         <SectionLabel>Report categories</SectionLabel>
         <List><Row icon="layers" iconBg="var(--gold-soft)" iconColor="var(--gold)" title="Manage categories" sub="Colors, icons, subtypes and required fields" chevron href="/a/settings/categories" testid="manage-categories" /></List>
-        <SectionLabel>Owner notifications</SectionLabel>
-        <div class="card stack">
-          <Field label="Email incident & SOS alerts to" hint="Owner addresses only, comma separated. Clients are never emailed."><input class="input" value={emails} disabled={!isAdmin.value} onInput={(e) => setEmails((e.target as HTMLInputElement).value)} autoCapitalize="off" /></Field>
-          {isAdmin.value && <Button onClick={() => void save({ notify_emails: emails.split(/[,\s]+/).map((x) => x.trim().toLowerCase()).filter((x) => /.+@.+\..+/.test(x)) })}>Save recipients</Button>}
-          <div class="row-between"><span>Client email notifications<div class="foot muted">Not available in this version.</div></span><Toggle label="Client notifications" checked={false} onChange={() => toast('Client emails are disabled in this version.', 'info')} /></div>
-        </div>
+        <SectionLabel>Email notifications</SectionLabel>
+        <EmailSettings />
         <SectionLabel>Reports & tracking</SectionLabel>
         <div class="card stack">
           <div class="row-between"><span>Share submitted reports with clients automatically<div class="foot muted">Off: you choose per report.</div></span><Toggle label="Auto share" checked={!!s.data?.auto_share_with_client} onChange={(v) => isAdmin.value && void save({ auto_share_with_client: v })} /></div>

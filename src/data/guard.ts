@@ -276,8 +276,9 @@ export async function submitIncident(f: IncidentForm): Promise<void> {
   const atts = await listAttachments(f.id);
   const uploadDeps: string[] = [];
   for (const a of atts) uploadDeps.push(...(await parentDep('upload', a.id)));
-  await enqueue({ userId, orgId, kind: 'upsert', table: 'patrol_incidents', payload: p, entityKey: `patrol_incidents:${f.id}`, dependsOn: uploadDeps, noCoalesce: true, label: `Incident · ${f.title || 'Report'}` },
+  const submitOp = await enqueue({ userId, orgId, kind: 'upsert', table: 'patrol_incidents', payload: p, entityKey: `patrol_incidents:${f.id}`, dependsOn: uploadDeps, noCoalesce: true, label: `Incident · ${f.title || 'Report'}` },
     [{ table: 'patrol_incidents', row: { ...p, author_name: ctx().name, submitted_at: nowIso() }, orgId }]);
+  await enqueue({ userId, orgId, kind: 'email', payload: { event: 'incident', id: f.id, orgId }, entityKey: `email:incident:${f.id}`, dependsOn: [submitOp], label: 'Notify owners (email)' });
   await discardDraft(f.id);
   bumpData(); void kick();
 }
@@ -347,6 +348,7 @@ export async function triggerSos(): Promise<string> {
   const op = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_alerts', payload: row, entityKey: `patrol_alerts:${row.id}`, priority: 0, label: 'SOS alert' },
     [{ table: 'patrol_alerts', row: { ...row, member_name: name }, orgId }]);
   await rememberOp('patrol_alerts', row.id, op);
+  await enqueue({ userId, orgId, kind: 'email', payload: { event: 'sos', id: row.id, orgId }, entityKey: `email:sos:${row.id}`, dependsOn: [op], priority: 0, label: 'Notify owners of SOS (email)' });
   bumpData();
   void kick();
   return row.id;

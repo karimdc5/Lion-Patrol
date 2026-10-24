@@ -1,4 +1,4 @@
-export type OpKind = 'insert' | 'upsert' | 'update' | 'delete' | 'rpc' | 'upload';
+export type OpKind = 'insert' | 'upsert' | 'update' | 'delete' | 'rpc' | 'upload' | 'email';
 export type OpStatus = 'pending' | 'inflight' | 'done' | 'dead';
 
 export interface OutboxOp {
