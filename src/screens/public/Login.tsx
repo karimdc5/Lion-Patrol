@@ -55,6 +55,7 @@ export function Login() {
             <button type="button" class="link-btn" onClick={() => navigate('/join')}>Have an invite code?</button>
             <button type="button" class="link-btn" onClick={() => setDemoOpen(true)} data-testid="try-demo">Try demo</button>
           </div>
+          <button type="button" class="link-btn" style={{ alignSelf: 'center' }} onClick={() => navigate('/signup')} data-testid="owner-signup">New owner? Create an account</button>
           {vaultEntries.value.length > 0 && (
             <Button variant="outline" block icon="lock" onClick={() => { phase.value = 'locked'; }}>Use a saved PIN</Button>
           )}

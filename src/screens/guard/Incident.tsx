@@ -75,6 +75,7 @@ export function IncidentEditor({ id }: { id: string }) {
   const sites = useData(() => sitesFor(org, memberId.value, isStaff.value), [org]);
   const serverTimer = useRef<number>(0);
   const latest = useRef<IncidentForm | null>(null);
+  const submitting = useRef(false); // double-tap guard (state updates are async)
 
   useEffect(() => { void loadDraft(id).then((d) => { if (d) { setForm(d); latest.current = d; } else setMissing(true); }); }, [id]);
   useEffect(() => {
@@ -107,6 +108,7 @@ export function IncidentEditor({ id }: { id: string }) {
   const catSubs = (subs.data ?? []).filter((s) => s.category_id === form.category_id && !s.hidden);
 
   const submit = async () => {
+    if (submitting.current) return;
     const photos = (await listAttachments(form.id)).filter((a) => a.kind === 'image').length;
     const e = validateIncident(form, cat, photos);
     setErrors(e);
@@ -117,12 +119,13 @@ export function IncidentEditor({ id }: { id: string }) {
       return;
     }
     setBusy(true);
+    submitting.current = true;
     try {
       clearTimeout(serverTimer.current);
-      await submitIncident(form);
+      await submitIncident(latest.current ?? form);
       toast('Report submitted. Owners will be notified.');
       navigate('/g', { replace: true });
-    } catch (er) { toast((er as Error).message, 'error'); } finally { setBusy(false); }
+    } catch (er) { submitting.current = false; toast((er as Error).message, 'error'); } finally { setBusy(false); }
   };
 
   const dictate = () => {
