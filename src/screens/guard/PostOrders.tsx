@@ -4,13 +4,14 @@ import { getRecord } from '../../data/repos/records';
 import type { Site } from '../../data/types';
 import { fmtDate } from '../../lib/format';
 import { sanitizeHtml } from '../../lib/sanitize';
+import { GuardRight } from './common';
 
 export function PostOrders({ siteId }: { siteId: string }) {
   const site = useData(() => getRecord<Site>('patrol_sites', siteId), [siteId]);
   const s = site.data;
   return (
     <Screen>
-      <TopBar title={s?.name ?? 'Post orders'} backTo="/g" />
+      <TopBar title={s?.name ?? 'Post orders'} backTo="/g" right={<GuardRight />} />
       <div class="screen-body">
         {s && (
           <>
