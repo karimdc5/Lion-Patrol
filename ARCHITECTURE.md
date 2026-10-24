@@ -1662,6 +1662,41 @@ Each pass ends green (`typecheck`, `test`, `test:sql`, `build`, `check:bundle`, 
 4. **Pass 5 — Dashboard, review, PDFs, client portal.** Live map (Leaflet lazy, realtime), feed with filters, patrol completion, incident and DAR review, alerts; incident and DAR PDFs with share-sheet delivery; client portal and share links `/s/:token`. e2e: pdf, client, share link. `scripts/pdfs.mjs`.
 5. **Pass 6 — Polish and hardening.** Screenshots of every screen (`npm run screens`), transitions and skeletons audit, accessibility, performance and budget, iPhone checklist, owner README.
 
+### Pass 5 implementation notes (reports, client portal, email)
+- **Migration `20261024001000_patrol_portal_email.sql`:**
+  - `patrol_portal_links`: per-site, token stored as a sha256 hash, staff-only RLS, writes only via RPCs.
+  - `patrol_create_portal_link` / `patrol_revoke_portal_link` (staff).
+  - `patrol_get_portal(token)`, granted to anon. It returns only client-visible incidents and DARs for that one site, with internal fields excluded, plus 14 days of tour runs. A revoked or expired link returns `null`.
+  - New `patrol_org_settings` columns: `email_enabled`, `email_min_severity`, `email_owners_only` (default true).
+  - `patrol_notify_targets(org)` (any worker in the org) returns `{enabled, min_severity, owners_only, recipients}`. Recipients are filtered on the server to active owner/admin member emails while `email_owners_only`, and client member emails are never returned.
+  - `rls_test.sql` covers all of these.
+- **Report PDFs** (`src/pdf/report.ts`, lazy) use a small layout engine on pdf-lib:
+  - letterhead (logo, "Licensed & Insured", contact details, title and report number) and a compact header on continuation pages;
+  - wrapped label/value grids, and tables that repeat their header after page breaks;
+  - 2-up photo grid with captions (local compressed blobs first, otherwise 10-minute signed URLs), timeline, signature lines, and footer plus page X of Y on every page.
+  - Incident PDF: summary, narrative, people, vehicles, photos, other media, timeline and certification. Internal review notes appear only in the "Internal PDF".
+  - DAR PDF: shift and clock times, completion %, missed/late counts, chronological log, every tour with on-time/late/missed rows, incidents during the shift, photos.
+  - Available in admin review (client and internal copies), admin Daily reports (`/a/dars`), guard incident and DAR views (`/g/incidents/:id`, `/g/dars/:timeEntryId`, today's preview in the Daily log), the client portal screens, and the anonymous portal (no photos there, because signed media needs a signed-in user).
+  - Delivery is always the "PDF ready" sheet: `navigator.share({files})` when `canShare`, plus Download / Open. `window.print` is forbidden, and a unit test scans `src/` for it.
+- **Client portal link (`/p/:token`).** Admin → Site → Client portal → Create link (30/90/365 days). The full URL is shown once, with copy and share-sheet buttons; the app never sends it. The list shows active links with views and Revoke. The page itself is a lazy, chrome-free, read-only branded view with patrol proof, shared incidents (expandable narrative) and DARs, each with a PDF download.
+- **Email (EmailJS, client-side).**
+  - An incident submit or SOS enqueues an outbox `email` op that depends on the record being synced.
+  - The worker then calls `patrol_notify_targets`, checks enabled and severity, re-reads the row for its report number, posts to the EmailJS REST endpoint (service `service_49ltt4f`, template `template_n369iwa`, public key `hF1r9AflJq5A0MSR6`), and calls `patrol_mark_notified`. Offline it retries like any other op.
+  - Hard guards: `CLIENT_NOTIFICATIONS_ENABLED = false`, `EMAIL_TESTING_OWNERS_ONLY = true` (the settings UI rejects non-owner addresses and shows "Testing: owners only"), server-side owner filtering, and `assertOwnerRecipients`.
+  - Demo mode never sends. Every e2e test and the screenshot script intercept `api.emailjs.com`.
+- **How to configure EmailJS.**
+  1. In the EmailJS dashboard, the template `template_n369iwa` should use `{{to_email}}` as **To** and `{{subject}}` as the subject, with a body containing `{{message}}`. Optional variables: `site_name`, `guard_name`, `report_no`, `severity`, `category`, `link`, `map_url`.
+  2. Allow the origin `karimdc5.github.io` in EmailJS security settings.
+  3. In the app: Admin → More → Settings → Email notifications. Turn it on, choose the minimum severity, and keep the owner recipients.
+  4. To allow non-owner recipients later, set `EMAIL_TESTING_OWNERS_ONLY = false` in `src/config.ts` **and** `email_owners_only = false` for the org. Client emails stay disabled until `CLIENT_NOTIFICATIONS_ENABLED` is changed in code.
+- **How to share a client portal:** Admin → Sites → *site* → Client portal → Create client portal link → Share (iOS share sheet) or Copy. Revoke at any time; the page then shows "This link is no longer active".
+- **Fixes in this pass:**
+  - The top bar has an action slot on the large-title row and clears the safe area.
+  - Toasts are opaque and capped at two.
+  - Category rows use compact controls so names wrap instead of truncating.
+  - The UI mode is persisted synchronously.
+  - `useData` fetchers no longer write to the cache, which used to cause re-render loops.
+
 ### Pass 4 implementation notes (admin + dashboard)
 - **No new migrations.** Admin writes use the existing RLS:
   - Sites, checkpoints, categories, subtypes, org settings and shifts are upserted through the outbox, so they work offline and in demo mode.
