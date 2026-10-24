@@ -41,6 +41,8 @@ export const role = computed<Role | null>(() => membership.value?.role ?? null);
 export const isStaff = computed(() => ['owner', 'admin', 'supervisor'].includes(role.value ?? ''));
 export const isAdmin = computed(() => ['owner', 'admin'].includes(role.value ?? ''));
 export const memberId = computed(() => membership.value?.id ?? null);
+/** Name of the current org (from cache). */
+export const orgName = signal('');
 
 function defaultMode(r: Role | null): UiMode {
   if (r === 'client') return 'client';
@@ -50,6 +52,7 @@ function defaultMode(r: Role | null): UiMode {
 
 async function applyIdentity(ident: IdentityRecord) {
   identity.value = ident;
+  void (async () => { const orgs = await (await db()).getAllFromIndex('records', 'byTable', 'patrol_orgs'); orgName.value = (orgs.find((o) => o.id === (ident.memberships as unknown as Member[])[0]?.org_id)?.data.name as string) ?? ''; })();
   const ms = ident.memberships as unknown as Member[];
   const lastOrg = await kvGet<string>(`org:${ident.userId}`);
   currentOrgId.value = ms.find((m) => m.org_id === lastOrg)?.org_id ?? ms[0]?.org_id ?? null;
