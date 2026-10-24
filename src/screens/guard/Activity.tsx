@@ -20,11 +20,11 @@ async function loadItems(org: string | null, me: string | null): Promise<Item[]>
   const out: Item[] = [];
   for (const s of mine(scans)) out.push({ id: s.id, at: s.scanned_at as string, title: `Checkpoint · ${cps.find((c) => c.id === s.checkpoint_id)?.name ?? ''}`, sub: (s.flags as string[]).length ? (s.flags as string[]).join(', ').replace(/_/g, ' ') : 'On time', color: 'var(--success)', icon: 'qr', pending: !!s._pending });
   for (const e of mine(entries)) out.push({ id: e.id, at: e.occurred_at as string, title: (e.category_name as string) || 'Log entry', sub: String(e.body), color: 'var(--gold)', icon: 'note', pending: !!e._pending });
-  for (const i of mine(incidents)) if (i.status !== 'draft') out.push({ id: i.id, at: i.occurred_at as string, title: `Incident · ${String(i.title || i.category_name || '')}`, sub: (i.report_no as string) ?? 'Submitted', color: 'var(--danger)', icon: 'alert', pending: !!i._pending });
+  for (const i of mine(incidents)) if (i.status !== 'draft') out.push({ id: i.id, at: i.occurred_at as string, title: `Incident · ${String(i.title || i.category_name || '')}`, sub: (i.report_no as string) ?? 'Submitted', color: 'var(--danger)', icon: 'alert', pending: !!i._pending, href: `/g/incidents/${i.id}` });
   for (const d of drafts) out.push({ id: d.id, at: d.occurred_at, title: `Draft · ${d.title || 'Incident'}`, sub: 'Not submitted yet. Tap to continue', color: 'var(--warning)', icon: 'file', pending: true, href: `/g/report/${d.id}` });
   for (const t of mine(entriesTE)) {
     out.push({ id: t.id + ':in', at: t.clock_in_at as string, title: 'Clocked in', sub: '', color: 'var(--info)', icon: 'clock', pending: !!t._pending });
-    if (t.clock_out_at) out.push({ id: t.id + ':out', at: t.clock_out_at as string, title: 'Clocked out', sub: String(t.shift_note ?? ''), color: 'var(--info)', icon: 'log-out', pending: !!t._pending });
+    if (t.clock_out_at) out.push({ id: t.id + ':out', at: t.clock_out_at as string, title: 'Clocked out · daily report', sub: String(t.shift_note ?? ''), color: 'var(--info)', icon: 'log-out', pending: !!t._pending, href: `/g/dars/${t.id}` });
   }
   for (const a of mine(alerts)) out.push({ id: a.id, at: a.triggered_at as string, title: 'SOS alert', sub: String(a.status), color: 'var(--danger)', icon: 'bell', pending: !!a._pending, href: `/g/sos?id=${a.id}` });
   return out.sort((a, b) => b.at.localeCompare(a.at));

@@ -10,21 +10,22 @@ import { PeopleList, MemberDetail } from './People';
 import { SettingsScreen, CategoriesScreen } from './Settings';
 import { IncidentsList, IncidentReview } from './Incidents';
 import { Schedule } from './Schedule';
+import { DarsList } from './Dars';
 import { isAdmin } from '../../auth/session';
 import { useOpsRefresh } from './useOps';
-import { PdfReadySheet } from '../../ui/PdfReady';
 
 const TABS: TabDef[] = [
   { href: '/a', label: 'Live', icon: 'map' },
   { href: '/a/feed', label: 'Activity', icon: 'activity', match: (p) => startsWith('/a/feed', p) },
   { href: '/a/incidents', label: 'Incidents', icon: 'file', match: (p) => startsWith('/a/incidents', p) },
   { href: '/a/sites', label: 'Sites', icon: 'building', match: (p) => startsWith('/a/sites', p) },
-  { href: '/a/more', label: 'More', icon: 'more', match: (p) => ['/a/more', '/a/people', '/a/schedule', '/a/settings'].some((x) => startsWith(x, p)) },
+  { href: '/a/more', label: 'More', icon: 'more', match: (p) => ['/a/more', '/a/people', '/a/schedule', '/a/settings', '/a/dars'].some((x) => startsWith(x, p)) },
 ];
 const SIDE = [
   ...TABS.slice(0, 4),
   { href: '/a/people', label: 'People', icon: 'users', match: (p: string) => startsWith('/a/people', p) },
   { href: '/a/schedule', label: 'Schedule', icon: 'calendar', match: (p: string) => startsWith('/a/schedule', p) },
+  { href: '/a/dars', label: 'Daily reports', icon: 'note', match: (p: string) => startsWith('/a/dars', p) },
   { href: '/a/settings', label: 'Settings', icon: 'settings', match: (p: string) => startsWith('/a/settings', p) },
   { href: '/a/more', label: 'More', icon: 'more', match: (p: string) => startsWith('/a/more', p) },
 ];
@@ -42,6 +43,7 @@ export default function AdminShell() {
   else if (p === '/a/people') screen = <PeopleList />;
   else if ((m = match('/a/people/:id', p))) screen = <MemberDetail key={m.id} id={m.id!} />;
   else if (p === '/a/schedule') screen = <Schedule />;
+  else if (p === '/a/dars') screen = <DarsList />;
   else if (p === '/a/settings') screen = <SettingsScreen />;
   else if (p === '/a/settings/categories' && isAdmin.value) screen = <CategoriesScreen />;
   else if (p === '/a/more') screen = <MoreScreen base="/a" />;
@@ -65,7 +67,6 @@ export default function AdminShell() {
         {screen}
         {!hideTabs && <TabBar tabs={TABS} current={p} />}
       </div>
-      <PdfReadySheet />
     </div>
   );
 }
