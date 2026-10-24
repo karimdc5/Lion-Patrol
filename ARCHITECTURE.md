@@ -33,7 +33,7 @@ Sources: `docs/BRIEF.md`, `docs/design-refs/DESIGN_BRIEF.md`, and the legacy `in
 | Local DB | **idb 8.0.x** (about 1.3 KB gz) | Dexie (about 26 KB gz) would eat a fifth of the budget. Our schema is small and hand-written repositories over `idb` are enough. |
 | Backend client | **`@supabase/auth-js`, `@supabase/postgrest-js`, `@supabase/storage-js` 2.118.x** composed directly. `@supabase/realtime-js` 2.118.x is **lazy**, dashboard only. | `@supabase/supabase-js` always bundles realtime and functions. Composing the parts saves about 15 KB gz from the guard's initial load. Same versions as supabase-js 2.118 for compatibility. |
 | PWA | **vite-plugin-pwa 2.0.x** (Workbox 7.4, `injectManifest` strategy) + `@vite-pwa/assets-generator` for icons/splash | A custom SW gives us exact control: no API caching, a prompt-to-update flow. |
-| QR scan (lazy) | **qr-scanner 1.4.x** (Nimiq) | Decodes in a Web Worker and uses `BarcodeDetector` when present (iOS Safari lacks it, so the worker runs). About 16 KB gz including the worker. |
+| QR scan (lazy) | `BarcodeDetector` when available, otherwise **jsQR 1.4.0** in a lazy chunk | Pass 3 change: jsQR decodes downscaled frames (≤640px, ~6 fps) on the main thread, which is simpler than qr-scanner's worker. Manual code entry is always available. |
 | QR generate (lazy) | **uqr 0.1.x** | Returns a module matrix. We draw it as vector rectangles straight into the PDF (crisp at any print size), and as SVG on screen. |
 | PDF (lazy) | **pdf-lib 1.17.x** (standard Helvetica fonts, no fontkit) | Vector text, embeds JPEG/PNG without re-encoding, draws vector QR. Standard fonts cost zero bytes (see §7). |
 | Map (lazy) | **leaflet 1.9.4** + Carto `dark_all` raster tiles | Free, no key, small. Loaded only on the live-map route. |
@@ -1661,6 +1661,20 @@ Each pass ends green (`typecheck`, `test`, `test:sql`, `build`, `check:bundle`, 
 3. **Pass 4 — Admin.** Sites (map pin, post-orders editor, contacts, access), checkpoints and the QR sheet PDF, people and invites, schedule week and list, settings with the storage meter, the category manager (add/edit/drag reorder/hide/subtypes/required fields). e2e: categories.
 4. **Pass 5 — Dashboard, review, PDFs, client portal.** Live map (Leaflet lazy, realtime), feed with filters, patrol completion, incident and DAR review, alerts; incident and DAR PDFs with share-sheet delivery; client portal and share links `/s/:token`. e2e: pdf, client, share link. `scripts/pdfs.mjs`.
 5. **Pass 6 — Polish and hardening.** Screenshots of every screen (`npm run screens`), transitions and skeletons audit, accessibility, performance and budget, iPhone checklist, owner README.
+
+### Pass 3 implementation notes (guard core)
+- **Migration `20261024000900_patrol_hardening.sql`.** `anon` can execute only `patrol_get_shared_report`. `authenticated` keeps the policy/trigger/bootstrap helpers plus the app RPCs. Trigger and internal functions are revoked (`patrol_seed_categories`, `patrol_gen_code`, `patrol_prune_pings`, …). Triggers still fire, because EXECUTE isn't checked for triggers. `rls_test.sql` asserts these privileges. The Pass 4 category manager therefore has no "Restore defaults" RPC.
+- **Guard writes all go through `src/data/guard.ts`**, which uses the outbox:
+  - Clock-in inserts the time entry, then the DAR (which depends on it).
+  - Clock-out is an `update` of the time entry plus an `update` of the DAR to `submitted` (with `client_rev`).
+  - Scans depend on the tour run; attachment rows depend on their parent op; uploads depend on the attachment row.
+  - Incident submit is a non-coalesced upsert that depends on every upload, so staff never see a report with missing media.
+  - SOS uses priority 0.
+- **Parent dependencies** are tracked via `kv['op:<table>:<id>']`.
+- **Images** are re-encoded to JPEG, max 2000 px long edge, q0.75, with a 320 px thumb. EXIF/GPS is stripped and orientation baked in. Video is limited to org settings (60 s / 50 MB by default), audio to 25 MB, PDFs to 20 MB.
+- **Incident drafts** autosave to IndexedDB on every change and on `visibilitychange`/`pagehide`. The server-side draft upsert is debounced (2.5 s), and also forced before the first attachment so attachment rows have a parent on the server.
+- **GPS.** `watchPosition` runs only while clocked in and the app is visible. Pings are sent when the guard has moved more than 50 m or after the org interval. Watching stops on clock-out and when the app is hidden.
+- **The SOS chip** is in every guard top bar. A long-press on the center Report tab also opens the SOS sheet, and Home has a hold button. The `tel:911` link is always visible.
 
 ### Pass 2 implementation notes (decisions refined while building)
 - **Trigger guards and RPCs.** Column/transition guards act only when `current_user = 'authenticated'` (direct PostgREST writes). SECURITY DEFINER RPCs run as the owner, so their writes pass. Guards that look up parents for authorization (`patrol_attachment_before_insert`, `patrol_dar_entries_guard`) are **invoker-rights**, so the lookup itself goes through RLS.
