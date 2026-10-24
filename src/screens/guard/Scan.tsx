@@ -18,14 +18,16 @@ export function ScanScreen() {
   const [torch, setTorch] = useState<boolean | null>(null);
   const [note, setNote] = useState('');
   const busy = useRef(false);
+  const showing = useRef(false); // result sheet open → ignore further frames
   const streamRef = useRef<MediaStream | null>(null);
 
   const submit = async (raw: string, method: 'qr' | 'manual') => {
-    if (busy.current || result) return;
+    if (busy.current || showing.current) return;
     busy.current = true;
     try {
       const r = await scanCheckpoint(raw, method);
       haptic('success');
+      showing.current = true;
       setResult(r); setManual(false); setCode(''); setErr(null);
     } catch (e) {
       haptic('warning');
@@ -64,7 +66,7 @@ export function ScanScreen() {
         const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
         const loop = async () => {
           if (stopped) return;
-          if (v.readyState >= 2 && !busy.current) {
+          if (v.readyState >= 2 && !busy.current && !showing.current) {
             try {
               let value: string | null = null;
               if (detector) value = (await detector.detect(v))[0]?.rawValue ?? null;
@@ -98,6 +100,7 @@ export function ScanScreen() {
     if (note.trim() && result) { try { await addDarEntry(`Checkpoint ${result.checkpoint.name}: ${note.trim()}`, null); } catch { /* not on shift */ } }
     setNote('');
     setResult(null);
+    showing.current = false;
     if (!next) navigate('/g/patrol');
   };
 
