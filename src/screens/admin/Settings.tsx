@@ -79,8 +79,8 @@ export function CategoriesScreen() {
             <div class="list-row" key={c.id} data-testid="category-row">
               <span class="list-icon" style={{ background: `${c.color}29`, color: c.color, opacity: c.hidden ? 0.45 : 1 }}><Icon name={c.icon} /></span>
               <button class="grow" style={{ textAlign: 'left', minWidth: 0 }} onClick={() => setEdit(c)} data-testid="category-edit">
-                <span class="ellipsis" style={{ display: 'block', fontWeight: 500, color: c.hidden ? 'var(--text-3)' : undefined }}>{c.name}</span>
-                <span class="foot muted">{(subs.data ?? []).filter((s) => s.category_id === c.id && !s.hidden).length} subtypes{c.required_fields.length ? ` · requires ${c.required_fields.length}` : ''}{c.hidden ? ' · hidden' : ''}</span>
+                <span class="wrap2" style={{ display: '-webkit-box', fontWeight: 500, color: c.hidden ? 'var(--text-3)' : undefined }}>{c.name}</span>
+                <span class="foot muted">{(subs.data ?? []).filter((s) => s.category_id === c.id && !s.hidden).length} subtypes{c.required_fields.length ? ` · ${c.required_fields.length} required` : ''}{c.hidden ? ' · hidden' : ''}</span>
               </button>
               <button class="mini-btn" aria-label={c.hidden ? 'Show category' : 'Hide category'} onClick={() => void saveCategory({ ...c, hidden: !c.hidden })} data-testid="category-hide"><Icon name={c.hidden ? 'eye-off' : 'eye'} /></button>
               <button class="mini-btn" aria-label="Move up" disabled={i === 0} onClick={() => void move(i, -1)} data-testid="category-up"><Icon name="chevron-down" style={{ transform: 'rotate(180deg)' }} /></button>

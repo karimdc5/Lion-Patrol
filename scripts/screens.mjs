@@ -78,15 +78,39 @@ try {
     await p.getByTestId('row-lock').click(); await p.getByText('Enter your PIN').waitFor(); await shot(p, 'lock-pin');
     await c.close();
   }
-  // owner (admin)
+  // owner (admin) — inject an open SOS so the Live banner is shown
   {
     const { c, p } = await signIn();
+    await p.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem('lp-demo-server'));
+      s.tables.patrol_alerts.push({ id: 'sos-shot', org_id: '0b5e0000-0000-7000-8000-000000000001', site_id: '0b5e0000-0000-7000-8000-00000000c002', member_id: '0b5e0000-0000-7000-8000-0000000000b6', member_name: 'Tasha Greene', triggered_at: new Date(Date.now() - 60000).toISOString(), lat: 47.3221, lng: -122.3127, status: 'open', created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      localStorage.setItem('lp-demo-server', JSON.stringify(s));
+    });
     await p.getByTestId('try-demo').click(); await p.getByTestId('demo-karim').click();
-    await p.getByRole('heading', { name: 'Live' }).waitFor(); await shot(p, 'admin-live');
-    await p.getByRole('link', { name: 'Sites' }).click(); await shot(p, 'admin-sites');
-    await p.getByRole('link', { name: 'People' }).click(); await shot(p, 'admin-people');
-    await p.getByRole('link', { name: 'Incidents' }).click(); await p.waitForTimeout(400); await shot(p, 'admin-incidents');
+    await p.getByRole('heading', { name: 'Live' }).waitFor(); await p.getByTestId('sos-banner').waitFor(); await shot(p, 'admin-live-sos');
+    await p.getByTestId('sos-ack').click(); await p.getByTestId('sos-resolve').click(); await p.waitForTimeout(300);
+    await p.evaluate(() => window.scrollTo(0, 0)); await shot(p, 'admin-live');
+    await p.evaluate(() => window.scrollTo(0, 900)); await shot(p, 'admin-live-completion');
+    await p.getByRole('link', { name: 'Activity' }).click(); await p.getByTestId('feed-item').first().waitFor(); await shot(p, 'admin-feed');
+    await p.getByRole('link', { name: 'Incidents' }).click(); await p.getByTestId('incident-row').first().waitFor(); await shot(p, 'admin-incidents');
+    await p.getByTestId('incident-row').filter({ hasText: 'Vehicle idling' }).click(); await p.getByTestId('incident-review').waitFor(); await shot(p, 'admin-incident-review');
+    await p.evaluate(() => window.scrollTo(0, 2000)); await shot(p, 'admin-incident-review-actions');
+    await p.goto(BASE + 'a/sites'); await p.getByTestId('site-admin-row').first().waitFor(); await shot(p, 'admin-sites');
+    await p.getByTestId('site-admin-row').first().click(); await p.getByTestId('site-name').waitFor(); await shot(p, 'admin-site-details');
+    await p.getByTestId('site-tab-orders').click(); await shot(p, 'admin-site-post-orders');
+    await p.getByTestId('site-tab-checkpoints').click(); await p.getByTestId('cp-admin-row').first().waitFor(); await shot(p, 'admin-site-checkpoints');
+    await p.getByTestId('qr-sheet').click(); await p.getByTestId('pdf-ready').waitFor(); await shot(p, 'admin-qr-pdf-ready');
+    await p.keyboard.press('Escape');
+    await p.getByTestId('site-tab-access').click(); await shot(p, 'admin-site-access');
+    await p.goto(BASE + 'a/people'); await p.getByTestId('member-row').first().waitFor(); await shot(p, 'admin-people');
+    await p.getByTestId('invite-btn').click(); await p.getByTestId('invite-site').first().click(); await shot(p, 'admin-invite-form');
+    await p.getByTestId('invite-create').click(); await p.getByTestId('invite-code').waitFor(); await shot(p, 'admin-invite-code');
+    await p.getByRole('button', { name: 'Done' }).click(); await p.getByTestId('member-row').filter({ hasText: 'Tasha' }).click(); await shot(p, 'admin-member');
+    await p.goto(BASE + 'a/schedule'); await p.getByTestId('add-shift').waitFor(); await shot(p, 'admin-schedule');
+    await p.getByTestId('add-shift').click(); await p.getByTestId('shift-sheet').waitFor(); await shot(p, 'admin-shift-sheet');
     await p.goto(BASE + 'a/settings'); await shot(p, 'admin-settings');
+    await p.goto(BASE + 'a/settings/categories'); await p.getByTestId('category-row').first().waitFor(); await shot(p, 'admin-categories');
+    await p.getByTestId('category-edit').nth(5).click(); await p.getByTestId('category-sheet').waitFor(); await shot(p, 'admin-category-edit');
     await p.goto(BASE + 'a/more'); await shot(p, 'admin-more');
     await c.close();
   }
@@ -94,7 +118,8 @@ try {
   {
     const { c, p } = await signIn();
     await p.getByTestId('try-demo').click(); await p.getByTestId('demo-manager').click();
-    await p.getByText('Trespasser at loading dock').waitFor(); await shot(p, 'client-home');
+    await p.getByText('Trespasser at loading dock').waitFor(); await p.waitForTimeout(500); await shot(p, 'client-home');
+    await p.getByTestId('client-incident').filter({ hasText: 'Graffiti' }).click(); await shot(p, 'client-incident');
     await c.close();
   }
   await browser.close();

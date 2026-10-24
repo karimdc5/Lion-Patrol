@@ -91,7 +91,7 @@ export function Dashboard() {
                   <span class="row-between"><b class="ellipsis">{c.site.name}</b><span class="tnum">{c.pct}%</span></span>
                   <span class="progress" style={{ display: 'block', margin: '8px 0 6px' }}><span style={{ width: `${c.pct}%`, background: c.pct < 80 ? 'var(--warning)' : 'var(--success)' }} /></span>
                   <span class="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                    <span class="pill pill-muted">{c.runs} tours</span>
+                    <span class="pill pill-muted">{c.runs} tour{c.runs === 1 ? '' : 's'}</span>
                     {c.missed > 0 && <span class="pill pill-danger">{c.missed} missed</span>}
                     {c.late > 0 && <span class="pill pill-warning">{c.late} late</span>}
                     {!c.missed && !c.late && c.runs > 0 && <span class="pill pill-success">On track</span>}
