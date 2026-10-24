@@ -8,6 +8,7 @@ import { fmtDateTime, fmtDate, fmtTime } from '../../lib/format';
 import type { Row as R } from '../../data/db';
 import { path, match, navigate } from '../../router';
 import { MoreScreen } from '../shared/More';
+import { PdfButton } from '../../ui/PdfButton';
 import { SyncScreen } from '../shared/Sync';
 
 async function refreshClient() {
@@ -104,6 +105,7 @@ function ClientIncident({ id }: { id: string }) {
           <div><span>Severity</span>{String(x.severity)}</div>
         </div>
         <div><SectionLabel>Narrative</SectionLabel><div class="card" style={{ whiteSpace: 'pre-wrap', lineHeight: '24px' }}>{String(x.description)}</div></div>
+        <PdfButton block variant="primary" label="Download PDF report" testid="client-incident-pdf" make={() => import('../../pdf').then((m) => m.incidentPdf(x.id, { includeInternal: false }))} />
       </div>
     </Screen>
   );
@@ -120,6 +122,7 @@ function ClientDar({ id }: { id: string }) {
       <div class="screen-body stack-lg">
         <div><h1 class="title">Daily activity · {fmtDate(String(d.data.report_date) + 'T12:00:00Z')}</h1><div class="muted sub">{String(d.data.author_name)}</div></div>
         {d.data.summary ? <div class="card">{String(d.data.summary)}</div> : null}
+        <PdfButton block variant="primary" label="Download PDF report" testid="client-dar-pdf" make={() => import('../../pdf').then((m) => m.darPdf(id))} />
         <div class="card" style={{ padding: '6px 14px' }}>
           {entries.filter((e) => !e.deleted_at).map((e) => (
             <div class="tl-item" key={e.id}><div class="tl-time">{fmtTime(e.occurred_at as string)}</div><div class="tl-dot" style={{ background: 'var(--gold)' }} /><div class="tl-body"><div class="tl-title">{String(e.category_name ?? 'Log')}</div><div class="tl-sub" style={{ WebkitLineClamp: 6 }}>{String(e.body)}</div></div></div>

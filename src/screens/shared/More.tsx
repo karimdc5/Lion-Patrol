@@ -34,6 +34,7 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
             <List>
               <Row icon="users" title="People & invites" chevron href="/a/people" testid="more-people" />
               <Row icon="calendar" title="Schedule" chevron href="/a/schedule" testid="more-schedule" />
+              <Row icon="note" title="Daily activity reports" chevron href="/a/dars" testid="more-dars" />
               <Row icon="settings" title="Settings & categories" chevron href="/a/settings" testid="more-settings" />
             </List>
           </>

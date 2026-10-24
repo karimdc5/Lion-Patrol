@@ -11,6 +11,7 @@ import { PostOrders } from './PostOrders';
 import { ClockScreen } from './Clock';
 import { ScanScreen } from './Scan';
 import { DarScreen } from './Dar';
+import { GuardIncidentView, GuardDarView } from './Reports';
 import { SosScreen, SosSheet, sosSheetOpen } from './Sos';
 import { loadOpenEntry } from '../../data/guard';
 import { dataVersion } from '../../data/repos/records';
@@ -34,6 +35,8 @@ export function GuardShell() {
   else if (p === '/g/report') screen = <ReportStart />;
   else if ((m = match('/g/report/:id', p))) screen = <IncidentEditor key={m.id} id={m.id!} />;
   else if (p === '/g/activity') screen = <ActivityScreen />;
+  else if ((m = match('/g/incidents/:id', p))) screen = <GuardIncidentView id={m.id!} />;
+  else if ((m = match('/g/dars/:te', p))) screen = <GuardDarView timeEntryId={m.te!} />;
   else if (p === '/g/dar') screen = <DarScreen />;
   else if (p === '/g/clock') screen = <ClockScreen />;
   else if (p === '/g/scan') screen = <ScanScreen />;
@@ -42,7 +45,7 @@ export function GuardShell() {
   else if (p === '/g/more/sync') screen = <SyncScreen base="/g" />;
   else if ((m = match('/g/post-orders/:siteId', p))) screen = <PostOrders siteId={m.siteId!} />;
   else screen = <GuardHome />;
-  const hideTabs = /^\/g\/(post-orders|report\/|clock|scan|sos|more\/sync)/.test(p);
+  const hideTabs = /^\/g\/(post-orders|report\/|clock|scan|sos|more\/sync|incidents\/|dars\/)/.test(p);
   return (
     <div data-shell="guard">
       {screen}

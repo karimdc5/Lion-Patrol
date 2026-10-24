@@ -10,6 +10,7 @@ import { Lock } from './screens/public/Lock';
 import { EnrollPinSheet } from './screens/public/EnrollPin';
 import { GuardShell } from './screens/guard/GuardShell';
 import { Toasts, Button } from './ui/kit';
+import { PdfReadySheet } from './ui/PdfReady';
 import { lazyScreen } from './ui/lazy';
 import { shouldShowInstallGuide } from './lib/platform';
 
@@ -24,6 +25,7 @@ export function App() {
     <>
       <Routes />
       <Toasts />
+      <PdfReadySheet />
       {backendMode.value === 'demo' && <div class="demo-ribbon" aria-label="Demo mode" role="note">Demo mode</div>}
       {updateReady.value && (
         <div class="toast-wrap" style={{ top: 'auto', bottom: 'calc(var(--tabbar-h) + var(--safe-bottom) + 16px)' }}>

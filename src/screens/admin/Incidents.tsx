@@ -8,6 +8,7 @@ import { setIncidentStatus, setIncidentClientVisible, addIncidentNote, fetchInci
 import { fmtDateTime, relTime } from '../../lib/format';
 import { db, type Row as R } from '../../data/db';
 import { labelFor } from '../../data/guard';
+import { PdfButton } from '../../ui/PdfButton';
 
 const STATUS: Record<string, [string, string]> = {
   submitted: ['New', 'pill-warning'], reviewed: ['Reviewed', 'pill-info'], sent_to_client: ['Sent to client', 'pill-success'], closed: ['Closed', 'pill-muted'], draft: ['Draft', 'pill-muted'],
@@ -105,6 +106,10 @@ export function IncidentReview({ id }: { id: string }) {
         {vehicles.length > 0 && <div><SectionLabel>Vehicles</SectionLabel><List>{vehicles.map((v, k) => <Row key={k} icon="car" title={`${v.plate || 'No plate'} ${v.state ?? ''}`} sub={[v.color, v.make, v.model].filter(Boolean).join(' ')} />)}</List></div>}
         <div><SectionLabel>Attachments</SectionLabel>{(atts.data ?? []).length ? <div class="att-tray">{atts.data!.map((a) => <AttachmentLink key={a.id} a={a} />)}</div> : <p class="muted sub">No attachments.</p>}</div>
 
+        <div class="grid-2">
+          <PdfButton label="Client PDF" testid="incident-pdf-client" make={() => import('../../pdf').then((m) => m.incidentPdf(i.id, { includeInternal: false }))} />
+          <PdfButton label="Internal PDF" testid="incident-pdf" make={() => import('../../pdf').then((m) => m.incidentPdf(i.id, { includeInternal: true }))} />
+        </div>
         <div class="card stack">
           <div class="headline">Review</div>
           <div class="foot muted">Status</div>

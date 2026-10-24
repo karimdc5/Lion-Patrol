@@ -10,6 +10,7 @@ import { prepareWithLimits, AttachmentTray } from '../../ui/Attachments';
 import { fmtTime } from '../../lib/format';
 import { navigate } from '../../router';
 import { GuardRight } from './common';
+import { PdfButton } from '../../ui/PdfButton';
 import type { Prepared } from '../../media/compress';
 import type { Row as R } from '../../data/db';
 
@@ -87,6 +88,7 @@ export function DarScreen() {
             ))}
           </div>
         ) : <Empty icon="note" title="No entries yet" body="Log patrols, observations and anything notable. Entries save instantly, even offline." />}
+        {dar.data && <PdfButton block label="Preview today’s report (PDF)" testid="dar-preview-pdf" make={() => import('../../pdf').then((m) => m.darPdf(dar.data!.id))} />}
       </div>
     </Screen>
   );
