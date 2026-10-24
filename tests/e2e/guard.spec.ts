@@ -150,7 +150,7 @@ test('killing/reloading mid-incident restores the draft and its photo with no lo
 test('SOS hold creates a high-priority alert with location; 911 is one tap away', async ({ page }) => {
   await signInGuard(page);
   const sos = page.getByTestId('home-sos');
-  await sos.scrollIntoViewIfNeeded();
+  await sos.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   const box = (await sos.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();

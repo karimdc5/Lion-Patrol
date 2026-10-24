@@ -48,7 +48,7 @@ h1, h2, h3, p { margin: 0; }
 .topbar {
   position: sticky; top: 0; z-index: 20;
   padding: calc(var(--safe-top) + 6px) calc(var(--pad) + var(--safe-right)) 6px calc(var(--pad) + var(--safe-left));
-  background: rgba(10, 15, 28, 0.82);
+  background: rgba(10, 15, 28, 0.94);
   -webkit-backdrop-filter: saturate(160%) blur(20px); backdrop-filter: saturate(160%) blur(20px);
   border-bottom: 1px solid transparent;
   transition: border-color var(--dur);
@@ -68,7 +68,7 @@ h1, h2, h3, p { margin: 0; }
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
-  background: rgba(17, 24, 39, 0.78);
+  background: rgba(14, 20, 34, 0.96);
   -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
   border-top: 1px solid var(--hairline);
 }
@@ -365,7 +365,7 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
 .cat-tile.selected { border-color: var(--gold); background: var(--gold-soft); }
 .cat-name { font-weight: 600; font-size: 15px; line-height: 19px; }
 .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.sticky-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; padding: 12px calc(16px + var(--safe-right)) calc(12px + var(--safe-bottom)) calc(16px + var(--safe-left)); background: rgba(17,24,39,.9); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border-top: 1px solid var(--hairline); display: flex; gap: 10px; align-items: center; }
+.sticky-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; padding: 12px calc(16px + var(--safe-right)) calc(12px + var(--safe-bottom)) calc(16px + var(--safe-left)); background: rgba(14,20,34,.97); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border-top: 1px solid var(--hairline); display: flex; gap: 10px; align-items: center; }
 .subform { background: var(--raised); border: 1px solid var(--hairline); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .yn { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
