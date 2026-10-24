@@ -14,6 +14,8 @@ export const DEMO = {
     marcus: { id: '0b5e0000-0000-7000-8000-0000000000a3', email: 'marcus@lionsecurity.demo', name: 'Marcus Reed', role: 'guard' },
     dana: { id: '0b5e0000-0000-7000-8000-0000000000a4', email: 'dana@lionsecurity.demo', name: 'Dana Whitfield', role: 'supervisor' },
     client: { id: '0b5e0000-0000-7000-8000-0000000000a5', email: 'manager@kentstationmarket.demo', name: 'Priya Natarajan', role: 'client' },
+    tasha: { id: '0b5e0000-0000-7000-8000-0000000000a6', email: 'tasha@lionsecurity.demo', name: 'Tasha Greene', role: 'guard' },
+    wclient: { id: '0b5e0000-0000-7000-8000-0000000000a7', email: 'office@willowcreek.demo', name: 'Willow Creek Leasing', role: 'client' },
   },
   sites: {
     market: '0b5e0000-0000-7000-8000-00000000c001',
@@ -70,6 +72,8 @@ export function demoSeed(now = Date.now()): MockState {
   access(DEMO.sites.market, DEMO.users.marcus.id);
   access(DEMO.sites.willow, DEMO.users.marcus.id);
   access(DEMO.sites.market, DEMO.users.client.id);
+  access(DEMO.sites.willow, DEMO.users.tasha.id);
+  access(DEMO.sites.willow, DEMO.users.wclient.id);
 
   const cps: Array<[string, string, string, number, number, number]> = [
     [DEMO.sites.market, 'Front Entrance', 'KSM1FRNT', 1, 47.38268, -122.23472],
@@ -137,5 +141,101 @@ export function demoSeed(now = Date.now()): MockState {
   t('patrol_tour_runs').push({ id: run, org_id: org, site_id: DEMO.sites.market, member_id: memberId(DEMO.users.marcus.id), time_entry_id: te, started_at: iso(lastIn + 1 * H), completed_at: iso(lastIn + 1.3 * H), expected_count: 4, scanned_count: 4, late: false, created_at: iso(lastIn + H), updated_at: iso(lastIn + 1.3 * H) });
   t('patrol_checkpoints').filter((c) => c.site_id === DEMO.sites.market).forEach((c, i) => t('patrol_scans').push({ id: `0b5e0000-0000-7000-8000-0000000c${String(i + 1).padStart(4, '0')}`, org_id: org, site_id: DEMO.sites.market, member_id: memberId(DEMO.users.marcus.id), checkpoint_id: c.id, tour_run_id: run, time_entry_id: te, scanned_at: iso(lastIn + H + i * 5 * 60e3), lat: c.lat, lng: c.lng, distance_m: 6 + i, method: 'qr', flags: [], created_at: iso(lastIn + H + i * 5 * 60e3) }));
   t('patrol_member_status').push({ id: memberId(DEMO.users.marcus.id), member_id: memberId(DEMO.users.marcus.id), org_id: org, on_duty: false, time_entry_id: null, site_id: DEMO.sites.market, lat: 47.3825, lng: -122.2345, last_ping_at: iso(lastIn + 8 * H), on_duty_since: null, updated_at: iso(lastIn + 8 * H) });
+  busyHistory(s, now);
   return s;
+}
+
+/** A week of realistic activity + two guards on shift right now. */
+function busyHistory(s: MockState, now: number) {
+  const H = 3600e3, M = 60e3;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const org = DEMO.org;
+  const t = (n: string) => (s.tables[n] ??= []);
+  let seq = 0;
+  const id = (p: string) => `0b5e0000-0000-7000-9${p}-${String(++seq).padStart(12, '0')}`;
+  const mid = (u: { id: string }) => memberId(u.id);
+  const cps = (site: string) => t('patrol_checkpoints').filter((c) => c.site_id === site).sort((a, b) => a.seq - b.seq);
+  const cat = (name: string) => t('patrol_categories').find((c) => c.name === name)!;
+  const sub = (c: string, n: string) => t('patrol_subtypes').find((x) => x.category_id === cat(c).id && x.name === n);
+  const users = DEMO.users;
+
+  // ---- past nights (2..6 days ago) at both sites
+  const guardsFor: Record<string, Array<{ id: string; name: string }>> = { [DEMO.sites.market]: [users.marcus, users.abdinasir], [DEMO.sites.willow]: [users.tasha, users.karim] };
+  for (let d = 2; d <= 6; d++) {
+    for (const site of [DEMO.sites.market, DEMO.sites.willow]) {
+      const g = guardsFor[site]![d % 2]!;
+      const start = now - d * 24 * H - 2 * H;
+      const te = id('100');
+      t('patrol_time_entries').push({ id: te, org_id: org, site_id: site, member_id: mid(g), shift_id: null, clock_in_at: iso(start), clock_in_lat: 47.38, clock_in_lng: -122.23, clock_out_at: iso(start + 8 * H), shift_note: 'All secure at end of shift.', gps_notice_accepted_at: iso(now - 40 * 24 * H), created_at: iso(start), updated_at: iso(start + 8 * H) });
+      const dar = id('200');
+      const sent = d % 3 !== 0;
+      t('patrol_dars').push({ id: dar, org_id: org, site_id: site, member_id: mid(g), author_name: g.name, time_entry_id: te, report_date: iso(start).slice(0, 10), summary: 'Routine night. Doors secured, patrols completed.', status: sent ? 'sent_to_client' : 'reviewed', report_no: `LSS-${site === DEMO.sites.market ? 'KSM' : 'WCA'}-2026-${String(20 + seq).padStart(5, '0')}`, submitted_at: iso(start + 8 * H), client_visible: sent, client_rev: 2, created_at: iso(start), updated_at: iso(start + 9 * H) });
+      ['All exterior doors checked and locked.', 'Parking lot patrol, no issues.', 'Lights checked, all working.'].forEach((body, i) =>
+        t('patrol_dar_entries').push({ id: id('300'), org_id: org, site_id: site, member_id: mid(g), dar_id: dar, occurred_at: iso(start + (1 + i * 2.5) * H), category_name: 'Patrol & Shift', body, client_rev: 1, created_at: iso(start + (1 + i * 2.5) * H), updated_at: iso(start + (1 + i * 2.5) * H) }));
+      for (let r = 0; r < 3; r++) {
+        const run = id('400');
+        const rs = start + (1 + r * 2.5) * H;
+        const list = cps(site);
+        const missed = (d + r) % 4 === 0 ? 1 : 0;
+        const done = list.slice(0, list.length - missed);
+        t('patrol_tour_runs').push({ id: run, org_id: org, site_id: site, member_id: mid(g), time_entry_id: te, started_at: iso(rs), completed_at: missed ? null : iso(rs + 22 * M), expected_count: list.length, scanned_count: done.length, late: (d + r) % 5 === 0, created_at: iso(rs), updated_at: iso(rs + 22 * M) });
+        done.forEach((c, i) => t('patrol_scans').push({ id: id('500'), org_id: org, site_id: site, member_id: mid(g), checkpoint_id: c.id, tour_run_id: run, time_entry_id: te, scanned_at: iso(rs + i * 5 * M), lat: c.lat, lng: c.lng, distance_m: 5 + i, method: 'qr', flags: (d + r) % 5 === 0 && i === done.length - 1 ? ['late'] : [], created_at: iso(rs + i * 5 * M) }));
+      }
+    }
+  }
+
+  // ---- on shift now: Tasha at Willow Creek, Abdinasir (owner working a post) at Kent Station Market
+  const onShift = [
+    { u: users.tasha, site: DEMO.sites.willow, since: 3.2 * H, lat: 47.32205, lng: -122.31270, scanned: 3 },
+    { u: users.abdinasir, site: DEMO.sites.market, since: 1.6 * H, lat: 47.38250, lng: -122.23440, scanned: 2 },
+  ];
+  for (const o of onShift) {
+    const start = now - o.since;
+    const te = id('600');
+    t('patrol_time_entries').push({ id: te, org_id: org, site_id: o.site, member_id: mid(o.u), shift_id: null, clock_in_at: iso(start), clock_in_lat: o.lat, clock_in_lng: o.lng, clock_out_at: null, shift_note: null, gps_notice_accepted_at: iso(now - 40 * 24 * H), created_at: iso(start), updated_at: iso(start) });
+    const dar = id('610');
+    t('patrol_dars').push({ id: dar, org_id: org, site_id: o.site, member_id: mid(o.u), author_name: o.u.name, time_entry_id: te, report_date: iso(start).slice(0, 10), summary: null, status: 'open', client_visible: false, client_rev: 1, created_at: iso(start), updated_at: iso(start) });
+    t('patrol_dar_entries').push({ id: id('620'), org_id: org, site_id: o.site, member_id: mid(o.u), dar_id: dar, occurred_at: iso(start + 5 * M), category_name: 'Patrol & Shift', body: 'On post, keys and radio received.', client_rev: 1, created_at: iso(start + 5 * M), updated_at: iso(start + 5 * M) });
+    const run = id('630');
+    const list = cps(o.site);
+    t('patrol_tour_runs').push({ id: run, org_id: org, site_id: o.site, member_id: mid(o.u), time_entry_id: te, started_at: iso(now - 35 * M), completed_at: null, expected_count: list.length, scanned_count: o.scanned, late: o.u === users.tasha, created_at: iso(now - 35 * M), updated_at: iso(now - 8 * M) });
+    list.slice(0, o.scanned).forEach((c, i) => t('patrol_scans').push({ id: id('640'), org_id: org, site_id: o.site, member_id: mid(o.u), checkpoint_id: c.id, tour_run_id: run, time_entry_id: te, scanned_at: iso(now - (35 - i * 9) * M), lat: c.lat, lng: c.lng, distance_m: 4 + i, method: 'qr', flags: o.u === users.tasha && i === 2 ? ['late'] : [], created_at: iso(now - (35 - i * 9) * M) }));
+    const st = t('patrol_member_status');
+    const existing = st.find((x) => x.member_id === mid(o.u));
+    const row = { id: mid(o.u), member_id: mid(o.u), org_id: org, on_duty: true, time_entry_id: te, site_id: o.site, lat: o.lat, lng: o.lng, accuracy_m: 9, last_ping_at: iso(now - (o.u === users.tasha ? 2 : 6) * M), on_duty_since: iso(start), updated_at: iso(now - 2 * M) };
+    if (existing) Object.assign(existing, row); else st.push(row);
+  }
+
+  // ---- incidents across the week in every review state
+  type Inc = [string, string, string, number, string, string, string, string, boolean];
+  const incs: Inc[] = [
+    [DEMO.sites.willow, 'Disturbance & Noise', 'Noise complaint', 0.15, 'Loud music from unit D-214', 'Resident in D-212 reported loud music. I knocked, identified myself and asked the occupant to lower the volume. They complied right away.', 'submitted', 'low', false],
+    [DEMO.sites.market, 'Suspicious Activity', 'Suspicious vehicle', 0.5, 'Vehicle idling behind loading dock', 'Grey sedan idling behind the loading dock with lights off for about 20 minutes. I approached on foot and the driver left before I reached it. Plate partially read: BXR-4.', 'submitted', 'medium', false],
+    [DEMO.sites.market, 'Vandalism, Graffiti & Damage', 'Graffiti', 2.2, 'Graffiti on east wall', 'Found fresh spray-paint tags (about 3 ft x 6 ft) on the east wall near the fire exit. Photographed and reported to the store manager.', 'sent_to_client', 'medium', true],
+    [DEMO.sites.willow, 'Parking & Vehicles', 'Blocked fire lane', 3.1, 'Vehicle blocking fire lane at Building C', 'Black SUV parked in the fire lane at Building C for over 20 minutes. Logged the plate and called the tow company per post orders.', 'sent_to_client', 'low', true],
+    [DEMO.sites.market, 'Police, Fire & EMS Contact', 'Police called', 4.1, 'Attempted break-in, Kent PD responded', 'Heard glass breaking at the pharmacy side window at 02:40. Called 911 and observed from a safe distance. Two individuals fled on foot. Kent PD arrived at 02:47 and took the report.', 'reviewed', 'high', false],
+    [DEMO.sites.willow, 'Medical & Injury', 'Fall', 5.2, 'Resident slipped near the pool gate', 'Resident slipped on wet pavement near the pool gate and scraped a knee. Offered first aid; resident declined EMS and walked home.', 'closed', 'medium', true],
+  ];
+  incs.forEach(([site, c, st, daysAgo, title, desc, status, sev, visible], i) => {
+    const at = now - daysAgo * 24 * H;
+    const g = site === DEMO.sites.market ? (i % 2 ? users.marcus : users.abdinasir) : users.tasha;
+    const subRow = sub(c, st);
+    t('patrol_incidents').push({
+      id: id('700'), org_id: org, site_id: site, member_id: mid(g), author_name: g.name, category_id: cat(c).id, subtype_id: subRow?.id ?? null, category_name: c, subtype_name: subRow?.name ?? null,
+      title, occurred_at: iso(at), location_text: null, description: desc, people: c === 'Police, Fire & EMS Contact' ? [{ role: 'subject', name: 'Unknown (2)', description: 'Two adults in dark hoodies, fled north', phone: '' }] : [],
+      vehicles: c === 'Parking & Vehicles' || c === 'Suspicious Activity' ? [{ plate: c === 'Parking & Vehicles' ? 'CDK8812' : 'BXR4', state: 'WA', make: c === 'Parking & Vehicles' ? 'Chevrolet' : 'Toyota', model: c === 'Parking & Vehicles' ? 'Tahoe' : 'Camry', color: c === 'Parking & Vehicles' ? 'Black' : 'Grey', notes: '' }] : [],
+      police_called: c === 'Police, Fire & EMS Contact', police_agency: c === 'Police, Fire & EMS Contact' ? 'Kent PD' : null, police_case_no: c === 'Police, Fire & EMS Contact' ? '26-118842' : null,
+      injury: c === 'Medical & Injury', injury_details: c === 'Medical & Injury' ? 'Minor scrape on left knee. First aid offered.' : null, property_damage: c.startsWith('Vandalism') || c.startsWith('Police'), damage_estimate_usd: c.startsWith('Vandalism') ? 400 : c.startsWith('Police') ? 650 : null,
+      severity: sev, status, report_no: `LSS-${site === DEMO.sites.market ? 'KSM' : 'WCA'}-2026-${String(30 + i).padStart(5, '0')}`, submitted_at: iso(at + 20 * M), client_visible: visible,
+      reviewed_by: status === 'submitted' ? null : mid(users.karim), reviewed_at: status === 'submitted' ? null : iso(at + 6 * H), sent_to_client_at: visible ? iso(at + 7 * H) : null,
+      client_rev: 3, created_at: iso(at), updated_at: iso(at + 7 * H),
+    });
+  });
+
+  // ---- a resolved SOS from earlier in the week
+  t('patrol_alerts').push({ id: id('800'), org_id: org, site_id: DEMO.sites.willow, member_id: mid(users.tasha), member_name: users.tasha.name, triggered_at: iso(now - 3 * 24 * H - 3 * H), lat: 47.3221, lng: -122.3125, status: 'resolved', acknowledged_at: iso(now - 3 * 24 * H - 3 * H + 2 * M), resolved_at: iso(now - 3 * 24 * H - 2.5 * H), note: 'Aggressive dog near Building F. Animal control called; guard safe.', created_at: iso(now - 3 * 24 * H - 3 * H), updated_at: iso(now - 3 * 24 * H - 2.5 * H) });
+
+  // ---- next week's schedule for Tasha
+  const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
+  for (let d = 0; d < 7; d++) t('patrol_shifts').push({ id: id('900'), org_id: org, site_id: DEMO.sites.willow, member_id: mid(users.tasha), starts_at: iso(day0.getTime() + d * 24 * H + 21 * H), ends_at: iso(day0.getTime() + d * 24 * H + 29 * H), notes: null, cancelled_at: null, created_at: iso(now - 7 * 24 * H), updated_at: iso(now - 7 * 24 * H) });
 }
