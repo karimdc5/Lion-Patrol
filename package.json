@@ -1,0 +1,45 @@
+{
+  "name": "lion-patrol",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/postbuild.mjs",
+    "build:e2e": "vite build --mode e2e && node scripts/postbuild.mjs",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:sql": "node scripts/sql-test.mjs",
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "screens": "node scripts/screens.mjs",
+    "icons": "python3 scripts/icons.py"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "@playwright/test": "^1.64.1",
+    "@preact/preset-vite": "^2.10.6",
+    "fake-indexeddb": "^6.2.6",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.5",
+    "workbox-expiration": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1",
+    "workbox-window": "^7.4.1"
+  },
+  "dependencies": {
+    "@preact/signals": "^2.11.3",
+    "@supabase/auth-js": "^2.118.0",
+    "@supabase/postgrest-js": "^2.118.0",
+    "@supabase/storage-js": "^2.118.0",
+    "idb": "^8.0.4",
+    "preact": "^10.29.8",
+    "preact-iso": "^2.12.2"
+  }
+}
