@@ -200,3 +200,28 @@ test('DAR: add log entries with a photo, clock out submits the DAR', async ({ pa
   expect((await rows(page, 'patrol_dar_entries')).filter((e) => e.dar_id === dar.id)).toHaveLength(1);
   expect((await rows(page, 'patrol_time_entries')).find((t) => t.id === dar.time_entry_id)!.clock_out_at).toBeTruthy();
 });
+
+test('camera QR scan: injected fake camera stream is decoded and logged', async ({ page }) => {
+  const { encode } = await import('uqr');
+  const { data } = encode('https://karimdc5.github.io/Lion-Patrol/q/KSM2EAST', { border: 4 });
+  await page.addInitScript((matrix: boolean[][]) => {
+    const fake = async () => {
+      const n = matrix.length, scale = 10;
+      const c = document.createElement('canvas');
+      c.width = c.height = n * scale;
+      const ctx = c.getContext('2d')!;
+      const draw = () => {
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.fillStyle = '#000';
+        matrix.forEach((row, y) => row.forEach((on, x) => { if (on) ctx.fillRect(x * scale, y * scale, scale, scale); }));
+      };
+      draw(); setInterval(draw, 100);
+      return (c as HTMLCanvasElement & { captureStream: (fps: number) => MediaStream }).captureStream(10);
+    };
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: fake }, configurable: true });
+  }, data);
+  await signInGuard(page);
+  await clockIn(page);
+  await page.getByTestId('home-scan').click();
+  await expect(page.getByTestId('scan-result-name')).toHaveText('East Side Fire Exit', { timeout: 15_000 });
+  await expect.poll(async () => (await rows(page, 'patrol_scans')).filter((s) => s.method === 'qr' && s.device_id).length).toBe(1);
+});
