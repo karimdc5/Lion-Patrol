@@ -31,7 +31,7 @@ export function ReportStart() {
     pushRecent(c.id);
     const te = onShift.value;
     const sites = await sitesFor(org, memberId.value, isStaff.value);
-    const f = emptyIncident(uuidv7(), te?.site_id ?? (sites.length === 1 ? sites[0]!.id : null), te?.id ?? null);
+    const f = emptyIncident(uuidv7(), te?.site_id ?? sites[0]?.id ?? null, te?.id ?? null);
     f.category_id = c.id;
     f.severity = (c.default_severity as IncidentForm['severity']) ?? 'low';
     await saveDraftLocal(f);
