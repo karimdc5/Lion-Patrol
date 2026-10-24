@@ -392,6 +392,50 @@ do $$ declare ok boolean; begin
 end $$;
 reset role;
 
+-- ===================================================================== portal links + notify targets (1000)
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated","email":"rls-owner-a@test.invalid"}', true);
+do $$ declare l jsonb; t jsonb; begin
+  update public.patrol_org_settings set notify_emails = array['rls-owner-a@test.invalid','rls-client-a@test.invalid','stranger@test.invalid'], email_enabled = true;
+  l := public.patrol_create_portal_link('30000000-0000-4000-8000-0000000000a1', 30, 'Client portal');
+  insert into rls_tokens values ('portal', l ->> 'token');
+  insert into rls_tokens values ('portal_id', l ->> 'id');
+end $$;
+reset role;
+update public.patrol_members set email = 'rls-owner-a@test.invalid' where user_id = '00000000-0000-4000-8000-0000000000a1';
+update public.patrol_members set email = 'rls-client-a@test.invalid' where user_id = '00000000-0000-4000-8000-0000000000a4';
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a3","role":"authenticated"}', true);
+do $$ declare t jsonb; ok boolean; begin
+  t := public.patrol_notify_targets('10000000-0000-4000-8000-00000000000a');
+  if t -> 'recipients' <> '["rls-owner-a@test.invalid"]'::jsonb then raise exception 'RLS FAIL: notify targets not owners-only (%)', t; end if;
+  if public.patrol_notify_targets('10000000-0000-4000-8000-00000000000b') is not null then raise exception 'RLS FAIL: notify targets for other org'; end if;
+  ok := false; begin perform public.patrol_create_portal_link('30000000-0000-4000-8000-0000000000a2'); exception when insufficient_privilege then ok := true; end;
+  if not ok then raise exception 'RLS FAIL: guard created portal link'; end if;
+  if (select count(*) from public.patrol_portal_links) <> 0 then raise exception 'RLS FAIL: guard sees portal links'; end if;
+end $$;
+reset role;
+set local role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+do $$ declare p jsonb; begin
+  p := public.patrol_get_portal((select v from rls_tokens where k = 'portal'));
+  if p is null then raise exception 'RLS FAIL: portal fetch'; end if;
+  if jsonb_array_length(p -> 'incidents') <> 1 or p -> 'incidents' -> 0 ->> 'title' <> 'A1 submitted' then raise exception 'RLS FAIL: portal incidents (%)', p -> 'incidents'; end if;
+  if (p -> 'incidents' -> 0) ? 'review_notes' then raise exception 'RLS FAIL: portal leaks review notes'; end if;
+  if public.patrol_get_portal('nope') is not null then raise exception 'RLS FAIL: bad portal token'; end if;
+end $$;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+select public.patrol_revoke_portal_link((select v from rls_tokens where k = 'portal_id')::uuid);
+reset role;
+set local role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+do $$ begin
+  if public.patrol_get_portal((select v from rls_tokens where k = 'portal')) is not null then raise exception 'RLS FAIL: revoked portal link still works'; end if;
+end $$;
+reset role;
+
 -- ===================================================================== function privileges (hardening)
 do $$
 declare f text;
