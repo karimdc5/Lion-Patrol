@@ -146,7 +146,12 @@ export const setDarStatus = (id: string, status: string) =>
   rpcOrQueue('patrol_set_dar_status', { p_id: id, p_status: status }, `patrol_dars:${id}:review`, `DAR ${status}`, { table: 'patrol_dars', row: { id, status, ...(status === 'sent_to_client' ? { client_visible: true } : {}) } });
 
 export async function saveOrgSettings(row: Row) {
-  await upsertRow('patrol_org_settings', row, 'Organization settings');
+  const { userId, orgId } = ctx();
+  // patrol_org_settings is keyed by org_id (no id column): keep `id` only in the local cache.
+  const { id: _local, next_report_no: _n, updated_at: _u, ...payload } = row as Row & { next_report_no?: number; updated_at?: string };
+  await enqueue({ userId, orgId, kind: 'upsert', table: 'patrol_org_settings', payload, entityKey: `patrol_org_settings:${orgId}`, label: 'Organization settings' },
+    [{ table: 'patrol_org_settings', row: { ...row, id: orgId }, orgId }]);
+  bumpData(); void kick();
 }
 
 // ---------------------------------------------------------------- dashboard data

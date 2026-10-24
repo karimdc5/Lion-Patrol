@@ -1662,6 +1662,19 @@ Each pass ends green (`typecheck`, `test`, `test:sql`, `build`, `check:bundle`, 
 4. **Pass 5 — Dashboard, review, PDFs, client portal.** Live map (Leaflet lazy, realtime), feed with filters, patrol completion, incident and DAR review, alerts; incident and DAR PDFs with share-sheet delivery; client portal and share links `/s/:token`. e2e: pdf, client, share link. `scripts/pdfs.mjs`.
 5. **Pass 6 — Polish and hardening.** Screenshots of every screen (`npm run screens`), transitions and skeletons audit, accessibility, performance and budget, iPhone checklist, owner README.
 
+### Pass 4 implementation notes (admin + dashboard)
+- **No new migrations.** Admin writes use the existing RLS:
+  - Sites, checkpoints, categories, subtypes, org settings and shifts are upserted through the outbox, so they work offline and in demo mode.
+  - Site access is an insert/delete keyed on `(site_id, member_id)`; `SupabaseBackend` passes `onConflict` per table.
+  - Member role/status changes are `update`s, policed by `patrol_members_guard`.
+  - Invites call `patrol_create_invite` directly (online only). The code is shown once, with share and copy; the app never sends email or SMS.
+- **Review and SOS actions** use the RPCs directly when online and fall back to the outbox when offline. The local cache is updated optimistically.
+- **Dashboard freshness.** `refreshDashboard()` pulls recent operational rows (7–30 days). It runs on entry, every 15 s while visible, and on realtime nudges. Realtime (`@supabase/realtime-js`, lazy, Supabase only) subscribes to `postgres_changes` on the 5 published tables filtered by `org_id`, and each event triggers a debounced refresh.
+- **QR sheet PDF** (`src/pdf/qrSheet.ts`, lazy): pdf-lib with standard fonts. The QR matrix comes from `uqr` (ECC Q) and is drawn as merged vector rectangles, one checkpoint per Letter page. It encodes `…/q/CODE`. Delivery is the two-step "PDF ready" sheet with `navigator.share({files})` and a download fallback; never `window.print()`.
+- **Map:** Leaflet with Carto dark tiles in a lazy chunk, used for tap-to-place site pins. Coordinates can also come from "use my location".
+- **Category reorder** uses up/down controls (reliable on touch and keyboard), persisted with `patrol_reorder_categories`. "Restore defaults" isn't offered, since the seed function was revoked in 0900.
+- **The client portal** only shows rows RLS returns: client-visible incidents and DARs for the client's sites, plus tour runs for the 7-night patrol-proof chart.
+
 ### Pass 3 implementation notes (guard core)
 - **Migration `20261024000900_patrol_hardening.sql`.** `anon` can execute only `patrol_get_shared_report`. `authenticated` keeps the policy/trigger/bootstrap helpers plus the app RPCs. Trigger and internal functions are revoked (`patrol_seed_categories`, `patrol_gen_code`, `patrol_prune_pings`, …). Triggers still fire, because EXECUTE isn't checked for triggers. `rls_test.sql` asserts these privileges. The Pass 4 category manager therefore has no "Restore defaults" RPC.
 - **Guard writes all go through `src/data/guard.ts`**, which uses the outbox:
