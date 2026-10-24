@@ -149,8 +149,9 @@ export const setDarStatus = (id: string, status: string) =>
 export async function saveOrgSettings(row: Row) {
   const { userId, orgId } = ctx();
   // patrol_org_settings is keyed by org_id (no id column): keep `id` only in the local cache.
-  const { id: _local, next_report_no: _n, updated_at: _u, ...payload } = row as Row & { next_report_no?: number; updated_at?: string };
-  await enqueue({ userId, orgId, kind: 'upsert', table: 'patrol_org_settings', payload, entityKey: `patrol_org_settings:${orgId}`, label: 'Organization settings' },
+  // UPDATE (not upsert): the row always exists and RLS grants admins UPDATE only, no INSERT.
+  const { id: _local, next_report_no: _n, updated_at: _u, org_id: _o, ...payload } = row as Row & { next_report_no?: number; updated_at?: string; org_id?: string };
+  await enqueue({ userId, orgId, kind: 'update', table: 'patrol_org_settings', payload, match: { org_id: orgId }, entityKey: `patrol_org_settings:${orgId}`, label: 'Organization settings' },
     [{ table: 'patrol_org_settings', row: { ...row, id: orgId }, orgId }]);
   bumpData(); void kick();
 }
