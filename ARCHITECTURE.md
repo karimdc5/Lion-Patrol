@@ -1776,3 +1776,13 @@ Each pass ends green (`typecheck`, `test`, `test:sql`, `build`, `check:bundle`, 
     - Thumbs cached locally to save egress.
     - Note: a Free project **pauses after about 7 days of inactivity**. Daily use avoids this.
       If it ever pauses, the offline outbox keeps all data until the coordinator resumes it.
+
+## Owner first run
+
+1. Open https://karimdc5.github.io/Lion-Patrol/ in Safari → Share → Add to Home Screen → open "Lion Patrol" from the home screen.
+2. Sign in with the same email/password used for the lionofseattle.com admin (accounts listed in `app_admins` may create the company). No account yet? "New owner? Create an account", then confirm the email.
+3. "Set up your company" → name "Lion Security Services" → creates the org with the default report categories.
+4. Follow the getting-started checklist on Live: add a site (map pin, post orders) → add checkpoints → QR sheet PDF → print and post the codes.
+5. People → Invite → share the invite code/link with a guard yourself (the app never sends it). Guards install the app, tap "Enter invite code", create their login, then set a device PIN.
+6. Optional: Settings → Email notifications (owners only while testing; EmailJS template To = `{{to_email}}`, Subject `{{subject}}`, Body `{{message}}`). Site → Client portal → create a link to share with a client when ready.
+7. Demo mode (login screen → "Try demo") shows a busy sample operation without touching real data.
