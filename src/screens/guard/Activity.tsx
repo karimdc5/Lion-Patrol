@@ -34,7 +34,7 @@ export function ActivityScreen() {
   const org = currentOrgId.value, me = memberId.value;
   const items = useData(() => loadItems(org, me), [org, me]);
   const groups: Array<[string, Item[]]> = [];
-  for (const it of items.data ?? []) {
+  for (const it of (items.data ?? []).slice(0, 200)) {
     const day = fmtDay(it.at);
     const g = groups.at(-1);
     if (g && g[0] === day) g[1].push(it); else groups.push([day, [it]]);

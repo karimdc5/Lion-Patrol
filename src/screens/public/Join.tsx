@@ -81,3 +81,42 @@ export function Join() {
     </Screen>
   );
 }
+
+/** Owner/first account sign-up (owners listed in app_admins go on to create the organization). */
+export function Signup() {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const submit = async (e: Event) => {
+    e.preventDefault(); setError(null);
+    if (!name.trim() || !email.trim()) { setError('Enter your name and email.'); return; }
+    if (password.length < 8) { setError('Choose a password with at least 8 characters.'); return; }
+    setBusy(true);
+    try {
+      const r = await signUp(email, password, name.trim());
+      if (r === 'confirm') setInfo('Check your email to confirm your account, then come back and sign in.');
+      else navigate('/', { replace: true });
+    } catch (err) {
+      const m = (err as Error).message;
+      setError(isNetworkError(err) ? 'You’re offline. Connect to the internet to create an account.' : /already registered|already exists/i.test(m) ? 'That email already has an account. Go back and sign in.' : m);
+    } finally { setBusy(false); }
+  };
+  return (
+    <Screen>
+      <TopBar title="Create account" large backTo="/login" sub="For owners setting up Lion Patrol. Guards: use your invite code instead." />
+      <div class="screen-body">
+        <form class="stack" onSubmit={submit} noValidate style={{ maxWidth: 480 }}>
+          <Field label="Your full name"><input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} autoComplete="name" name="name" /></Field>
+          <Field label="Email"><input class="input" type="email" inputMode="email" autoComplete="username" autoCapitalize="off" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} name="email" /></Field>
+          <Field label="Create a password" hint="At least 8 characters."><input class="input" type="password" autoComplete="new-password" value={password} onInput={(e) => setPassword((e.target as HTMLInputElement).value)} name="password" /></Field>
+          {error && <div class="form-error" role="alert">{error}</div>}
+          {info && <div class="form-info" role="status">{info}</div>}
+          <Button type="submit" variant="primary" size="lg" block loading={busy}>Create account</Button>
+        </form>
+      </div>
+    </Screen>
+  );
+}

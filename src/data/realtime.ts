@@ -21,5 +21,10 @@ export async function subscribeOrg(orgId: string, onChange: () => void): Promise
     ch = ch.on('postgres_changes' as never, { event: '*', schema: 'public', table, filter: `org_id=eq.${orgId}` } as never, () => onChange());
   }
   ch.subscribe();
-  return () => { void client.removeChannel(ch); client.disconnect(); };
+  // Keep the socket authorised as access tokens rotate (they expire hourly).
+  const reauth = window.setInterval(async () => {
+    const s = await backend.auth.ensureFresh().catch(() => null);
+    if (s) client.setAuth(s.access_token);
+  }, 5 * 60_000);
+  return () => { clearInterval(reauth); void client.removeChannel(ch); client.disconnect(); };
 }

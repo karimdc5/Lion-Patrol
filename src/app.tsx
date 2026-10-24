@@ -3,7 +3,7 @@ import { signal } from '@preact/signals';
 import { phase, identity, uiMode, offerEnroll, backendMode, setUiMode } from './auth/session';
 import { path, navigate } from './router';
 import { Login } from './screens/public/Login';
-import { Join } from './screens/public/Join';
+import { Join, Signup } from './screens/public/Join';
 import { Setup, NoAccess } from './screens/public/Setup';
 import { Install } from './screens/public/Install';
 import { Lock } from './screens/public/Lock';
@@ -51,6 +51,7 @@ function Routes() {
   if (ph === 'signedOut') {
     if (installGate.value) return <Install onContinue={() => { installGate.value = false; }} />;
     if (p.startsWith('/join')) return <Join />;
+    if (p === '/signup') return <Signup />;
     return <Login />;
   }
   if (ph === 'locked') return <Lock />;

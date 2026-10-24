@@ -25,6 +25,23 @@ export default defineConfig(({ mode }) => {
     plugins: [
       preact(),
       {
+        name: 'lp-csp',
+        apply: 'build',
+        transformIndexHtml: (html) => html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${[
+          "default-src 'self'",
+          "script-src 'self'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob: https://djkinciawtoqlxkpiesq.supabase.co https://*.basemaps.cartocdn.com",
+          "media-src 'self' blob: https://djkinciawtoqlxkpiesq.supabase.co",
+          "connect-src 'self' https://djkinciawtoqlxkpiesq.supabase.co wss://djkinciawtoqlxkpiesq.supabase.co https://api.emailjs.com",
+          "worker-src 'self' blob:",
+          "manifest-src 'self'",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+        ].join('; ')}" />\n    <meta name="referrer" content="strict-origin-when-cross-origin" />`),
+      },
+      {
         name: 'lp-splash-links',
         transformIndexHtml: (html) => html.replace('<!--SPLASH-->', splashLinks),
       },

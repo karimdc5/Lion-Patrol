@@ -52,6 +52,7 @@ export function Dashboard() {
       <TopBar title="Live" large sub={orgName.value} right={<SyncPill />} />
       <div class="screen-body stack-lg">
         {data && <AlertBanner alerts={data.alerts} members={data.members} sites={data.sites} />}
+        {data && <GettingStarted d={data} />}
         <div class="grid-3">
           <Stat label="On duty" value={String(onDuty.length)} testid="stat-onduty" />
           <Stat label="To review" value={String(review.length)} tone={review.length ? 'warning' : undefined} />
@@ -84,7 +85,7 @@ export function Dashboard() {
 
         <div>
           <SectionLabel>Patrol completion · last 24 h</SectionLabel>
-          <List>
+          {!comp.length ? <Empty icon="building" title="No sites yet" body="Patrol completion appears here once you add a site with checkpoints." /> : <List>
             {comp.map((c) => (
               <div class="list-row" key={c.site.id} data-testid="completion-row">
                 <span class="grow" style={{ minWidth: 0 }}>
@@ -99,7 +100,7 @@ export function Dashboard() {
                 </span>
               </div>
             ))}
-          </List>
+          </List>}
         </div>
 
         <div>
@@ -119,6 +120,29 @@ function Stat({ label, value, tone, testid }: { label: string; value: string; to
     <div class="card" style={{ padding: 14 }} data-testid={testid}>
       <div class="tnum" style={{ fontSize: 28, lineHeight: '32px', fontWeight: 700, color: tone === 'warning' ? 'var(--warning)' : tone === 'success' ? 'var(--success)' : 'var(--gold)' }}>{value}</div>
       <div class="foot muted">{label}</div>
+    </div>
+  );
+}
+
+/** First-run checklist for a brand-new org; disappears once the basics exist. */
+function GettingStarted({ d }: { d: import('./ops').OpsData }) {
+  const site = d.sites.find((x) => x.active !== false);
+  const steps: Array<[boolean, string, string, string]> = [
+    [!!site, 'Add your first client site', 'Address, map pin and post orders.', '/a/sites/new'],
+    [d.checkpoints.some((c) => c.active), 'Add checkpoints and print QR codes', 'Stick one QR at each patrol point.', site ? `/a/sites/${site.id}` : '/a/sites'],
+    [d.members.some((m) => m.role === 'guard' || m.role === 'supervisor'), 'Invite your first guard', 'Share a one-time code; nothing is emailed.', '/a/people'],
+    [d.members.some((m) => m.role === 'client'), 'Invite the client (optional)', 'Or share a read-only portal link from the site.', '/a/people'],
+  ];
+  if (steps.slice(0, 3).every(([done]) => done)) return null;
+  return (
+    <div class="card stack" data-testid="getting-started">
+      <div class="row"><span class="list-icon" style={{ background: 'var(--gold-soft)', color: 'var(--gold)' }}><Icon name="shield-check" /></span><div><div class="headline">Getting started</div><div class="foot muted">Set up Lion Patrol in a few minutes.</div></div></div>
+      <List>
+        {steps.map(([done, title, sub, href], i) => (
+          <Row key={i} icon={done ? 'check' : 'chevron-right'} iconBg={done ? 'var(--success-soft)' : 'var(--raised-2)'} iconColor={done ? 'var(--success)' : 'var(--text-2)'}
+            title={<span style={done ? { color: 'var(--text-3)', textDecoration: 'line-through' } : undefined}>{title}</span>} sub={sub} chevron={!done} onClick={done ? undefined : () => navigate(href)} testid={`setup-step-${i}`} />
+        ))}
+      </List>
     </div>
   );
 }

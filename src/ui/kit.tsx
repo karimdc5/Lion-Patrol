@@ -32,30 +32,36 @@ export function Screen({ children, tabbar, class: cls }: { children: ComponentCh
 }
 
 export function TopBar({ title, large, backTo, right, left, sub, action }: { title?: ComponentChildren; large?: boolean; backTo?: string | true; right?: ComponentChildren; left?: ComponentChildren; sub?: ComponentChildren; action?: ComponentChildren }) {
+  // iOS pattern: an opaque compact bar stays pinned; the large title scrolls away and the
+  // compact title fades in once it has scrolled under the bar.
   const [scrolled, setScrolled] = useState(false);
+  const [collapsed, setCollapsed] = useState(!large);
   useEffect(() => {
-    const on = () => setScrolled(window.scrollY > 4);
+    const on = () => { setScrolled(window.scrollY > 2); if (large) setCollapsed(window.scrollY > 44); };
+    on();
     window.addEventListener('scroll', on, { passive: true });
     return () => window.removeEventListener('scroll', on);
-  }, []);
+  }, [large]);
   return (
-    <header class={`topbar${scrolled ? ' scrolled' : ''}`}>
-      <div class="topbar-row">
-        {backTo ? (
-          <button class="icon-btn" aria-label="Back" onClick={() => (backTo === true ? back() : navigate(backTo))}>
-            <Icon name="chevron-left" />
-          </button>
-        ) : left ?? <span style={{ width: 40 }} />}
-        <div class="topbar-title ellipsis">{!large && title}</div>
-        <div class="row" style={{ gap: 6, minWidth: 40, justifyContent: 'flex-end' }}>{right}{!large && action}</div>
-      </div>
+    <>
+      <header class={`topbar${scrolled ? ' scrolled' : ''}`}>
+        <div class="topbar-row">
+          {backTo ? (
+            <button class="icon-btn" aria-label="Back" onClick={() => (backTo === true ? back() : navigate(backTo))}>
+              <Icon name="chevron-left" />
+            </button>
+          ) : left ?? <span style={{ width: 40 }} />}
+          <div class={`topbar-title ellipsis${collapsed ? ' shown' : ''}`} aria-hidden={large && !collapsed ? 'true' : undefined}>{title}</div>
+          <div class="row" style={{ gap: 6, minWidth: 40, justifyContent: 'flex-end' }}>{right}{(!large || collapsed) && action}</div>
+        </div>
+      </header>
       {large && (
         <div class="topbar-large">
-          <div class="topbar-large-row"><h1 class="large-title">{title}</h1>{action}</div>
+          <div class="topbar-large-row"><h1 class="large-title">{title}</h1>{!collapsed && action}</div>
           {sub && <div class="muted sub" style={{ marginTop: 2 }}>{sub}</div>}
         </div>
       )}
-    </header>
+    </>
   );
 }
 
