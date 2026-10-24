@@ -16,6 +16,9 @@ export const EMAILJS = {
  */
 export const CLIENT_NOTIFICATIONS_ENABLED = false as const;
 
+/** Testing guard: notification emails may only go to owner/admin members. Locked on in this build. */
+export const EMAIL_TESTING_OWNERS_ONLY = true as const;
+
 export const APP_NAME = 'Lion Patrol';
 export const COMPANY_NAME = 'Lion Security Services';
 export const PUBLIC_URL = 'https://karimdc5.github.io/Lion-Patrol/';
