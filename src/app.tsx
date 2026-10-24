@@ -11,6 +11,7 @@ import { EnrollPinSheet } from './screens/public/EnrollPin';
 import { GuardShell } from './screens/guard/GuardShell';
 import { Toasts, Button } from './ui/kit';
 import { PdfReadySheet } from './ui/PdfReady';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import { lazyScreen } from './ui/lazy';
 import { shouldShowInstallGuide } from './lib/platform';
 
@@ -24,7 +25,7 @@ const installGate = signal(shouldShowInstallGuide());
 export function App() {
   return (
     <>
-      <Routes />
+      <ErrorBoundary><Routes /></ErrorBoundary>
       <Toasts />
       <PdfReadySheet />
       {backendMode.value === 'demo' && <div class="demo-ribbon" aria-label="Demo mode" role="note">Demo mode</div>}
