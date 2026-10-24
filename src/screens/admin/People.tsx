@@ -5,7 +5,8 @@ import { useData } from '../../ui/useData';
 import { currentOrgId, isAdmin, role as myRole, memberId as myMemberId } from '../../auth/session';
 import { membersFor, sitesFor } from '../../data/repos/queries';
 import { listRecords, getRecord } from '../../data/repos/records';
-import { createInvite, listInvites, revokeInvite, updateMember, setSiteAccess } from '../../data/admin';
+import { createInvite, listInvites, fetchInvites, revokeInvite, updateMember, setSiteAccess } from '../../data/admin';
+import { useEffect } from 'preact/hooks';
 import { roleLabel, relTime, fmtDate } from '../../lib/format';
 import { PUBLIC_URL } from '../../config';
 import type { Member, SiteAccess } from '../../data/types';
@@ -17,6 +18,7 @@ export function PeopleList() {
   const org = currentOrgId.value;
   const members = useData(() => membersFor(org), [org]);
   const status = useData(() => listRecords<{ member_id: string; on_duty: boolean; last_ping_at: string | null }>('patrol_member_status', org), [org]);
+  useEffect(() => { void fetchInvites(); }, [org]);
   const invites = useData(() => listInvites(), [org]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const open = (invites.data ?? []).filter((i) => !i.revoked_at && Number(i.uses) < Number(i.max_uses) && Date.parse(i.expires_at as string) > Date.now());
@@ -53,7 +55,7 @@ export function PeopleList() {
           </>
         )}
       </div>
-      <InviteSheet open={inviteOpen} onClose={() => { setInviteOpen(false); void listInvites(); }} />
+      <InviteSheet open={inviteOpen} onClose={() => { setInviteOpen(false); void fetchInvites(); }} />
     </Screen>
   );
 }

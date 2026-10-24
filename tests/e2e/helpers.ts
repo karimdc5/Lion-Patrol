@@ -9,7 +9,20 @@ export const USERS = {
 };
 
 /** Open the app on the in-memory backend (demo seed), skipping the iOS install gate unless asked. */
+const emailLog = new WeakMap<Page, Array<Record<string, any>>>();
+/** Every EmailJS request a test page made (requests are always intercepted; nothing is sent). */
+export const emailRequests = (page: Page) => emailLog.get(page) ?? [];
+export async function stubEmail(page: Page) {
+  if (emailLog.has(page)) return;
+  emailLog.set(page, []);
+  await page.route('https://api.emailjs.com/**', async (route) => {
+    try { emailLog.get(page)!.push(JSON.parse(route.request().postData() ?? '{}')); } catch { /* ignore */ }
+    await route.fulfill({ status: 200, contentType: 'text/plain', body: 'OK' });
+  });
+}
+
 export async function openApp(page: Page, path = '', opts: { installGate?: boolean } = {}) {
+  await stubEmail(page);
   if (!opts.installGate) await page.addInitScript(() => localStorage.setItem('lp-a2hs-dismissed', '1'));
   await page.addInitScript(() => localStorage.setItem('lp-fast-backoff', '1'));
   const sep = path.includes('?') ? '&' : '?';

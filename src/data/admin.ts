@@ -104,17 +104,18 @@ export async function createInvite(role: string, siteIds: string[], email: strin
   const { orgId } = ctx();
   return getBackend().rpc<InviteResult>('patrol_create_invite', { p_org: orgId, p_role: role, p_site_ids: siteIds, p_email: email || null, p_display_name: displayName || null, p_ttl_hours: ttlHours, p_max_uses: 1 });
 }
+/** Network refresh (call from an effect, not from useData: it bumps the data version). */
+export async function fetchInvites() {
+  const { orgId } = ctx();
+  try { await putServerRows('patrol_invites', await getBackend().select<Row>('patrol_invites', { eq: { org_id: orgId }, order: ['created_at', 'desc'], limit: 50 })); } catch { /* offline: cached */ }
+}
 export async function listInvites(): Promise<Row[]> {
   const { orgId } = ctx();
-  try {
-    const rows = await getBackend().select<Row>('patrol_invites', { eq: { org_id: orgId }, order: ['created_at', 'desc'], limit: 50 });
-    await putServerRows('patrol_invites', rows);
-  } catch { /* offline: cached */ }
   return listRecords<Row>('patrol_invites', orgId);
 }
 export async function revokeInvite(id: string) {
   await getBackend().update('patrol_invites', { revoked_at: now() }, { id });
-  await listInvites();
+  await fetchInvites();
 }
 
 // ---------------------------------------------------------------- review / alerts (online RPCs; queued when offline)
@@ -199,9 +200,12 @@ export async function fetchIncidentExtras(incidentId: string) {
 }
 
 // ---------------------------------------------------------------- client portal links
+/** Network refresh (call from an effect, not from useData: it bumps the data version). */
+export async function fetchPortalLinks(siteId: string) {
+  try { await putServerRows('patrol_portal_links', await getBackend().select<Row>('patrol_portal_links', { eq: { site_id: siteId }, order: ['created_at', 'desc'] })); } catch { /* offline */ }
+}
 export async function listPortalLinks(siteId: string): Promise<Row[]> {
   const { orgId } = ctx();
-  try { await putServerRows('patrol_portal_links', await getBackend().select<Row>('patrol_portal_links', { eq: { site_id: siteId }, order: ['created_at', 'desc'] })); } catch { /* offline */ }
   return (await listRecords<Row>('patrol_portal_links', orgId)).filter((l) => l.site_id === siteId).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 }
 export async function createPortalLink(siteId: string, days: number): Promise<{ id: string; token: string; expires_at: string | null }> {

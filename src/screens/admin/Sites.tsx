@@ -6,7 +6,7 @@ import { lazyScreen } from '../../ui/lazy';
 import { currentOrgId, isAdmin } from '../../auth/session';
 import { sitesFor, checkpointsFor, membersFor } from '../../data/repos/queries';
 import { getRecord, listRecords } from '../../data/repos/records';
-import { newSite, saveSite, saveCheckpoint, reorderCheckpoints, genCode, setSiteAccess, listPortalLinks, createPortalLink, revokePortalLink } from '../../data/admin';
+import { newSite, saveSite, saveCheckpoint, reorderCheckpoints, genCode, setSiteAccess, listPortalLinks, fetchPortalLinks, createPortalLink, revokePortalLink } from '../../data/admin';
 import { PUBLIC_URL } from '../../config';
 import { isNetworkError } from '../../data/backend/types';
 import { getFix } from '../../lib/geo';
@@ -265,7 +265,8 @@ function AccessTab({ site, disabled }: { site: Site; disabled: boolean }) {
 
 function PortalTab({ site }: { site: Site }) {
   const [tick, setTick] = useState(0);
-  const links = useData(() => listPortalLinks(site.id), [site.id, tick]);
+  useEffect(() => { void fetchPortalLinks(site.id); }, [site.id, tick]);
+  const links = useData(() => listPortalLinks(site.id), [site.id]);
   const [days, setDays] = useState(90);
   const [fresh, setFresh] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
