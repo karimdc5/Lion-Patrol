@@ -142,7 +142,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         return !!parent && visible(s, c, parentTable!, parent);
       }
       case 'patrol_invites': return c.adminOrgs.includes(r.org_id);
-      case 'patrol_share_links': return staff;
+      case 'patrol_share_links': case 'patrol_portal_links': return staff;
       default: return false;
     }
   }
@@ -414,6 +414,52 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       d.updated_at = nowIso();
       return d;
     },
+    patrol_create_portal_link(s, c, a) {
+      const site = (s.tables.patrol_sites ?? []).find((x) => x.id === a.p_site);
+      if (!site || !c.staffOrgs.includes(site.org_id)) throw new BackendError('42501', 'not_found', 403);
+      const token = Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, '0')).join('');
+      const id = uuidv7();
+      const exp = a.p_days ? new Date(Date.now() + a.p_days * 864e5).toISOString() : null;
+      (s.tables.patrol_portal_links ??= []).push({ id, org_id: site.org_id, site_id: site.id, token_plain: token, label: a.p_label ?? null, expires_at: exp, revoked_at: null, view_count: 0, created_by: c.memberIn(site.org_id), created_at: nowIso() });
+      return { id, token, expires_at: exp };
+    },
+    patrol_revoke_portal_link(s, c, a) {
+      const l = (s.tables.patrol_portal_links ?? []).find((x) => x.id === a.p_id);
+      if (!l || !c.staffOrgs.includes(l.org_id)) throw new BackendError('42501', 'not_found', 403);
+      l.revoked_at ??= nowIso();
+      return null;
+    },
+    patrol_get_portal(s, _c, a) {
+      const l = (s.tables.patrol_portal_links ?? []).find((x) => x.token_plain === a.p_token && !x.revoked_at && (!x.expires_at || Date.parse(x.expires_at) > Date.now()));
+      if (!l) return null;
+      l.view_count++;
+      const o = (s.tables.patrol_orgs ?? []).find((x) => x.id === l.org_id)!;
+      const site = (s.tables.patrol_sites ?? []).find((x) => x.id === l.site_id)!;
+      const strip = ({ review_notes: _r, reviewed_by: _b, client_rev: _c2, device_id: _d, notified_at: _n, deleted_at: _x, ...rest }: R) => rest;
+      return {
+        expires_at: l.expires_at,
+        org: { name: o.name, phone: o.phone, email: o.email, license_no: o.license_no },
+        site: { id: site.id, name: site.name, address: site.address, city: site.city, state: site.state },
+        incidents: (s.tables.patrol_incidents ?? []).filter((i) => i.site_id === l.site_id && i.client_visible && i.status !== 'draft').sort((x, y) => y.occurred_at.localeCompare(x.occurred_at)).map(strip),
+        dars: (s.tables.patrol_dars ?? []).filter((d) => d.site_id === l.site_id && d.client_visible).sort((x, y) => String(y.report_date).localeCompare(String(x.report_date))).map((d) => ({
+          id: d.id, report_no: d.report_no, report_date: d.report_date, author_name: d.author_name, summary: d.summary, status: d.status,
+          entries: (s.tables.patrol_dar_entries ?? []).filter((e) => e.dar_id === d.id && !e.deleted_at).sort((x, y) => x.occurred_at.localeCompare(y.occurred_at)).map((e) => ({ occurred_at: e.occurred_at, category_name: e.category_name, body: e.body })),
+          tours: (s.tables.patrol_tour_runs ?? []).filter((r) => d.time_entry_id && r.time_entry_id === d.time_entry_id).map((r) => ({ started_at: r.started_at, completed_at: r.completed_at, expected_count: r.expected_count, scanned_count: r.scanned_count })),
+        })),
+        runs: (s.tables.patrol_tour_runs ?? []).filter((r) => r.site_id === l.site_id && Date.parse(r.started_at) > Date.now() - 14 * 864e5).map((r) => ({ started_at: r.started_at, expected_count: r.expected_count, scanned_count: r.scanned_count, completed_at: r.completed_at })),
+      };
+    },
+    patrol_notify_targets(s, c, a) {
+      if (!c.workerOrgs.includes(a.p_org)) return null;
+      const st = (s.tables.patrol_org_settings ?? []).find((x) => x.org_id === a.p_org);
+      if (!st) return null;
+      const members = (s.tables.patrol_members ?? []).filter((m) => m.org_id === a.p_org);
+      const owners = new Set(members.filter((m) => m.status === 'active' && ['owner', 'admin'].includes(m.role)).map((m) => String(m.email).toLowerCase()));
+      const clients = new Set(members.filter((m) => m.role === 'client').map((m) => String(m.email).toLowerCase()));
+      const ownersOnly = st.email_owners_only !== false;
+      const recipients = Array.from(new Set((st.notify_emails as string[]).map((e) => e.toLowerCase()))).filter((e) => owners.has(e) || (!ownersOnly && !clients.has(e)));
+      return { enabled: !!st.email_enabled, min_severity: st.email_min_severity ?? 'medium', owners_only: ownersOnly, recipients };
+    },
     patrol_alert_set_status(s, c, a) {
       const al = (s.tables.patrol_alerts ?? []).find((x) => x.id === a.p_id);
       if (!al) throw new BackendError('42501', 'not_found', 403);
@@ -534,7 +580,8 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
     },
     async rpc<T>(fn: string, args: Record<string, unknown> = {}) {
       await net('rpc', fn, fn === 'patrol_bootstrap' ? 'read' : 'write');
-      const userId = await requireUser();
+      const anonOk = fn === 'patrol_get_portal' || fn === 'patrol_get_shared_report';
+      const userId = anonOk ? await uid() : await requireUser();
       const s = load();
       const handler = rpcs[fn];
       if (!handler) throw new BackendError('PGRST202', `Could not find the function public.${fn}`, 404);
@@ -561,5 +608,5 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
 }
 
 export function defaultSettings(orgId: string, emails: string[]): R {
-  return { id: orgId, org_id: orgId, notify_emails: emails, client_notifications_enabled: false, auto_share_with_client: false, report_prefix: 'LSS', next_report_no: 1, gps_ping_interval_s: 120, ping_retention_days: 30, max_video_mb: 50, max_video_s: 60, tour_interval_min: 60, tour_max_duration_min: 30, updated_at: new Date().toISOString() };
+  return { id: orgId, org_id: orgId, notify_emails: emails, client_notifications_enabled: false, auto_share_with_client: false, report_prefix: 'LSS', next_report_no: 1, gps_ping_interval_s: 120, ping_retention_days: 30, max_video_mb: 50, max_video_s: 60, tour_interval_min: 60, tour_max_duration_min: 30, email_enabled: false, email_min_severity: 'medium', email_owners_only: true, updated_at: new Date().toISOString() };
 }
