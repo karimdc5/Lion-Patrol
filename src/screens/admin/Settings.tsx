@@ -71,20 +71,22 @@ export function CategoriesScreen() {
   };
   return (
     <Screen>
-      <TopBar title="Categories" backTo="/a/settings" right={<Button variant="primary" icon="plus" data-testid="add-category" onClick={() => setEdit({ id: uuidv7(), org_id: org!, name: '', color: COLORS[1]!, icon: 'note', sort: list.length, hidden: false, required_fields: [], default_severity: 'low', use_for: 'both' })}>Add</Button>} />
+      <TopBar title="Categories" backTo="/a/settings" action={<Button variant="primary" icon="plus" data-testid="add-category" onClick={() => setEdit({ id: uuidv7(), org_id: org!, name: '', color: COLORS[1]!, icon: 'note', sort: list.length, hidden: false, required_fields: [], default_severity: 'low', use_for: 'both' })}>Add</Button>} />
       <div class="screen-body">
         <p class="foot muted" style={{ padding: '4px 4px 10px' }}>Guards see visible categories in this order on the report screen. Hidden ones stay on old reports.</p>
         <List>
           {list.map((c, i) => (
-            <div class="list-row" key={c.id} data-testid="category-row">
+            <div class="list-row" key={c.id} data-testid="category-row" style={{ gap: 10, paddingRight: 10 }}>
               <span class="list-icon" style={{ background: `${c.color}29`, color: c.color, opacity: c.hidden ? 0.45 : 1 }}><Icon name={c.icon} /></span>
               <button class="grow" style={{ textAlign: 'left', minWidth: 0 }} onClick={() => setEdit(c)} data-testid="category-edit">
                 <span class="wrap2" style={{ display: '-webkit-box', fontWeight: 500, color: c.hidden ? 'var(--text-3)' : undefined }}>{c.name}</span>
                 <span class="foot muted">{(subs.data ?? []).filter((s) => s.category_id === c.id && !s.hidden).length} subtypes{c.required_fields.length ? ` · ${c.required_fields.length} required` : ''}{c.hidden ? ' · hidden' : ''}</span>
               </button>
-              <button class="mini-btn" aria-label={c.hidden ? 'Show category' : 'Hide category'} onClick={() => void saveCategory({ ...c, hidden: !c.hidden })} data-testid="category-hide"><Icon name={c.hidden ? 'eye-off' : 'eye'} /></button>
-              <button class="mini-btn" aria-label="Move up" disabled={i === 0} onClick={() => void move(i, -1)} data-testid="category-up"><Icon name="chevron-down" style={{ transform: 'rotate(180deg)' }} /></button>
-              <button class="mini-btn" aria-label="Move down" disabled={i === list.length - 1} onClick={() => void move(i, 1)} data-testid="category-down"><Icon name="chevron-down" /></button>
+              <span class="row-ctrls">
+                <button class="mini-btn" aria-label={c.hidden ? 'Show category' : 'Hide category'} onClick={() => void saveCategory({ ...c, hidden: !c.hidden })} data-testid="category-hide"><Icon name={c.hidden ? 'eye-off' : 'eye'} /></button>
+                <button class="mini-btn" aria-label="Move up" disabled={i === 0} onClick={() => void move(i, -1)} data-testid="category-up"><Icon name="chevron-down" style={{ transform: 'rotate(180deg)' }} /></button>
+                <button class="mini-btn" aria-label="Move down" disabled={i === list.length - 1} onClick={() => void move(i, 1)} data-testid="category-down"><Icon name="chevron-down" /></button>
+              </span>
             </div>
           ))}
         </List>

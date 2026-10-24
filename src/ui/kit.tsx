@@ -31,7 +31,7 @@ export function Screen({ children, tabbar, class: cls }: { children: ComponentCh
   return <div class={['screen', 'route-enter', tabbar && 'with-tabbar', cls].filter(Boolean).join(' ')}>{children}</div>;
 }
 
-export function TopBar({ title, large, backTo, right, left, sub }: { title?: ComponentChildren; large?: boolean; backTo?: string | true; right?: ComponentChildren; left?: ComponentChildren; sub?: ComponentChildren }) {
+export function TopBar({ title, large, backTo, right, left, sub, action }: { title?: ComponentChildren; large?: boolean; backTo?: string | true; right?: ComponentChildren; left?: ComponentChildren; sub?: ComponentChildren; action?: ComponentChildren }) {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 4);
@@ -47,11 +47,11 @@ export function TopBar({ title, large, backTo, right, left, sub }: { title?: Com
           </button>
         ) : left ?? <span style={{ width: 40 }} />}
         <div class="topbar-title ellipsis">{!large && title}</div>
-        <div class="row" style={{ gap: 4, minWidth: 40, justifyContent: 'flex-end' }}>{right}</div>
+        <div class="row" style={{ gap: 6, minWidth: 40, justifyContent: 'flex-end' }}>{right}{!large && action}</div>
       </div>
       {large && (
         <div class="topbar-large">
-          <h1 class="large-title">{title}</h1>
+          <div class="topbar-large-row"><h1 class="large-title">{title}</h1>{action}</div>
           {sub && <div class="muted sub" style={{ marginTop: 2 }}>{sub}</div>}
         </div>
       )}
@@ -267,7 +267,7 @@ export function toast(text: string, kind: ToastMsg['kind'] = 'success', ms = 260
 export function Toasts() {
   return (
     <div class="toast-wrap" aria-live="polite">
-      {toasts.value.map((t) => (
+      {toasts.value.slice(-2).map((t) => (
         <div key={t.id} class={`toast toast-${t.kind}`} role="status">
           <Icon name={t.kind === 'success' ? 'check-circle' : t.kind === 'error' ? 'alert' : 'info'} />
           <span>{t.text}</span>

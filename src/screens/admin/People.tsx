@@ -22,7 +22,7 @@ export function PeopleList() {
   const open = (invites.data ?? []).filter((i) => !i.revoked_at && Number(i.uses) < Number(i.max_uses) && Date.parse(i.expires_at as string) > Date.now());
   return (
     <Screen tabbar>
-      <TopBar title="People" large right={<>{isAdmin.value && <Button variant="primary" icon="user-plus" onClick={() => setInviteOpen(true)} data-testid="invite-btn">Invite</Button>}<SyncPill /></>} />
+      <TopBar title="People" large right={<SyncPill />} action={isAdmin.value ? <Button variant="primary" icon="user-plus" onClick={() => setInviteOpen(true)} data-testid="invite-btn">Invite</Button> : undefined} />
       <div class="screen-body">
         {GROUPS.map(([label, roles]) => {
           const list = (members.data ?? []).filter((m) => roles.includes(m.role));
