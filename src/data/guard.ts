@@ -11,7 +11,7 @@ import { NOTICE_VERSIONS } from '../config';
 import { evaluateScan, parseCheckpointCode } from '../domain/tour';
 import type { IncidentForm } from '../domain/incident';
 import type { Prepared } from '../media/compress';
-import type { Checkpoint, Consent, PublicSettings, TimeEntry } from './types';
+import type { Bolo, Checkpoint, Consent, PublicSettings, TimeEntry } from './types';
 
 // ---------------------------------------------------------------- context helpers
 export function deviceId(): string {
@@ -281,7 +281,7 @@ function incidentPayload(f: IncidentForm, status: 'draft' | 'submitted', orgId: 
     description: f.description, people: f.people, vehicles: f.vehicles, police_called: !!f.police_called, police_agency: f.police_agency || null,
     police_case_no: f.police_case_no || null, officer_name: f.officer_name || null, ems_called: f.ems_called, fire_called: f.fire_called,
     injury: f.injury, injury_details: f.injury_details || null, property_damage: f.property_damage, damage_estimate_usd: est ? Number(est) : null,
-    severity: f.severity, status, client_rev: clientRev(), client_created_at: f.created_at, device_id: deviceId(),
+    extra: f.extra ?? {}, severity: f.severity, status, client_rev: clientRev(), client_created_at: f.created_at, device_id: deviceId(),
   };
 }
 
@@ -310,8 +310,40 @@ export async function submitIncident(f: IncidentForm): Promise<void> {
   bumpData(); void kick();
 }
 
+// ---------------------------------------------------------------- BOLOs
+/** Active, unexpired BOLOs for a site, newest first (local cache; works offline). */
+export async function activeBolos(siteId: string | null | undefined): Promise<Bolo[]> {
+  const org = currentOrgId.value;
+  if (!org || !siteId) return [];
+  return (await listRecords<Bolo>('patrol_bolos', org))
+    .filter((b) => b.site_id === siteId && b.status === 'active' && (!b.expires_at || Date.parse(b.expires_at) > Date.now()))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+export interface BoloInput { site_id: string; title: string; description: string; person_desc: string; vehicle_desc: string; expires_at: string | null; visible_to_client: boolean }
+/** Saves through the outbox (works offline); photos upload after the row. */
+export async function createBolo(f: BoloInput, photos: Prepared[]): Promise<string> {
+  const { userId, orgId, memberId: mid } = ctx();
+  const row = { id: uuidv7(), org_id: orgId, site_id: f.site_id, created_by: mid, title: f.title.trim(), description: f.description.trim(), person_desc: f.person_desc.trim() || null,
+    vehicle_desc: f.vehicle_desc.trim() || null, expires_at: f.expires_at, visible_to_client: f.visible_to_client, client_created_at: nowIso(), device_id: deviceId() };
+  const op = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_bolos', payload: row, entityKey: `patrol_bolos:${row.id}`, label: `BOLO · ${row.title}` },
+    [{ table: 'patrol_bolos', row: { ...row, status: 'active', resolved_at: null, created_at: nowIso() }, orgId }]);
+  await rememberOp('patrol_bolos', row.id, op);
+  for (const p of photos) await addAttachment('bolo', row.id, p, op);
+  bumpData(); void kick();
+  return row.id;
+}
+
+export async function setBoloStatus(b: Bolo, status: 'active' | 'resolved' | 'archived') {
+  const { userId, orgId } = ctx();
+  const patch = { status };
+  await enqueue({ userId, orgId, kind: 'update', table: 'patrol_bolos', payload: patch, match: { id: b.id }, entityKey: `patrol_bolos:${b.id}`, dependsOn: await parentDep('patrol_bolos', b.id), label: `BOLO ${status}` },
+    [{ table: 'patrol_bolos', row: { id: b.id, ...patch, resolved_at: status === 'resolved' ? nowIso() : b.resolved_at }, orgId }]);
+  bumpData(); void kick();
+}
+
 // ---------------------------------------------------------------- attachments
-export type ParentType = 'incident' | 'dar_entry' | 'scan' | 'alert';
+export type ParentType = 'incident' | 'dar_entry' | 'scan' | 'alert' | 'bolo';
 export interface AttachmentRow extends Row { parent_type: ParentType; parent_id: string; kind: string; mime: string; size_bytes: number; storage_path: string; thumb_path: string | null; upload_status: string; duration_s: number | null; caption: string | null; client_created_at?: string }
 
 export async function listAttachments(parentId: string): Promise<AttachmentRow[]> {
@@ -329,7 +361,7 @@ export async function addAttachment(parentType: ParentType, parentId: string, pr
     width: prepared.width ?? null, height: prepared.height ?? null, duration_s: prepared.durationS ?? null, caption: null, upload_status: 'pending',
     client_created_at: nowIso(), device_id: deviceId(),
   } as AttachmentRow;
-  const parentTable = { incident: 'patrol_incidents', dar_entry: 'patrol_dar_entries', scan: 'patrol_scans', alert: 'patrol_alerts' }[parentType];
+  const parentTable = { incident: 'patrol_incidents', dar_entry: 'patrol_dar_entries', scan: 'patrol_scans', alert: 'patrol_alerts', bolo: 'patrol_bolos' }[parentType];
   const deps = parentOp ? [parentOp] : await parentDep(parentTable, parentId);
   const blob = { id, mime: prepared.mime, bytes: prepared.bytes, thumb: prepared.thumb, size: prepared.bytes.byteLength, state: 'local' as const, uploadedAt: null, createdAt: Date.now() };
   const { upload_status: _u, ...payload } = row;

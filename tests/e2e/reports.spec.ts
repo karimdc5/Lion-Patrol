@@ -88,6 +88,15 @@ test('client portal link: own site, client-visible only, no internal notes; revo
   await portal.getByTestId('portal-incident').filter({ hasText: 'Graffiti' }).getByTestId('portal-incident-pdf').click();
   const buf = await lastPdf(portal, 'portal-incident');
   expect(buf.toString('latin1')).not.toContain('INTERNAL-ONLY-NOTE');
+  await expect(portal.getByTestId('portal-bolos')).toContainText('Grey hoodie, repeat warnings at dock');
+  // admin resolves the BOLO in the Sites view: it leaves the portal
+  await page.getByTestId('site-tab-bolos').click();
+  await page.getByTestId('admin-bolo').filter({ hasText: 'Grey hoodie' }).getByTestId('bolo-resolve').click();
+  await expect.poll(async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('lp-mock-server')!).tables.patrol_bolos[0].status))).toBe('resolved');
+  await portal.reload();
+  await expect(portal.getByTestId('portal-site')).toBeVisible();
+  await expect(portal.getByTestId('portal-bolos')).toHaveCount(0);
+  await page.getByTestId('site-tab-portal').click();
   await page.getByTestId('portal-revoke').first().click();
   await expect(page.getByTestId('portal-link-row')).toHaveCount(0);
   await portal.reload();

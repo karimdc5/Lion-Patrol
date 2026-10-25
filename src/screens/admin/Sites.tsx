@@ -15,7 +15,10 @@ import { navigate } from '../../router';
 import { uuidv7 } from '../../lib/uuid';
 import { showPdf } from '../../ui/PdfReady';
 import { roleLabel, fmtDate } from '../../lib/format';
-import type { Checkpoint, Site, SiteAccess } from '../../data/types';
+import type { Bolo, Checkpoint, Site, SiteAccess } from '../../data/types';
+import { setBoloStatus } from '../../data/guard';
+import { BoloCard } from '../../ui/BoloCard';
+import { AttachmentTray } from '../../ui/Attachments';
 
 const MapView = lazyScreen(() => import('../../ui/MapView'), () => <div class="map-box skel" />);
 
@@ -42,7 +45,7 @@ export function SitesList() {
   );
 }
 
-type Tab = 'details' | 'orders' | 'checkpoints' | 'contacts' | 'access' | 'portal';
+type Tab = 'details' | 'orders' | 'checkpoints' | 'contacts' | 'access' | 'bolos' | 'portal';
 
 export function SiteEditor({ id }: { id: string }) {
   const isNew = id === 'new';
@@ -69,7 +72,7 @@ export function SiteEditor({ id }: { id: string }) {
       <div class="screen-body stack" style={{ paddingBottom: 110 }}>
         {!isNew && (
           <div class="tabs" role="tablist">
-            {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People'], ['portal', 'Client portal']] as Array<[Tab, string]>).map(([k, l]) => (
+            {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People'], ['bolos', 'BOLOs'], ['portal', 'Client portal']] as Array<[Tab, string]>).map(([k, l]) => (
               <button key={k} class={tab === k ? 'active' : ''} onClick={() => setTab(k)} data-testid={`site-tab-${k}`}>{l}</button>
             ))}
           </div>
@@ -108,6 +111,7 @@ export function SiteEditor({ id }: { id: string }) {
         {tab === 'checkpoints' && <CheckpointsTab site={site} />}
         {tab === 'contacts' && <ContactsTab site={site} disabled={!admin} onChange={(contacts) => up({ contacts })} />}
         {tab === 'access' && <AccessTab site={site} disabled={!admin} />}
+        {tab === 'bolos' && <BolosTab site={site} />}
         {tab === 'portal' && <PortalTab site={site} />}
       </div>
       {admin && (dirty || isNew) && (tab === 'details' || tab === 'orders' || tab === 'contacts') && (
@@ -257,6 +261,29 @@ function AccessTab({ site, disabled }: { site: Site; disabled: boolean }) {
               ))}
             </List>
           ) : <p class="muted sub" style={{ padding: '0 4px' }}>No {String(label).toLowerCase()} yet. Invite them from People.</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BolosTab({ site }: { site: Site }) {
+  const org = currentOrgId.value;
+  const list = useData(async () => (await listRecords<Bolo>('patrol_bolos', org)).filter((b) => b.site_id === site.id && b.status !== 'archived').sort((a, b) => b.created_at.localeCompare(a.created_at)), [org, site.id]);
+  const rows = list.data ?? [];
+  return (
+    <div class="stack">
+      <p class="foot muted">Be On the Lookout alerts guards post for this site. Active ones are pinned for guards (and on the client portal when shared).</p>
+      {!rows.length ? <Empty icon="eye" title="No BOLOs" body="Guards post BOLOs from their Home screen." /> : rows.map((b) => (
+        <div key={b.id} class="stack" data-testid="admin-bolo">
+          <BoloCard b={b}><AttachmentTray parentType="bolo" parentId={b.id} editable={false} label="Photos" /></BoloCard>
+          <div class="row" style={{ gap: 8 }}>
+            <span class={`pill ${b.status === 'active' ? 'pill-danger' : 'pill-muted'}`}>{b.status === 'active' ? 'Active' : 'Resolved'}</span>
+            {b.visible_to_client && <span class="pill pill-muted">On client portal</span>}
+            <span class="grow" />
+            {b.status === 'active' && <Button onClick={() => void setBoloStatus(b, 'resolved')} data-testid="bolo-resolve">Resolve</Button>}
+            <Button variant="outline" onClick={() => void setBoloStatus(b, 'archived')} data-testid="bolo-archive">Archive</Button>
+          </div>
         </div>
       ))}
     </div>

@@ -6,6 +6,8 @@ import { formatCode } from '../../src/screens/public/Join';
 import { hms, initials } from '../../src/lib/format';
 import { sql } from '../../scripts/gen-seed-sql.mjs';
 import seed from '../../src/domain/categories.seed.json';
+import { categoryFields } from '../../src/domain/incident';
+import type { Category } from '../../src/data/types';
 
 describe('uuidv7', () => {
   it('is RFC-shaped and time ordered', () => {
@@ -52,5 +54,34 @@ describe('category seed parity', () => {
     expect(seed.length).toBeLessThanOrEqual(30);
     const names = seed.map((c) => c.name.toLowerCase());
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('per-category field config', () => {
+  const cat = (name: string) => {
+    const c = (seed as Array<{ name: string; required_fields: string[]; field_config: unknown }>).find((x) => x.name === name)!;
+    return { name: c.name, required_fields: c.required_fields, field_config: c.field_config } as unknown as Category;
+  };
+  it('every default category has a config', () => {
+    for (const c of seed as Array<{ field_config?: { sections: string[]; extra: unknown[] } }>) expect(Array.isArray(c.field_config?.sections) && Array.isArray(c.field_config?.extra)).toBe(true);
+  });
+  it('routine categories have no vehicle/police/people fields, but their own fields', () => {
+    for (const n of ['Maintenance & Facility', 'Weather', 'Lost & Found', 'Client / Resident Request']) {
+      const f = categoryFields(cat(n));
+      expect(f.sections.has('vehicles')).toBe(false);
+      expect(f.sections.has('police')).toBe(false);
+      expect(f.sections.has('people')).toBe(false);
+      expect(f.extra.length).toBeGreaterThan(0);
+    }
+    expect(categoryFields(cat('Lost & Found')).extra.map((x) => x.key)).toEqual(['item', 'owner', 'disposition']);
+  });
+  it('incident categories keep people/vehicle/police; medical gets EMS + injury', () => {
+    for (const n of ['Suspicious Activity', 'Trespass & Removal', 'Theft & Shoplifting', 'Vandalism, Graffiti & Damage', 'Disturbance & Noise', 'Police, Fire & EMS Contact']) {
+      const f = categoryFields(cat(n));
+      expect(['people', 'vehicles', 'police'].every((k) => f.sections.has(k as never))).toBe(true);
+    }
+    const m = categoryFields(cat('Medical & Injury'));
+    expect(m.sections.has('ems') && m.sections.has('injury')).toBe(true);
+    expect(m.sections.has('vehicles')).toBe(false);
   });
 });

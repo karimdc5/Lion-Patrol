@@ -415,12 +415,55 @@ do $$ declare t jsonb; ok boolean; begin
   if (select count(*) from public.patrol_portal_links) <> 0 then raise exception 'RLS FAIL: guard sees portal links'; end if;
 end $$;
 reset role;
+-- ===================================================================== BOLOs (20261025000200)
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+insert into public.patrol_bolos (id, org_id, site_id, created_by, title, visible_to_client, status)
+  values ('a0000000-0000-4000-8000-0000000000b1', '10000000-0000-4000-8000-00000000000a', '30000000-0000-4000-8000-0000000000a1', public.patrol_member_id_in('10000000-0000-4000-8000-00000000000a'), 'BOLO shared', true, 'archived');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a3","role":"authenticated"}', true);
+do $$ declare ok boolean; n int; begin
+  insert into public.patrol_bolos (id, org_id, site_id, created_by, title, visible_to_client) values ('a0000000-0000-4000-8000-0000000000b2', '10000000-0000-4000-8000-00000000000a', '30000000-0000-4000-8000-0000000000a2', '20000000-0000-4000-8000-0000000000a3', 'BOLO internal', false);
+  ok := false; begin insert into public.patrol_bolos (org_id, site_id, created_by, title) values ('10000000-0000-4000-8000-00000000000a', '30000000-0000-4000-8000-0000000000a1', '20000000-0000-4000-8000-0000000000a3', 'x');
+    exception when insufficient_privilege or check_violation then ok := true; end;
+  if not ok then raise exception 'RLS FAIL: guard posted BOLO to a site without access'; end if;
+  if (select count(*) from public.patrol_bolos) <> 1 then raise exception 'RLS FAIL: guard sees BOLOs of a site without access'; end if;
+  update public.patrol_bolos set title = 'hacked' where id = 'a0000000-0000-4000-8000-0000000000b1'; get diagnostics n = row_count;
+  if n <> 0 then raise exception 'RLS FAIL: non-creator guard updated a BOLO'; end if;
+  update public.patrol_bolos set status = 'resolved' where id = 'a0000000-0000-4000-8000-0000000000b2';
+  if (select resolved_at from public.patrol_bolos where id = 'a0000000-0000-4000-8000-0000000000b2') is null then raise exception 'RLS FAIL: creator could not resolve BOLO'; end if;
+  delete from public.patrol_bolos where id = 'a0000000-0000-4000-8000-0000000000b2'; get diagnostics n = row_count;
+  if n <> 0 then raise exception 'RLS FAIL: guard deleted a BOLO'; end if;
+end $$;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a4","role":"authenticated"}', true);
+do $$ begin
+  if (select count(*) from public.patrol_bolos) <> 0 then raise exception 'RLS FAIL: client reads BOLO table directly'; end if;
+end $$;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000b1","role":"authenticated"}', true);
+do $$ begin
+  if (select count(*) from public.patrol_bolos) <> 0 then raise exception 'RLS FAIL: other org sees BOLOs'; end if;
+end $$;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a5","role":"authenticated"}', true);
+do $$ begin
+  if (select count(*) from public.patrol_bolos) <> 2 then raise exception 'RLS FAIL: supervisor should see 2 BOLOs'; end if;
+  update public.patrol_bolos set status = 'archived' where id = 'a0000000-0000-4000-8000-0000000000b2';
+  if (select status from public.patrol_bolos where id = 'a0000000-0000-4000-8000-0000000000b2') <> 'archived' then raise exception 'RLS FAIL: supervisor could not archive BOLO'; end if;
+end $$;
+reset role;
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 do $$ declare p jsonb; begin
   p := public.patrol_get_portal((select v from rls_tokens where k = 'portal'));
   if p is null then raise exception 'RLS FAIL: portal fetch'; end if;
   if jsonb_array_length(p -> 'incidents') <> 1 or p -> 'incidents' -> 0 ->> 'title' <> 'A1 submitted' then raise exception 'RLS FAIL: portal incidents (%)', p -> 'incidents'; end if;
+  if jsonb_array_length(p -> 'bolos') <> 1 or p -> 'bolos' -> 0 ->> 'title' <> 'BOLO shared' then raise exception 'RLS FAIL: portal BOLOs (%)', p -> 'bolos'; end if;
   if (p -> 'incidents' -> 0) ? 'review_notes' then raise exception 'RLS FAIL: portal leaks review notes'; end if;
   if public.patrol_get_portal('nope') is not null then raise exception 'RLS FAIL: bad portal token'; end if;
 end $$;

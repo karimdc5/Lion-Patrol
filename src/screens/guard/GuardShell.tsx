@@ -1,3 +1,4 @@
+import { BoloCreate } from './Bolo';
 import { useEffect } from 'preact/hooks';
 import { TabBar, type TabDef } from '../../ui/kit';
 import { path, match, startsWith } from '../../router';
@@ -45,8 +46,9 @@ export function GuardShell() {
   else if (p === '/g/more') screen = <MoreScreen base="/g" />;
   else if (p === '/g/more/sync') screen = <SyncScreen base="/g" />;
   else if ((m = match('/g/post-orders/:siteId', p))) screen = <PostOrders siteId={m.siteId!} />;
+  else if ((m = match('/g/bolo/new/:siteId', p))) screen = <BoloCreate siteId={m.siteId!} />;
   else screen = <GuardHome />;
-  const hideTabs = /^\/g\/(post-orders|report\/|clock|scan|sos|more\/sync|incidents\/|dars\/)/.test(p);
+  const hideTabs = /^\/g\/(post-orders|bolo\/|report\/|clock|scan|sos|more\/sync|incidents\/|dars\/)/.test(p);
   return (
     <div data-shell="guard">
       {screen}

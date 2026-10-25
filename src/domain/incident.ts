@@ -22,6 +22,8 @@ export interface IncidentForm {
   injury: boolean; injury_details: string;
   property_damage: boolean; damage_estimate_usd: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
+  /** Category-specific answers (ExtraField.key → value), stored in patrol_incidents.extra. */
+  extra?: Record<string, string>;
   client_rev: number;
   created_at: string;
 }
@@ -31,17 +33,21 @@ export const REQUIRED_LABELS: Record<string, string> = {
   property_damage: 'Property damage', photos: 'Photos', witnesses: 'Witnesses',
 };
 
-export type FieldGroup = 'people' | 'vehicles' | 'police';
-const SEED_FIELDS = new Map((seedCategories as Array<{ name: string; fields?: string[] }>).map((c) => [c.name.toLowerCase(), c.fields ?? []]));
+export type FieldGroup = 'people' | 'vehicles' | 'police' | 'ems' | 'injury' | 'damage';
+export interface ExtraField { key: string; label: string; type: 'text' | 'yesno' | 'select'; options?: string[] }
+export interface FieldConfig { sections: FieldGroup[]; extra: ExtraField[] }
+const ALL: FieldGroup[] = ['people', 'vehicles', 'police', 'ems', 'injury', 'damage'];
+const SEED = new Map((seedCategories as Array<{ name: string; field_config: FieldConfig }>).map((c) => [c.name.toLowerCase(), c.field_config]));
+const REQ_TO_SECTION: Record<string, FieldGroup> = { people: 'people', witnesses: 'people', vehicles: 'vehicles', police: 'police', injury: 'injury', property_damage: 'damage' };
 
-/** Optional sections (people / vehicles / police) a category shows: per-category `fields` config in
- *  categories.seed.json, plus anything the category requires. Custom (non-default) categories show all. */
-export function categoryFields(cat: Category | null | undefined): Set<FieldGroup> {
-  if (!cat) return new Set();
-  const seeded = SEED_FIELDS.get(cat.name.toLowerCase());
-  const base = seeded ?? ['people', 'vehicles', 'police'];
-  const req = cat.required_fields.flatMap((r) => (r === 'witnesses' ? ['people'] : [r]));
-  return new Set([...base, ...req].filter((f): f is FieldGroup => f === 'people' || f === 'vehicles' || f === 'police'));
+/** Which form sections and category-specific fields a category shows. Source: the category's
+ *  `field_config` (seeded from categories.seed.json), else the default config by name; custom
+ *  categories without one show every standard section. Required fields always show. */
+export function categoryFields(cat: Category | null | undefined): { sections: Set<FieldGroup>; extra: ExtraField[] } {
+  if (!cat) return { sections: new Set(), extra: [] };
+  const cfg = cat.field_config ?? SEED.get(cat.name.toLowerCase()) ?? { sections: ALL, extra: [] };
+  const req = cat.required_fields.map((r) => REQ_TO_SECTION[r]).filter((x): x is FieldGroup => !!x);
+  return { sections: new Set([...cfg.sections, ...req]), extra: cfg.extra ?? [] };
 }
 
 /** Returns field → message. Empty object means valid. */

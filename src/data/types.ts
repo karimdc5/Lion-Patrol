@@ -7,7 +7,7 @@ export interface PublicSettings { org_id: string; gps_ping_interval_s: number; m
 export interface Site { id: string; org_id: string; name: string; code: string | null; kind: 'retail' | 'apartment' | 'other'; address: string | null; city: string | null; state: string | null; zip: string | null; lat: number | null; lng: number | null; geofence_m: number; post_orders_html: string; post_orders_updated_at: string | null; contacts: Array<{ name: string; role?: string; phone?: string; email?: string; notes?: string }>; tour_interval_min: number | null; tour_max_duration_min: number | null; active: boolean; timezone?: string | null }
 export interface SiteAccess { org_id: string; site_id: string; member_id: string; id?: string }
 export interface Checkpoint { id: string; org_id: string; site_id: string; name: string; seq: number; code: string; lat: number | null; lng: number | null; radius_m: number; instructions: string | null; active: boolean }
-export interface Category { id: string; org_id: string; name: string; color: string; icon: string; sort: number; hidden: boolean; required_fields: string[]; default_severity: string; use_for: 'incident' | 'dar' | 'both' }
+export interface Category { id: string; org_id: string; name: string; color: string; icon: string; sort: number; hidden: boolean; required_fields: string[]; default_severity: string; use_for: 'incident' | 'dar' | 'both'; field_config?: import('../domain/incident').FieldConfig | null }
 export interface Subtype { id: string; org_id: string; category_id: string; name: string; sort: number; hidden: boolean }
 export interface Shift { id: string; org_id: string; site_id: string; member_id: string | null; starts_at: string; ends_at: string; notes: string | null; cancelled_at: string | null }
 export interface TimeEntry { id: string; org_id: string; site_id: string; member_id: string; shift_id: string | null; clock_in_at: string; clock_in_lat: number | null; clock_in_lng: number | null; clock_out_at: string | null; shift_note: string | null; gps_notice_accepted_at: string }
@@ -35,3 +35,5 @@ export interface Bootstrap {
   consents: Consent[];
   member_status: MemberStatus[];
 }
+
+export interface Bolo { id: string; org_id: string; site_id: string; created_by: string; title: string; description: string; person_desc: string | null; vehicle_desc: string | null; expires_at: string | null; visible_to_client: boolean; status: 'active' | 'resolved' | 'archived'; resolved_at: string | null; created_at: string; updated_at: string }
