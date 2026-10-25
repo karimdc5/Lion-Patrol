@@ -5,7 +5,7 @@ Patrol start/end is wrongly built as an incident report.
 3. [DONE] Choosing a subtype should open only that subtype — no sibling chips (patrol end, checkpoint note, shift notes...) on the form.
 4. [DONE] Per-category fields: people/vehicle/police-called only on categories where they fit (suspicious, trespass, theft, vandalism, disturbance, police/fire/EMS). Not on routine entries.
 5. [DONE] Shift notes / relief-handoff / post check go to Log entry (DAR), not incidents.
-6. [WAITING ON KARIM] Clean up the 3 test "Patrol start" incidents (LSS-TS-2026-00002/4/6) only after Karim OKs.
+6. [DONE Oct 25] Karim OKed; deleted the 3 test "Patrol start" incidents (LSS-TS-2026-00002/4/6) and their 2 attachment rows. 4 orphaned photo files remain in private patrol-media (SQL delete blocked; remove via Storage dashboard if wanted). Migrations 20261025000100 + 20261025000200 applied live.
 
 Notes: migration `supabase/migrations/20261025000100_patrol_feedback.sql` (patrol_ tables only, re-runnable, deletes no incidents). It hides or removes the "Patrol & Shift" category and adds the "Shift Log" daily-log category. Which fields each category shows is set by `fields` in `src/domain/categories.seed.json`.
 
