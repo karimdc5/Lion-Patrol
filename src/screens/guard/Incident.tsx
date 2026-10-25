@@ -5,7 +5,7 @@ import { useData } from '../../ui/useData';
 import { currentOrgId, memberId, isStaff } from '../../auth/session';
 import { categoriesFor, subtypesFor, sitesFor } from '../../data/repos/queries';
 import { onShift, loadDraft, saveDraftLocal, syncDraft, submitIncident, discardDraft, listAttachments } from '../../data/guard';
-import { emptyIncident, validateIncident, REQUIRED_LABELS, type IncidentForm, type Person, type Vehicle } from '../../domain/incident';
+import { emptyIncident, validateIncident, categoryFields, REQUIRED_LABELS, type IncidentForm, type Person, type Vehicle } from '../../domain/incident';
 import { AttachmentTray } from '../../ui/Attachments';
 import { getFix } from '../../lib/geo';
 import { uuidv7 } from '../../lib/uuid';
@@ -105,7 +105,9 @@ export function IncidentEditor({ id }: { id: string }) {
   );
   if (!form) return <Screen><TopBar title="Report" backTo="/g" /><div class="screen-body" /></Screen>;
   const req = new Set(cat?.required_fields ?? []);
+  const show = categoryFields(cat);
   const catSubs = (subs.data ?? []).filter((s) => s.category_id === form.category_id && !s.hidden);
+  const pickedSub = catSubs.find((s) => s.id === form.subtype_id);
 
   const submit = async () => {
     if (submitting.current) return;
@@ -153,7 +155,12 @@ export function IncidentEditor({ id }: { id: string }) {
         {catSubs.length > 0 && (
           <div class="form-section">
             <div class="cap">Type</div>
-            <div class="chip-row">{catSubs.map((s) => <button key={s.id} class={`chip ${form.subtype_id === s.id ? 'active' : ''}`} onClick={() => update({ subtype_id: form.subtype_id === s.id ? null : s.id, title: form.title || s.name })} data-testid="subtype-chip">{s.name}</button>)}</div>
+            {pickedSub ? (
+              <div class="row" style={{ gap: 10 }}>
+                <span class="chip active" data-testid="subtype-selected">{pickedSub.name}</span>
+                <button class="link-btn" style={{ minHeight: 0 }} onClick={() => update({ subtype_id: null })} data-testid="change-type">Change type</button>
+              </div>
+            ) : <div class="chip-row">{catSubs.map((s) => <button key={s.id} class="chip" onClick={() => update({ subtype_id: s.id, title: form.title || s.name })} data-testid="subtype-chip">{s.name}</button>)}</div>}
           </div>
         )}
 
@@ -193,21 +200,21 @@ export function IncidentEditor({ id }: { id: string }) {
           </Field>
         </div>
 
-        <div class="form-section" data-err={E('people') ? 1 : 0}>
+        {show.has('people') && <div class="form-section" data-err={E('people') ? 1 : 0} data-testid="people-section">
           <div class={`cap ${req.has('people') || req.has('witnesses') ? 'req' : ''}`}>People involved</div>
           {form.people.map((p, i) => <PersonCard key={i} p={p} onChange={(np) => update({ people: form.people.map((x, j) => (j === i ? np : x)) })} onRemove={() => update({ people: form.people.filter((_, j) => j !== i) })} />)}
           {E('people') && <div class="field-error">{E('people')}</div>}
           <Button icon="user-plus" onClick={() => update({ people: [...form.people, { role: 'subject', name: '', description: '', phone: '' }] })} data-testid="add-person">Add person</Button>
-        </div>
+        </div>}
 
-        <div class="form-section" data-err={E('vehicles') ? 1 : 0}>
+        {show.has('vehicles') && <div class="form-section" data-err={E('vehicles') ? 1 : 0} data-testid="vehicles-section">
           <div class={`cap ${req.has('vehicles') ? 'req' : ''}`}>Vehicles</div>
           {form.vehicles.map((v, i) => <VehicleCard key={i} v={v} onChange={(nv) => update({ vehicles: form.vehicles.map((x, j) => (j === i ? nv : x)) })} onRemove={() => update({ vehicles: form.vehicles.filter((_, j) => j !== i) })} />)}
           {E('vehicles') && <div class="field-error">{E('vehicles')}</div>}
           <Button icon="car" onClick={() => update({ vehicles: [...form.vehicles, { plate: '', state: 'WA', make: '', model: '', color: '', notes: '' }] })} data-testid="add-vehicle">Add vehicle</Button>
-        </div>
+        </div>}
 
-        <div class="form-section" data-err={E('police') || E('police_case_no') ? 1 : 0}>
+        {show.has('police') && <div class="form-section" data-err={E('police') || E('police_case_no') ? 1 : 0} data-testid="police-section">
           <div class={`cap ${req.has('police') ? 'req' : ''}`}>Police, fire & EMS</div>
           <div class="subform">
             <div class="foot muted">Were police contacted?</div>
@@ -228,7 +235,7 @@ export function IncidentEditor({ id }: { id: string }) {
             <div class="row-between"><span>Fire department contacted</span><Toggle label="Fire department contacted" checked={form.fire_called} onChange={(v) => update({ fire_called: v })} /></div>
             <div class="row-between"><span>EMS contacted</span><Toggle label="EMS contacted" checked={form.ems_called} onChange={(v) => update({ ems_called: v })} /></div>
           </div>
-        </div>
+        </div>}
 
         {(req.has('injury') || form.injury) && (
           <div class="form-section" data-err={E('injury') ? 1 : 0}>

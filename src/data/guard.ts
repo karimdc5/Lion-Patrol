@@ -161,6 +161,40 @@ export async function openRun(siteId: string) {
     .sort((a, b) => b.started_at.localeCompare(a.started_at))[0] ?? null;
 }
 
+async function beginRun(te: TimeEntry, expected: number) {
+  const { userId, orgId, memberId: mid } = ctx();
+  const r = { id: uuidv7(), org_id: orgId, site_id: te.site_id, member_id: mid, time_entry_id: te.id, started_at: nowIso(), expected_count: expected, client_created_at: nowIso(), device_id: deviceId() };
+  const runOp = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_tour_runs', payload: r, entityKey: `patrol_tour_runs:${r.id}`, dependsOn: await parentDep('patrol_time_entries', te.id), label: 'Patrol tour started' },
+    [{ table: 'patrol_tour_runs', row: { ...r, scanned_count: 0, completed_at: null }, orgId }]);
+  await rememberOp('patrol_tour_runs', r.id, runOp);
+  return { ...r, completed_at: null } as NonNullable<Awaited<ReturnType<typeof openRun>>>;
+}
+
+/** One tap, like clock in: logs time + GPS to the daily log and opens a checkpoint round. Never creates an incident. */
+export async function startPatrol(): Promise<void> {
+  const te = onShift.value;
+  if (!te) throw new Error('Clock in to start a patrol.');
+  if (await openRun(te.site_id)) return;
+  const expected = (await listRecords<Checkpoint>('patrol_checkpoints', te.org_id)).filter((c) => c.active && c.site_id === te.site_id).length;
+  await beginRun(te, expected);
+  await addDarEntry('Patrol started', null, undefined, PATROL_LOG);
+}
+
+/** One tap: closes the open round and logs patrol end (time + GPS) to the daily log. */
+export async function endPatrol(): Promise<void> {
+  const { userId, orgId } = ctx();
+  const te = onShift.value;
+  const run = te ? await openRun(te.site_id) : null;
+  if (!te || !run) return;
+  const patch = { completed_at: nowIso() };
+  await enqueue({ userId, orgId, kind: 'update', table: 'patrol_tour_runs', payload: patch, match: { id: run.id }, entityKey: `patrol_tour_runs:${run.id}`, dependsOn: await parentDep('patrol_tour_runs', run.id), label: 'Patrol ended' },
+    [{ table: 'patrol_tour_runs', row: { id: run.id, ...patch }, orgId }]);
+  await addDarEntry('Patrol ended', null, undefined, PATROL_LOG);
+}
+
+/** Daily-log category name used for patrol start/end entries. */
+export const PATROL_LOG = 'Shift Log';
+
 export async function scanCheckpoint(raw: string, method: 'qr' | 'manual', note?: string): Promise<ScanResult> {
   const { userId, orgId, memberId: mid } = ctx();
   const te = onShift.value;
@@ -175,15 +209,8 @@ export async function scanCheckpoint(raw: string, method: 'qr' | 'manual', note?
   const site = await getRecord<Row & { tour_max_duration_min: number | null }>('patrol_sites', cp.site_id);
   const maxMin = site?.tour_max_duration_min ?? s?.tour_max_duration_min ?? 30;
 
-  let run = await openRun(cp.site_id);
+  const run = (await openRun(cp.site_id)) ?? (await beginRun(te, siteCps.length));
   const deps: string[] = [];
-  if (!run) {
-    const r = { id: uuidv7(), org_id: orgId, site_id: cp.site_id, member_id: mid, time_entry_id: te.id, started_at: nowIso(), expected_count: siteCps.length, client_created_at: nowIso(), device_id: deviceId() };
-    const runOp = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_tour_runs', payload: r, entityKey: `patrol_tour_runs:${r.id}`, dependsOn: await parentDep('patrol_time_entries', te.id), label: 'Patrol tour started' },
-      [{ table: 'patrol_tour_runs', row: { ...r, scanned_count: 0, completed_at: null }, orgId }]);
-    await rememberOp('patrol_tour_runs', r.id, runOp);
-    run = { ...r, completed_at: null } as unknown as typeof run;
-  }
   deps.push(...(await parentDep('patrol_tour_runs', run!.id)));
   const prior = (await listRecords<Row & { tour_run_id: string; checkpoint_id: string; flags: string[] }>('patrol_scans', orgId)).filter((x) => x.tour_run_id === run!.id);
   const fix = await getFix(5000);
@@ -211,15 +238,15 @@ export async function updateScanNote(scanId: string, note: string) {
 }
 
 // ---------------------------------------------------------------- DAR
-export async function addDarEntry(body: string, categoryId: string | null, _ref?: string): Promise<string> {
+export async function addDarEntry(body: string, categoryId: string | null, _ref?: string, categoryName?: string): Promise<string> {
   const { userId, orgId, memberId: mid } = ctx();
   const dar = await openDar();
   if (!dar) throw new Error('Clock in to add log entries.');
   const cat = categoryId ? await getRecord<Row & { name: string }>('patrol_categories', categoryId) : null;
   const fix = await getFix(3000);
-  const e = { id: uuidv7(), org_id: orgId, site_id: dar.site_id as string, member_id: mid, dar_id: dar.id, occurred_at: nowIso(), category_id: categoryId, category_name: cat?.name ?? null, body: body.trim(),
+  const e = { id: uuidv7(), org_id: orgId, site_id: dar.site_id as string, member_id: mid, dar_id: dar.id, occurred_at: nowIso(), category_id: categoryId, category_name: cat?.name ?? categoryName ?? null, body: body.trim(),
     lat: fix?.lat ?? null, lng: fix?.lng ?? null, accuracy_m: fix ? Math.round(fix.accuracy) : null, client_rev: clientRev(), client_created_at: nowIso(), device_id: deviceId() };
-  const op = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_dar_entries', payload: e, entityKey: `patrol_dar_entries:${e.id}`, dependsOn: await parentDep('patrol_dars', dar.id), label: 'Log entry' },
+  const op = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_dar_entries', payload: e, entityKey: `patrol_dar_entries:${e.id}`, dependsOn: await parentDep('patrol_dars', dar.id), label: categoryName ? body : 'Log entry' },
     [{ table: 'patrol_dar_entries', row: e, orgId, parentId: dar.id }]);
   await rememberOp('patrol_dar_entries', e.id, op);
   bumpData(); void kick();

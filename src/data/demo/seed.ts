@@ -115,12 +115,12 @@ export function demoSeed(now = Date.now()): MockState {
   const dar = '0b5e0000-0000-7000-8000-000000080001';
   t('patrol_dars').push({ id: dar, org_id: org, site_id: DEMO.sites.market, member_id: memberId(DEMO.users.marcus.id), author_name: DEMO.users.marcus.name, time_entry_id: te, report_date: localDate(iso(lastIn)), summary: 'Quiet night. One trespass warning at the loading dock, east fire exit found unlatched and secured.', status: 'sent_to_client', report_no: 'LSS-KSM-2026-00040', submitted_at: iso(lastIn + 8 * H), client_visible: true, client_rev: 3, created_at: iso(lastIn), updated_at: iso(lastIn + 9 * H) });
   const entries: Array<[number, string, string]> = [
-    [0.05, 'Patrol & Shift', 'On post. Met closing manager, received keys and radio.'],
+    [0.05, 'Shift Log', 'On post. Met closing manager, received keys and radio.'],
     [0.6, 'Access & Doors', 'All exterior doors checked and locked.'],
     [1.4, 'Access & Doors', 'East side fire exit found unlatched. Secured it and notified the store manager by text.'],
     [3.1, 'Trespass & Removal', 'Adult male sleeping at loading dock. Gave a verbal warning and he left without incident.'],
     [5.2, 'Maintenance & Facility', 'Light out over dumpster enclosure (pole 3).'],
-    [7.9, 'Patrol & Shift', 'Final patrol complete. Handed keys to the opening manager.'],
+    [7.9, 'Shift Log', 'Final patrol complete. Handed keys to the opening manager.'],
   ];
   entries.forEach(([h, cat, body], i) => t('patrol_dar_entries').push({ id: `0b5e0000-0000-7000-8000-00000009${String(i + 1).padStart(4, '0')}`, org_id: org, site_id: DEMO.sites.market, member_id: memberId(DEMO.users.marcus.id), dar_id: dar, occurred_at: iso(lastIn + h * H), category_name: cat, body, client_rev: 1, created_at: iso(lastIn + h * H), updated_at: iso(lastIn + h * H) }));
 
@@ -173,7 +173,7 @@ function busyHistory(s: MockState, now: number) {
       const sent = d % 3 !== 0;
       t('patrol_dars').push({ id: dar, org_id: org, site_id: site, member_id: mid(g), author_name: g.name, time_entry_id: te, report_date: localDate(iso(start)), summary: 'Routine night. Doors secured, patrols completed.', status: sent ? 'sent_to_client' : 'reviewed', report_no: `LSS-${site === DEMO.sites.market ? 'KSM' : 'WCA'}-2026-${String(20 + seq).padStart(5, '0')}`, submitted_at: iso(start + 8 * H), client_visible: sent, client_rev: 2, created_at: iso(start), updated_at: iso(start + 9 * H) });
       ['All exterior doors checked and locked.', 'Parking lot patrol, no issues.', 'Lights checked, all working.'].forEach((body, i) =>
-        t('patrol_dar_entries').push({ id: id('300'), org_id: org, site_id: site, member_id: mid(g), dar_id: dar, occurred_at: iso(start + (1 + i * 2.5) * H), category_name: 'Patrol & Shift', body, client_rev: 1, created_at: iso(start + (1 + i * 2.5) * H), updated_at: iso(start + (1 + i * 2.5) * H) }));
+        t('patrol_dar_entries').push({ id: id('300'), org_id: org, site_id: site, member_id: mid(g), dar_id: dar, occurred_at: iso(start + (1 + i * 2.5) * H), category_name: 'Shift Log', body, client_rev: 1, created_at: iso(start + (1 + i * 2.5) * H), updated_at: iso(start + (1 + i * 2.5) * H) }));
       for (let r = 0; r < 3; r++) {
         const run = id('400');
         const rs = start + (1 + r * 2.5) * H;
@@ -197,7 +197,7 @@ function busyHistory(s: MockState, now: number) {
     t('patrol_time_entries').push({ id: te, org_id: org, site_id: o.site, member_id: mid(o.u), shift_id: null, clock_in_at: iso(start), clock_in_lat: o.lat, clock_in_lng: o.lng, clock_out_at: null, shift_note: null, gps_notice_accepted_at: iso(now - 40 * 24 * H), created_at: iso(start), updated_at: iso(start) });
     const dar = id('610');
     t('patrol_dars').push({ id: dar, org_id: org, site_id: o.site, member_id: mid(o.u), author_name: o.u.name, time_entry_id: te, report_date: localDate(iso(start)), summary: null, status: 'open', client_visible: false, client_rev: 1, created_at: iso(start), updated_at: iso(start) });
-    t('patrol_dar_entries').push({ id: id('620'), org_id: org, site_id: o.site, member_id: mid(o.u), dar_id: dar, occurred_at: iso(start + 5 * M), category_name: 'Patrol & Shift', body: 'On post, keys and radio received.', client_rev: 1, created_at: iso(start + 5 * M), updated_at: iso(start + 5 * M) });
+    t('patrol_dar_entries').push({ id: id('620'), org_id: org, site_id: o.site, member_id: mid(o.u), dar_id: dar, occurred_at: iso(start + 5 * M), category_name: 'Shift Log', body: 'On post, keys and radio received.', client_rev: 1, created_at: iso(start + 5 * M), updated_at: iso(start + 5 * M) });
     const run = id('630');
     const list = cps(o.site);
     t('patrol_tour_runs').push({ id: run, org_id: org, site_id: o.site, member_id: mid(o.u), time_entry_id: te, started_at: iso(now - 35 * M), completed_at: null, expected_count: list.length, scanned_count: o.scanned, late: o.u === users.tasha, created_at: iso(now - 35 * M), updated_at: iso(now - 8 * M) });

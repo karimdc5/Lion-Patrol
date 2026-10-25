@@ -45,6 +45,9 @@ describe('category seed parity', () => {
   it('SQL migration embeds exactly the JSON seed', () => {
     const migration = readFileSync('supabase/migrations/20261024000500_patrol_seed.sql', 'utf8');
     expect(migration).toBe(sql);
+    const fn = sql.slice(sql.indexOf('create or replace function public.patrol_default_categories()'), sql.indexOf('$seed$;') + 7);
+    expect(readFileSync('supabase/migrations/20261025000100_patrol_feedback.sql', 'utf8')).toContain(fn);
+    expect(seed.some((c) => c.name === 'Patrol & Shift')).toBe(false);
     expect(seed.length).toBeGreaterThanOrEqual(20);
     expect(seed.length).toBeLessThanOrEqual(30);
     const names = seed.map((c) => c.name.toLowerCase());
