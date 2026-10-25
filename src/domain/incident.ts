@@ -1,4 +1,5 @@
 import type { Category } from '../data/types';
+import seedCategories from './categories.seed.json';
 
 export interface Person { role: 'subject' | 'witness' | 'victim' | 'reporting'; name: string; description: string; phone: string }
 export interface Vehicle { plate: string; state: string; make: string; model: string; color: string; notes: string }
@@ -29,6 +30,19 @@ export const REQUIRED_LABELS: Record<string, string> = {
   people: 'People involved', vehicles: 'Vehicles', police: 'Police contact', injury: 'Injury details',
   property_damage: 'Property damage', photos: 'Photos', witnesses: 'Witnesses',
 };
+
+export type FieldGroup = 'people' | 'vehicles' | 'police';
+const SEED_FIELDS = new Map((seedCategories as Array<{ name: string; fields?: string[] }>).map((c) => [c.name.toLowerCase(), c.fields ?? []]));
+
+/** Optional sections (people / vehicles / police) a category shows: per-category `fields` config in
+ *  categories.seed.json, plus anything the category requires. Custom (non-default) categories show all. */
+export function categoryFields(cat: Category | null | undefined): Set<FieldGroup> {
+  if (!cat) return new Set();
+  const seeded = SEED_FIELDS.get(cat.name.toLowerCase());
+  const base = seeded ?? ['people', 'vehicles', 'police'];
+  const req = cat.required_fields.flatMap((r) => (r === 'witnesses' ? ['people'] : [r]));
+  return new Set([...base, ...req].filter((f): f is FieldGroup => f === 'people' || f === 'vehicles' || f === 'police'));
+}
 
 /** Returns field → message. Empty object means valid. */
 export function validateIncident(f: IncidentForm, cat: Category | null | undefined, photoCount: number): Record<string, string> {

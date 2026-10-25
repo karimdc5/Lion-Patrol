@@ -11,6 +11,7 @@ import { navigate } from '../../router';
 import { GuardRight } from './common';
 import { fireSos } from './Sos';
 import { ClockOutSheet } from './Clock';
+import { PatrolToggle } from './Patrol';
 
 export function GuardHome() {
   const org = currentOrgId.value;
@@ -48,8 +49,9 @@ export function GuardHome() {
             <div class="stack" style={{ marginTop: 16, gap: 10 }}>
               <div class="row-between foot"><span class="muted">Patrol {run.data ? 'in progress' : 'not started'}</span><span class="tnum">{done}/{total} checkpoints</span></div>
               <div class="progress"><span style={{ width: `${total ? (done / total) * 100 : 0}%` }} /></div>
+              <PatrolToggle active={!!run.data} />
               <div class="grid-2" style={{ marginTop: 4 }}>
-                <Button variant="primary" icon="scan" onClick={() => navigate('/g/scan')} data-testid="home-scan">Scan</Button>
+                <Button variant="outline" icon="scan" onClick={() => navigate('/g/scan')} data-testid="home-scan">Scan</Button>
                 <Button variant="outline" icon="log-out" onClick={() => setClockOut(true)} data-testid="clock-out-btn">Clock out</Button>
               </div>
             </div>

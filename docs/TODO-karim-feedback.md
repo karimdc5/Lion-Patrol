@@ -1,0 +1,10 @@
+# Karim feedback — Oct 25, 2026 12:30 AM PT (items 1–5 done Oct 25, 2026; item 6 waiting on Karim)
+Patrol start/end is wrongly built as an incident report.
+1. [DONE] Patrol start/end should NOT create incidents. Remove "Patrol & Shift" from incident categories; Incidents tab shows only real incidents (theft, trespass, medical, etc.).
+2. [DONE] "Start patrol" = one tap on Home/Patrol tab (like Clock in): logs a timestamp + GPS to the activity log/DAR, starts the checkpoint round, button flips to "End patrol". No form.
+3. [DONE] Choosing a subtype should open only that subtype — no sibling chips (patrol end, checkpoint note, shift notes...) on the form.
+4. [DONE] Per-category fields: people/vehicle/police-called only on categories where they fit (suspicious, trespass, theft, vandalism, disturbance, police/fire/EMS). Not on routine entries.
+5. [DONE] Shift notes / relief-handoff / post check go to Log entry (DAR), not incidents.
+6. [WAITING ON KARIM] Clean up the 3 test "Patrol start" incidents (LSS-TS-2026-00002/4/6) only after Karim OKs.
+
+Notes: migration `supabase/migrations/20261025000100_patrol_feedback.sql` (patrol_ tables only, re-runnable, deletes no incidents). It hides or removes the "Patrol & Shift" category and adds the "Shift Log" daily-log category. Which fields each category shows is set by `fields` in `src/domain/categories.seed.json`.

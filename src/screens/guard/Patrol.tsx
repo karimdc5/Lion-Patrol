@@ -1,9 +1,10 @@
-import { Screen, TopBar, List, Row, SectionLabel, Empty, SkeletonList, Button } from '../../ui/kit';
+import { useRef, useState } from 'preact/hooks';
+import { Screen, TopBar, List, Row, SectionLabel, Empty, SkeletonList, Button, toast } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
 import { currentOrgId, memberId, isStaff } from '../../auth/session';
 import { sitesFor, checkpointsFor } from '../../data/repos/queries';
-import { onShift, openRun } from '../../data/guard';
+import { onShift, openRun, startPatrol, endPatrol } from '../../data/guard';
 import { listRecords } from '../../data/repos/records';
 import { fmtTime } from '../../lib/format';
 import { navigate } from '../../router';
@@ -15,6 +16,19 @@ const FLAG: Record<string, [string, string]> = {
 };
 export function FlagPills({ flags }: { flags: string[] }) {
   return <>{flags.map((f) => <span key={f} class={`pill ${FLAG[f]?.[1] ?? 'pill-muted'}`}>{FLAG[f]?.[0] ?? f}</span>)}</>;
+}
+
+/** One-tap Start/End patrol, like Clock in: no form, logs to the daily log, works offline via the outbox. */
+export function PatrolToggle({ active, block = true }: { active: boolean; block?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const tap = async () => {
+    if (lock.current) return;
+    lock.current = true; setBusy(true);
+    try { await (active ? endPatrol() : startPatrol()); toast(active ? 'Patrol ended · logged' : 'Patrol started · logged'); }
+    catch (e) { toast((e as Error).message, 'error'); } finally { lock.current = false; setBusy(false); }
+  };
+  return <Button variant={active ? 'outline' : 'primary'} size="lg" block={block} icon={active ? 'check-circle' : 'shield'} loading={busy} onClick={() => void tap()} data-testid={active ? 'end-patrol' : 'start-patrol'}>{active ? 'End patrol' : 'Start patrol'}</Button>;
 }
 
 export function PatrolScreen() {
@@ -39,8 +53,9 @@ export function PatrolScreen() {
           <div class="card stack">
             <div class="row-between"><span class="headline">{run.data ? 'Current tour' : 'Ready to start'}</span><span class="pill pill-gold tnum" data-testid="tour-progress">{doneIds.size}/{siteCps.length}</span></div>
             <div class="progress"><span style={{ width: `${siteCps.length ? (doneIds.size / siteCps.length) * 100 : 0}%` }} /></div>
-            <div class="foot muted">{nextCp ? `Next: ${nextCp.name}` : run.data ? 'All checkpoints scanned' : 'Scan any checkpoint to start a tour.'}</div>
-            <Button variant="primary" size="lg" block icon="scan" onClick={() => navigate('/g/scan')} data-testid="patrol-scan">Scan checkpoint</Button>
+            <div class="foot muted">{nextCp ? `Next: ${nextCp.name}` : run.data ? 'All checkpoints scanned' : 'Tap Start patrol, or scan any checkpoint.'}</div>
+            <PatrolToggle active={!!run.data} />
+            <Button variant={run.data ? 'primary' : 'outline'} size="lg" block icon="scan" onClick={() => navigate('/g/scan')} data-testid="patrol-scan">Scan checkpoint</Button>
           </div>
           <div>
             <SectionLabel>Checkpoints</SectionLabel>

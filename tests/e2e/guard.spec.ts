@@ -73,6 +73,50 @@ test('QR patrol via manual code entry records the scan and tour progress; out-of
   await expect(page.getByTestId('manual-sheet')).toContainText('doesn’t match a checkpoint');
 });
 
+test('one-tap Start/End patrol logs to the daily log with GPS, opens/closes a round, never creates an incident', async ({ page }) => {
+  await signInGuard(page);
+  await clockIn(page);
+  const incidentsBefore = (await rows(page, 'patrol_incidents')).length;
+  await page.getByTestId('start-patrol').click();
+  await expect(page.getByTestId('end-patrol')).toBeVisible();
+  await expect(page.getByTestId('incident-form')).toHaveCount(0); // no form
+  await expect.poll(async () => (await rows(page, 'patrol_dar_entries')).filter((e) => e.body === 'Patrol started' && e.device_id).length).toBe(1);
+  const started = (await rows(page, 'patrol_dar_entries')).find((e) => e.body === 'Patrol started' && e.device_id)!;
+  expect(started.category_name).toBe('Shift Log');
+  expect(started.lat).toBeCloseTo(47.3826, 3);
+  await expect.poll(async () => (await rows(page, 'patrol_tour_runs')).filter((r) => r.device_id && !r.completed_at).length).toBe(1);
+  // Patrol tab shows the same state; End is one tap
+  await page.getByRole('link', { name: 'Patrol' }).click();
+  await page.getByTestId('end-patrol').click();
+  await expect(page.getByTestId('start-patrol')).toBeVisible();
+  await expect.poll(async () => (await rows(page, 'patrol_dar_entries')).filter((e) => e.body === 'Patrol ended' && e.device_id).length).toBe(1);
+  await expect.poll(async () => (await rows(page, 'patrol_tour_runs')).filter((r) => r.device_id && !r.completed_at).length).toBe(0);
+  expect((await rows(page, 'patrol_incidents')).length).toBe(incidentsBefore);
+});
+
+test('incident form: picking a type hides sibling types; routine categories have no people/vehicle/police fields', async ({ page }) => {
+  await signInGuard(page);
+  await page.getByRole('button', { name: 'Report' }).click();
+  await expect(page.getByTestId('category-tile').filter({ hasText: 'Patrol & Shift' })).toHaveCount(0);
+  await page.getByTestId('cat-search').fill('maintenance');
+  await page.getByTestId('category-tile').first().click();
+  await expect(page.getByTestId('incident-form')).toBeVisible();
+  await page.getByTestId('subtype-chip').filter({ hasText: 'Lights out' }).click();
+  await expect(page.getByTestId('subtype-chip')).toHaveCount(0);
+  await expect(page.getByTestId('subtype-selected')).toHaveText('Lights out');
+  await expect(page.getByTestId('vehicles-section')).toHaveCount(0);
+  await expect(page.getByTestId('police-section')).toHaveCount(0);
+  await expect(page.getByTestId('people-section')).toHaveCount(0);
+  await page.getByTestId('change-type').click();
+  await expect(page.getByTestId('subtype-chip').first()).toBeVisible();
+  // a category where they fit still shows them
+  await page.getByRole('button', { name: 'Change category' }).click();
+  await page.getByTestId('cat-search').fill('trespass');
+  await page.getByTestId('category-tile').first().click();
+  await expect(page.getByTestId('vehicles-section')).toBeVisible();
+  await expect(page.getByTestId('police-section')).toBeVisible();
+});
+
 async function startTheftReport(page: Page) {
   await page.getByRole('button', { name: 'Report' }).click();
   await page.getByTestId('cat-search').fill('theft');
