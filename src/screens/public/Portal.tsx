@@ -5,8 +5,9 @@ import { PdfButton } from '../../ui/PdfButton';
 import { getBackend, phase } from '../../auth/session';
 import { fmtDateTime, fmtDate } from '../../lib/format';
 import type { Row } from '../../data/db';
+import { BoloCard, type BoloView } from '../../ui/BoloCard';
 
-interface PortalData { org: Row; site: Row; incidents: Row[]; dars: Row[]; runs: Row[]; expires_at: string | null }
+interface PortalData { org: Row; site: Row; incidents: Row[]; dars: Row[]; bolos?: Row[]; runs: Row[]; expires_at: string | null }
 
 /** Read-only, no-login client portal for one site (opened from an admin-generated link). */
 export default function PortalPage({ token }: { token: string }) {
@@ -41,6 +42,12 @@ export default function PortalPage({ token }: { token: string }) {
           <h1 class="large-title" style={{ fontSize: 30, lineHeight: '36px' }} data-testid="portal-site">{String(data.site.name)}</h1>
           <div class="muted sub">{[data.site.address, data.site.city, data.site.state].filter(Boolean).join(', ')}</div>
         </div>
+        {(data.bolos ?? []).length > 0 && (
+          <div data-testid="portal-bolos">
+            <SectionLabel>Be on the lookout</SectionLabel>
+            <div class="stack">{data.bolos!.map((b) => <BoloCard key={String(b.id)} b={b as unknown as BoloView} />)}</div>
+          </div>
+        )}
         <div>
           <SectionLabel>Patrol proof · last 7 nights</SectionLabel>
           <div class="card">

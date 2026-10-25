@@ -176,6 +176,7 @@ export function refreshDashboard(): Promise<void> {
       ['patrol_dar_entries', { eq: { org_id: orgId }, gte: { occurred_at: since(7) }, order: ['occurred_at', 'desc'], limit: 500 }],
       ['patrol_dars', { eq: { org_id: orgId }, gte: { report_date: since(30).slice(0, 10) }, order: ['report_date', 'desc'], limit: 100 }],
       ['patrol_shifts', { eq: { org_id: orgId }, gte: { ends_at: since(7) }, order: ['starts_at', 'asc'], limit: 400 }],
+      ['patrol_bolos', { eq: { org_id: orgId }, gte: { updated_at: since(90) }, order: ['created_at', 'desc'], limit: 200 }],
     ];
     await Promise.all(jobs.map(async ([t, q]) => {
       try {

@@ -137,10 +137,11 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       }
       case 'patrol_attachments': {
         if (mine) return true;
-        const parentTable = ({ incident: 'patrol_incidents', dar_entry: 'patrol_dar_entries', scan: 'patrol_scans', alert: 'patrol_alerts', site: 'patrol_sites' } as Record<string, string>)[r.parent_type];
+        const parentTable = ({ incident: 'patrol_incidents', dar_entry: 'patrol_dar_entries', scan: 'patrol_scans', alert: 'patrol_alerts', site: 'patrol_sites', bolo: 'patrol_bolos' } as Record<string, string>)[r.parent_type];
         const parent = parentTable ? (s.tables[parentTable] ?? []).find((p) => p.id === r.parent_id) : undefined;
         return !!parent && visible(s, c, parentTable!, parent);
       }
+      case 'patrol_bolos': return staff || c.workable.includes(r.site_id);
       case 'patrol_invites': return c.adminOrgs.includes(r.org_id);
       case 'patrol_share_links': case 'patrol_portal_links': return staff;
       default: return false;
@@ -155,6 +156,10 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         return true;
       }
       return c.memberIds.includes(r.member_id) || (table === 'patrol_time_entries' && c.staffOrgs.includes(r.org_id));
+    }
+    if (table === 'patrol_bolos') {
+      if (op === 'insert') return r.created_by === c.memberIn(r.org_id) && c.workerOrgs.includes(r.org_id) && c.workable.includes(r.site_id);
+      return c.staffOrgs.includes(r.org_id) || c.memberIds.includes(r.created_by);
     }
     if (ADMIN_TABLES.has(table)) return c.adminOrgs.includes(r.org_id ?? r.id);
     if (STAFF_TABLES.has(table)) return c.staffOrgs.includes(r.org_id);
@@ -177,7 +182,12 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       }
       if (table === 'patrol_alerts') t.member_name = memberName(t.member_id);
       if (table === 'patrol_attachments') t.upload_status = 'pending';
+      if (table === 'patrol_bolos') { t.status = 'active'; t.resolved_at = null; t.visible_to_client ??= false; }
     } else {
+      if (table === 'patrol_bolos') {
+        t.org_id = prev.org_id; t.site_id = prev.site_id; t.created_by = prev.created_by;
+        if (t.status === 'resolved' && prev.status !== 'resolved') t.resolved_at = nowIso(); else if (t.status === 'active') t.resolved_at = null;
+      }
       if ((table === 'patrol_incidents' || table === 'patrol_dars') && typeof t.client_rev === 'number') {
         const editable = table === 'patrol_incidents' ? prev.status === 'draft' : prev.status === 'open';
         if (t.client_rev <= (prev.client_rev ?? 0)) return null; // stale replay
@@ -446,6 +456,9 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
           entries: (s.tables.patrol_dar_entries ?? []).filter((e) => e.dar_id === d.id && !e.deleted_at).sort((x, y) => x.occurred_at.localeCompare(y.occurred_at)).map((e) => ({ occurred_at: e.occurred_at, category_name: e.category_name, body: e.body })),
           tours: (s.tables.patrol_tour_runs ?? []).filter((r) => d.time_entry_id && r.time_entry_id === d.time_entry_id).map((r) => ({ started_at: r.started_at, completed_at: r.completed_at, expected_count: r.expected_count, scanned_count: r.scanned_count })),
         })),
+        bolos: (s.tables.patrol_bolos ?? []).filter((b) => b.site_id === l.site_id && b.visible_to_client && b.status === 'active' && (!b.expires_at || Date.parse(b.expires_at) > Date.now()))
+          .sort((x, y) => y.created_at.localeCompare(x.created_at))
+          .map((b) => ({ id: b.id, title: b.title, description: b.description, person_desc: b.person_desc, vehicle_desc: b.vehicle_desc, expires_at: b.expires_at, created_at: b.created_at })),
         runs: (s.tables.patrol_tour_runs ?? []).filter((r) => r.site_id === l.site_id && Date.parse(r.started_at) > Date.now() - 14 * 864e5).map((r) => ({ started_at: r.started_at, expected_count: r.expected_count, scanned_count: r.scanned_count, completed_at: r.completed_at })),
       };
     },
@@ -487,10 +500,10 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
     const cats = (s.tables.patrol_categories ??= []);
     const subs = (s.tables.patrol_subtypes ??= []);
     const max = Math.max(-1, ...cats.filter((c) => c.org_id === org).map((c) => c.sort));
-    (seedCategories as Array<{ name: string; color: string; icon: string; use_for: string; default_severity: string; required_fields: string[]; subtypes: string[] }>).forEach((sc, i) => {
+    (seedCategories as Array<{ name: string; color: string; icon: string; use_for: string; default_severity: string; required_fields: string[]; field_config: unknown; subtypes: string[] }>).forEach((sc, i) => {
       let cat = cats.find((c) => c.org_id === org && c.name.toLowerCase() === sc.name.toLowerCase());
       if (!cat) {
-        cat = { id: uuidv7(), org_id: org, name: sc.name, color: sc.color, icon: sc.icon, sort: max + 1 + i, hidden: false, required_fields: sc.required_fields, default_severity: sc.default_severity, use_for: sc.use_for, created_at: nowIso(), updated_at: nowIso() };
+        cat = { id: uuidv7(), org_id: org, name: sc.name, color: sc.color, icon: sc.icon, sort: max + 1 + i, hidden: false, required_fields: sc.required_fields, default_severity: sc.default_severity, use_for: sc.use_for, field_config: sc.field_config, created_at: nowIso(), updated_at: nowIso() };
         cats.push(cat);
         added++;
       }
@@ -575,7 +588,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const userId = await requireUser();
       const s = load();
       const c = ctx(s, userId);
-      s.tables[table] = (s.tables[table] ?? []).filter((r) => !(Object.entries(eq).every(([k, v]) => r[k] === v) && canWrite(c, table, r, 'update')));
+      s.tables[table] = (s.tables[table] ?? []).filter((r) => !(Object.entries(eq).every(([k, v]) => r[k] === v) && (table === 'patrol_bolos' ? c.staffOrgs.includes(r.org_id) : canWrite(c, table, r, 'update'))));
       save(s);
     },
     async rpc<T>(fn: string, args: Record<string, unknown> = {}) {

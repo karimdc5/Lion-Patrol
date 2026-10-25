@@ -107,6 +107,7 @@ test('incident form: picking a type hides sibling types; routine categories have
   await expect(page.getByTestId('vehicles-section')).toHaveCount(0);
   await expect(page.getByTestId('police-section')).toHaveCount(0);
   await expect(page.getByTestId('people-section')).toHaveCount(0);
+  await expect(page.getByTestId('extra-work_order')).toBeVisible(); // category-specific field
   await page.getByTestId('change-type').click();
   await expect(page.getByTestId('subtype-chip').first()).toBeVisible();
   // a category where they fit still shows them
@@ -115,6 +116,27 @@ test('incident form: picking a type hides sibling types; routine categories have
   await page.getByTestId('category-tile').first().click();
   await expect(page.getByTestId('vehicles-section')).toBeVisible();
   await expect(page.getByTestId('police-section')).toBeVisible();
+});
+
+test('BOLO: pinned on Home and Post orders for the site; guard posts one with a photo', async ({ page }) => {
+  await signInGuard(page);
+  await clockIn(page);
+  await expect(page.getByTestId('bolo-card').filter({ hasText: 'Grey hoodie, repeat warnings at dock' })).toBeVisible();
+  await page.getByTestId('bolo-new').click();
+  await page.getByTestId('bolo-title-input').fill('Silver sedan casing lot');
+  await page.getByTestId('bolo-desc').fill('Circled the lot three times around 02:00.');
+  await page.getByTestId('bolo-save').click();
+  await expect(page.getByTestId('bolo-error')).toContainText('photo');
+  await page.getByTestId('bolo-photo').setInputFiles(PHOTO);
+  await expect(page.getByTestId('bolo-photo-count')).toBeVisible();
+  await page.getByTestId('bolo-save').click();
+  await expect(page.getByTestId('bolo-card').filter({ hasText: 'Silver sedan casing lot' })).toBeVisible();
+  await expect.poll(async () => (await rows(page, 'patrol_bolos')).find((b) => b.title === 'Silver sedan casing lot')?.status).toBe('active');
+  const b = (await rows(page, 'patrol_bolos')).find((x) => x.title === 'Silver sedan casing lot')!;
+  expect(b.visible_to_client).toBe(false);
+  await expect.poll(async () => (await rows(page, 'patrol_attachments')).filter((a) => a.parent_type === 'bolo' && a.parent_id === b.id).length).toBe(1);
+  await page.getByTestId('site-row').filter({ hasText: 'Kent Station Market' }).click();
+  await expect(page.getByTestId('bolo-card')).toHaveCount(2);
 });
 
 async function startTheftReport(page: Page) {

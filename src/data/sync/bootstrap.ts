@@ -40,6 +40,14 @@ export async function runBootstrap(backend: Backend, userId: string, email = '')
     const rows = withIds(table, (b[key] as unknown as Row[]) ?? []);
     await putServerRows(table, rows, replace ? { replaceOrgs: orgIds } : {});
   }
+  // Active BOLOs + their photos (plain RLS-scoped selects; not part of the bootstrap RPC).
+  if (orgIds.length) {
+    try {
+      const bolos = await backend.select<Row>('patrol_bolos', { in: { org_id: orgIds }, eq: { status: 'active' }, limit: 200 });
+      await putServerRows('patrol_bolos', bolos, { replaceOrgs: orgIds });
+      if (bolos.length) await putServerRows('patrol_attachments', await backend.select<Row>('patrol_attachments', { in: { parent_id: bolos.map((b) => b.id) } }));
+    } catch { /* offline or not migrated yet: keep cache */ }
+  }
   await (await db()).put('identity', {
     userId,
     email,

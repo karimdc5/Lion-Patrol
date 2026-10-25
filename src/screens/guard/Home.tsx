@@ -12,6 +12,7 @@ import { GuardRight } from './common';
 import { fireSos } from './Sos';
 import { ClockOutSheet } from './Clock';
 import { PatrolToggle } from './Patrol';
+import { BoloPinned } from './Bolo';
 
 export function GuardHome() {
   const org = currentOrgId.value;
@@ -34,6 +35,7 @@ export function GuardHome() {
     <Screen tabbar>
       <TopBar title={`Hi, ${first}`} large right={<GuardRight />} />
       <div class="screen-body stack-lg">
+        {te && <BoloPinned siteId={te.site_id} canCreate />}
         <div class="hero" data-testid="duty-hero">
           <div class="row">
             <DutyRing onDuty={!!te} since={te?.clock_in_at} />

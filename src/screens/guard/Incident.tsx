@@ -105,7 +105,8 @@ export function IncidentEditor({ id }: { id: string }) {
   );
   if (!form) return <Screen><TopBar title="Report" backTo="/g" /><div class="screen-body" /></Screen>;
   const req = new Set(cat?.required_fields ?? []);
-  const show = categoryFields(cat);
+  const { sections: show, extra: extraFields } = categoryFields(cat);
+  const extra = form.extra ?? {};
   const catSubs = (subs.data ?? []).filter((s) => s.category_id === form.category_id && !s.hidden);
   const pickedSub = catSubs.find((s) => s.id === form.subtype_id);
 
@@ -200,6 +201,26 @@ export function IncidentEditor({ id }: { id: string }) {
           </Field>
         </div>
 
+        {extraFields.length > 0 && (
+          <div class="form-section" data-testid="extra-section">
+            <div class="cap">{cat?.name} details</div>
+            {extraFields.map((x) => (
+              <Field key={x.key} label={x.label}>
+                {x.type === 'select' ? (
+                  <select class="input" value={extra[x.key] ?? ''} onChange={(e) => update({ extra: { ...extra, [x.key]: (e.target as HTMLSelectElement).value } })} data-testid={`extra-${x.key}`}>
+                    <option value="">Choose…</option>{x.options!.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                ) : x.type === 'yesno' ? (
+                  <div class="yn">
+                    <button class={extra[x.key] === 'Yes' ? 'on' : ''} onClick={() => update({ extra: { ...extra, [x.key]: 'Yes' } })}>Yes</button>
+                    <button class={extra[x.key] === 'No' ? 'on' : ''} onClick={() => update({ extra: { ...extra, [x.key]: 'No' } })}>No</button>
+                  </div>
+                ) : <input class="input" value={extra[x.key] ?? ''} onInput={(e) => update({ extra: { ...extra, [x.key]: (e.target as HTMLInputElement).value } })} data-testid={`extra-${x.key}`} />}
+              </Field>
+            ))}
+          </div>
+        )}
+
         {show.has('people') && <div class="form-section" data-err={E('people') ? 1 : 0} data-testid="people-section">
           <div class={`cap ${req.has('people') || req.has('witnesses') ? 'req' : ''}`}>People involved</div>
           {form.people.map((p, i) => <PersonCard key={i} p={p} onChange={(np) => update({ people: form.people.map((x, j) => (j === i ? np : x)) })} onRemove={() => update({ people: form.people.filter((_, j) => j !== i) })} />)}
@@ -214,9 +235,10 @@ export function IncidentEditor({ id }: { id: string }) {
           <Button icon="car" onClick={() => update({ vehicles: [...form.vehicles, { plate: '', state: 'WA', make: '', model: '', color: '', notes: '' }] })} data-testid="add-vehicle">Add vehicle</Button>
         </div>}
 
-        {show.has('police') && <div class="form-section" data-err={E('police') || E('police_case_no') ? 1 : 0} data-testid="police-section">
-          <div class={`cap ${req.has('police') ? 'req' : ''}`}>Police, fire & EMS</div>
+        {(show.has('police') || show.has('ems')) && <div class="form-section" data-err={E('police') || E('police_case_no') ? 1 : 0} data-testid={show.has('police') ? 'police-section' : 'ems-section'}>
+          <div class={`cap ${req.has('police') ? 'req' : ''}`}>{show.has('police') ? 'Police, fire & EMS' : 'Fire & EMS'}</div>
           <div class="subform">
+            {show.has('police') && <>
             <div class="foot muted">Were police contacted?</div>
             <div class="yn">
               <button class={form.police_called === true ? 'on' : ''} onClick={() => update({ police_called: true })} data-testid="police-yes">Yes</button>
@@ -232,12 +254,13 @@ export function IncidentEditor({ id }: { id: string }) {
                 <Field label="Officer name / badge"><input class="input" value={form.officer_name} onInput={(e) => update({ officer_name: (e.target as HTMLInputElement).value })} /></Field>
               </>
             )}
+            </>}
             <div class="row-between"><span>Fire department contacted</span><Toggle label="Fire department contacted" checked={form.fire_called} onChange={(v) => update({ fire_called: v })} /></div>
             <div class="row-between"><span>EMS contacted</span><Toggle label="EMS contacted" checked={form.ems_called} onChange={(v) => update({ ems_called: v })} /></div>
           </div>
         </div>}
 
-        {(req.has('injury') || form.injury) && (
+        {(show.has('injury') || form.injury) && (
           <div class="form-section" data-err={E('injury') ? 1 : 0}>
             <div class="cap req">Injury</div>
             <div class="subform">
@@ -246,14 +269,14 @@ export function IncidentEditor({ id }: { id: string }) {
             </div>
           </div>
         )}
-        <div class="form-section" data-err={E('property_damage') ? 1 : 0}>
+        {(show.has('damage') || form.property_damage) && <div class="form-section" data-err={E('property_damage') ? 1 : 0} data-testid="damage-section">
           <div class={`cap ${req.has('property_damage') ? 'req' : ''}`}>Property damage</div>
           <div class="subform">
             <div class="row-between"><span>Property was damaged or stolen</span><Toggle label="Property damaged" checked={form.property_damage} onChange={(v) => update({ property_damage: v })} /></div>
             {form.property_damage && <Field label="Estimated value (USD)" error={E('property_damage')}><input class="input" inputMode="decimal" value={form.damage_estimate_usd} placeholder="250" onInput={(e) => update({ damage_estimate_usd: (e.target as HTMLInputElement).value })} /></Field>}
           </div>
           {!form.property_damage && E('property_damage') && <div class="field-error">{E('property_damage')}</div>}
-        </div>
+        </div>}
 
         <div class="form-section" data-err={E('photos') ? 1 : 0}>
           <div class={`cap ${req.has('photos') ? 'req' : ''}`}>Photos, video & files</div>

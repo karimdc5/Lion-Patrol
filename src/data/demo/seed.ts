@@ -94,9 +94,9 @@ export function demoSeed(now = Date.now()): MockState {
   }));
 
   // Categories from the shared seed
-  (seedCategories as Array<{ name: string; color: string; icon: string; use_for: string; default_severity: string; required_fields: string[]; subtypes: string[] }>).forEach((c, i) => {
+  (seedCategories as Array<{ name: string; color: string; icon: string; use_for: string; default_severity: string; required_fields: string[]; field_config: unknown; subtypes: string[] }>).forEach((c, i) => {
     const catId = `0b5e0000-0000-7000-8000-0000000e${String(i + 1).padStart(4, '0')}`;
-    t('patrol_categories').push({ id: catId, org_id: org, name: c.name, color: c.color, icon: c.icon, sort: i, hidden: false, required_fields: c.required_fields, default_severity: c.default_severity, use_for: c.use_for, created_at: iso(now - 60 * 24 * H), updated_at: iso(now - 60 * 24 * H) });
+    t('patrol_categories').push({ id: catId, org_id: org, name: c.name, color: c.color, icon: c.icon, sort: i, hidden: false, required_fields: c.required_fields, default_severity: c.default_severity, use_for: c.use_for, field_config: c.field_config, created_at: iso(now - 60 * 24 * H), updated_at: iso(now - 60 * 24 * H) });
     c.subtypes.forEach((name, j) => t('patrol_subtypes').push({ id: `${catId.slice(0, -4)}${String(i + 1).padStart(2, '0')}${String(j + 1).padStart(2, '0')}`.replace(/-0000000e/, '-0000000f'), org_id: org, category_id: catId, name, sort: j, hidden: false, created_at: iso(now - 60 * 24 * H), updated_at: iso(now - 60 * 24 * H) }));
   });
 
@@ -143,6 +143,13 @@ export function demoSeed(now = Date.now()): MockState {
   t('patrol_tour_runs').push({ id: run, org_id: org, site_id: DEMO.sites.market, member_id: memberId(DEMO.users.marcus.id), time_entry_id: te, started_at: iso(lastIn + 1 * H), completed_at: iso(lastIn + 1.3 * H), expected_count: 4, scanned_count: 4, late: false, created_at: iso(lastIn + H), updated_at: iso(lastIn + 1.3 * H) });
   t('patrol_checkpoints').filter((c) => c.site_id === DEMO.sites.market).forEach((c, i) => t('patrol_scans').push({ id: `0b5e0000-0000-7000-8000-0000000c${String(i + 1).padStart(4, '0')}`, org_id: org, site_id: DEMO.sites.market, member_id: memberId(DEMO.users.marcus.id), checkpoint_id: c.id, tour_run_id: run, time_entry_id: te, scanned_at: iso(lastIn + H + i * 5 * 60e3), lat: c.lat, lng: c.lng, distance_m: 6 + i, method: 'qr', flags: [], created_at: iso(lastIn + H + i * 5 * 60e3) }));
   t('patrol_member_status').push({ id: memberId(DEMO.users.marcus.id), member_id: memberId(DEMO.users.marcus.id), org_id: org, on_duty: false, time_entry_id: null, site_id: DEMO.sites.market, lat: 47.3825, lng: -122.2345, last_ping_at: iso(lastIn + 8 * H), on_duty_since: null, updated_at: iso(lastIn + 8 * H) });
+  // BOLO pinned at the market (shared with the client portal)
+  t('patrol_bolos').push({
+    id: '0b5e0000-0000-7000-8000-0000000d0001', org_id: org, site_id: DEMO.sites.market, created_by: memberId(DEMO.users.marcus.id),
+    title: 'Grey hoodie, repeat warnings at dock', description: 'Warned off twice this week. If seen, ask him to leave and log it; call Kent PD if he refuses.',
+    person_desc: 'Adult male, about 40, grey hoodie, black backpack', vehicle_desc: null, expires_at: iso(now + 14 * 24 * H), visible_to_client: true,
+    status: 'active', resolved_at: null, created_at: iso(lastIn + 10 * H), updated_at: iso(lastIn + 10 * H),
+  });
   busyHistory(s, now);
   return s;
 }
