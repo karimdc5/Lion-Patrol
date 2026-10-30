@@ -53,7 +53,7 @@ Migrations written, NOT applied (coordinator applies): `supabase/migrations/2026
 
 | Item | Status | Notes |
 |---|---|---|
-| 7 Client portal redesign | SKIPPED (pending) | Only if everything else is green; see bottom of log. |
+| 7 Client portal redesign | DONE | Built last, after everything else was green. Shared client-facing view for the /p/ link portal and the signed-in client app: light theme (client pages only; staff app and PDFs stay dark), site status card (status, last patrol, 7-day checkpoint %, reports shared), pinned BOLOs with photos, one "Recent reports" list (All / Incidents / Daily) with PDF downloads, patrol proof chart, call/email buttons. |
 | 8 Offline cache reconcile | DONE | Every server refresh (bootstrap, guard history, dashboard, client) now removes cached rows inside the query window that the server no longer returns; rows of orgs no signed-in user belongs to are pruned on login/refresh/org change. Pending local edits are never dropped. |
 | 9 "Client client" label | DONE (code) | DB fixed by coordinator. `patrol_redeem_invite` no longer touches an existing member's name/role/phone; client codes are refused for accounts that already work for a company (`use_separate_account`). |
 | 10 "Patrol start" first in + list | DONE | Short Log form (title/notes, time, GPS, photos) → DAR entry in "Shift Log" + opens the checkpoint round. Never an incident. Home one-tap toggle kept. |
@@ -70,3 +70,6 @@ Migrations written, NOT applied (coordinator applies): `supabase/migrations/2026
 | 21 Link preview tags | DONE (5e86269) | |
 | 22 People + sign-up choice | DONE | Sign-up never auto-creates a company: "Join with invite code" vs "Create company". People shows all members (refreshed from the server on open) with last seen: pulsing green dot = on duty + GPS ≤ 5 min, else grey + "Last seen Xh ago" / "Never". |
 | Earlier gaps | DONE | Per-category fields in admin incident detail, client app, portal and PDFs; client-visible BOLO photos on the portal + client app (storage policy limited to active client-visible BOLO photos at sites with a live portal link); auto "Patrol ended" log when every checkpoint is scanned. |
+
+Verification (Oct 29, 2026 ~22:50 PT): typecheck ✓, 70 unit tests ✓, SQL/RLS suite (PGlite, both migration passes) ✓, build + bundle budget ✓ (104.5 KB gzip initial), Playwright 115/115 ✓ (WebKit iPhone 13 + Chromium Pixel 7).
+Screenshots: `/workspace/lion-patrol-shots/pass7/` (signup-choice, people-last-seen, site-photo-card, site-detail-photo, map, timesheets-weekly, pdf-dark + dar-dark.pdf, client-portal / client-portal-full). Avatar previews: `/workspace/lion-patrol-shots/avatars/`.

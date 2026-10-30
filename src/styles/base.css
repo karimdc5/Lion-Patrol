@@ -472,3 +472,39 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
 .ts-table th:first-child, .ts-table td:first-child { text-align: left; position: sticky; left: 0; background: var(--raised); min-width: 150px; }
 .ts-table tr.tap { cursor: pointer; }
 .warning-text { color: var(--warning); }
+
+/* client portal (item 7): light, client-facing theme scoped to the portal + client app */
+.client-theme {
+  --bg: #F4F6FA; --surface: #FFFFFF; --raised: #FFFFFF; --raised-2: #EDF0F5;
+  --hairline: rgba(15, 23, 42, 0.08); --hairline-strong: rgba(15, 23, 42, 0.14);
+  --text: #111827; --text-2: #4B5565; --text-3: #8A93A3;
+  --gold: #B8891F; --gold-pressed: #9C7316; --gold-soft: rgba(184, 137, 31, 0.12);
+  --success: #15803D; --success-soft: rgba(21, 128, 61, 0.1); --warning: #B45309; --warning-soft: rgba(180, 83, 9, 0.1);
+  --danger: #B91C1C; --danger-soft: rgba(185, 28, 28, 0.08); --info: #1D4ED8; --info-soft: rgba(29, 78, 216, 0.08);
+  background: var(--bg); color: var(--text); min-height: 100dvh; color-scheme: light;
+}
+.client-theme .pill-info { color: var(--info); }
+.client-theme .btn-primary { color: #fff; }
+.cp { padding: calc(var(--safe-top) + 14px) calc(16px + var(--safe-right)) calc(var(--safe-bottom) + 32px) calc(16px + var(--safe-left)); }
+.cp-inner { max-width: 720px; margin: 0 auto; }
+.cp-org { font-size: 15px; letter-spacing: .02em; }
+.cp-hero { background: var(--surface); border: 1px solid var(--hairline); border-radius: 22px; padding: 20px; box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06); }
+.cp-site { font-size: 28px; line-height: 34px; font-weight: 700; margin: 4px 0 2px; }
+.cp-status { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 8px 12px; border-radius: 999px; font-weight: 600; font-size: 15px; }
+.cp-success { background: var(--success-soft); color: var(--success); }
+.cp-warning { background: var(--warning-soft); color: var(--warning); }
+.cp-info { background: var(--info-soft); color: var(--info); }
+.cp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
+.cp-stats > div { background: var(--raised-2); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 2px; }
+.cp-stats b { font-size: 18px; }
+.cp-stats span { font-size: 12px; color: var(--text-2); }
+.cp-row { flex-direction: column; align-items: stretch; gap: 10px; }
+.cp-row .btn { height: 38px; padding: 0 12px; font-size: 14px; }
+.cp-seg { width: auto; }
+.cp-seg button { padding: 0 10px; height: 30px; font-size: 13px; }
+.cp-bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; height: 120px; }
+.cp-bars > div { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+.cp-bar { width: 70%; border-radius: 6px; }
+.cp-foot { padding-top: 8px; }
+.client-theme .topbar { background: var(--bg); }
+.client-theme .tl-day { background: rgba(244, 246, 250, .92); }
