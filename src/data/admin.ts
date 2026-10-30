@@ -218,3 +218,15 @@ export async function createPortalLink(siteId: string, days: number): Promise<{ 
 export async function revokePortalLink(id: string) {
   await getBackend().rpc('patrol_revoke_portal_link', { p_id: id });
 }
+
+// ---------------------------------------------------------------- site photos (item 19)
+/** Upload/replace a site's photo (patrol_attachments parent 'site', private patrol-media bucket). */
+export async function setSitePhoto(siteId: string, file: File) {
+  const { prepareWithLimits } = await import('../ui/Attachments');
+  const { addAttachment, removeAttachment, listAttachments } = await import('./guard');
+  const prepared = await prepareWithLimits(file);
+  if (prepared.kind !== 'image') throw new Error('Choose a photo (JPEG, PNG or HEIC).');
+  const old = (await listAttachments(siteId)).filter((a) => a.parent_type === 'site');
+  await addAttachment('site', siteId, prepared);
+  for (const a of old) await removeAttachment(a);
+}

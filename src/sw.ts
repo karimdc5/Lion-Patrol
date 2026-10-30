@@ -18,7 +18,7 @@ registerRoute(
 
 // Dark map tiles: cache-first, bounded.
 registerRoute(
-  ({ url }) => url.hostname.endsWith('basemaps.cartocdn.com'),
+  ({ url }) => url.hostname.endsWith('basemaps.cartocdn.com') || url.hostname === 'tile.openstreetmap.org',
   new CacheFirst({
     cacheName: 'lp-tiles',
     plugins: [new ExpirationPlugin({ maxEntries: 600, maxAgeSeconds: 7 * 24 * 3600 })],

@@ -116,13 +116,14 @@ function LongPressable({ children, onTap, onLongPress, class: cls, label }: { ch
 export function List({ children, class: cls }: { children: ComponentChildren; class?: string }) {
   return <div class={`list ${cls ?? ''}`}>{children}</div>;
 }
-export function Row({ icon, iconBg, iconColor, title, sub, right, chevron, onClick, href, danger, testid }: {
+export function Row({ icon, iconBg, iconColor, title, sub, right, chevron, onClick, href, danger, testid, media }: {
   icon?: IconName; iconBg?: string; iconColor?: string; title: ComponentChildren; sub?: ComponentChildren; right?: ComponentChildren;
-  chevron?: boolean; onClick?: () => void; href?: string; danger?: boolean; testid?: string;
+  chevron?: boolean; onClick?: () => void; href?: string; danger?: boolean; testid?: string; media?: ComponentChildren;
 }) {
   const body = (
     <>
-      {icon && (
+      {media}
+      {!media && icon && (
         <span class="list-icon" style={{ background: iconBg ?? 'var(--raised-2)', color: iconColor ?? 'var(--text)' }}>
           <Icon name={icon} />
         </span>

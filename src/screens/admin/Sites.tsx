@@ -6,7 +6,7 @@ import { lazyScreen } from '../../ui/lazy';
 import { currentOrgId, isAdmin } from '../../auth/session';
 import { sitesFor, checkpointsFor, membersFor } from '../../data/repos/queries';
 import { getRecord, listRecords } from '../../data/repos/records';
-import { newSite, saveSite, saveCheckpoint, reorderCheckpoints, genCode, setSiteAccess, listPortalLinks, fetchPortalLinks, createPortalLink, revokePortalLink } from '../../data/admin';
+import { setSitePhoto, newSite, saveSite, saveCheckpoint, reorderCheckpoints, genCode, setSiteAccess, listPortalLinks, fetchPortalLinks, createPortalLink, revokePortalLink } from '../../data/admin';
 import { PUBLIC_URL } from '../../config';
 import { isNetworkError } from '../../data/backend/types';
 import { getFix } from '../../lib/geo';
@@ -19,6 +19,7 @@ import type { Bolo, Checkpoint, Site, SiteAccess } from '../../data/types';
 import { setBoloStatus } from '../../data/guard';
 import { BoloCard } from '../../ui/BoloCard';
 import { AttachmentTray } from '../../ui/Attachments';
+import { SiteThumb, SiteHeaderPhoto, siteCover } from '../../ui/SitePhoto';
 
 const MapView = lazyScreen(() => import('../../ui/MapView'), () => <div class="map-box skel" />);
 
@@ -34,7 +35,7 @@ export function SitesList() {
         {sites.loading ? <SkeletonList /> : list.length ? (
           <List>
             {list.map((s) => (
-              <Row key={s.id} testid="site-admin-row" icon={s.kind === 'apartment' ? 'building' : 'store'} iconBg="var(--gold-soft)" iconColor="var(--gold)" title={s.name}
+              <Row key={s.id} testid="site-admin-row" media={<SiteThumb siteId={s.id} kind={s.kind} />} title={s.name}
                 sub={`${[s.address, s.city].filter(Boolean).join(', ') || 'No address'} · ${(cps.data ?? []).filter((c) => c.site_id === s.id).length} checkpoints`}
                 right={s.active ? undefined : <span class="pill pill-muted">Inactive</span>} chevron href={`/a/sites/${s.id}`} />
             ))}
@@ -70,6 +71,7 @@ export function SiteEditor({ id }: { id: string }) {
     <Screen>
       <TopBar title={isNew ? 'New site' : site.name} backTo="/a/sites" right={<SyncPill />} />
       <div class="screen-body stack" style={{ paddingBottom: 110 }}>
+        {!isNew && <SiteHeaderPhoto siteId={site.id} />}
         {!isNew && (
           <div class="tabs" role="tablist">
             {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People'], ['bolos', 'BOLOs'], ['portal', 'Client portal']] as Array<[Tab, string]>).map(([k, l]) => (
@@ -89,6 +91,7 @@ export function SiteEditor({ id }: { id: string }) {
               <Field label="City"><input class="input" value={site.city ?? ''} disabled={!admin} onInput={(e) => up({ city: (e.target as HTMLInputElement).value })} /></Field>
               <Field label="ZIP"><input class="input" inputMode="numeric" value={site.zip ?? ''} disabled={!admin} onInput={(e) => up({ zip: (e.target as HTMLInputElement).value })} /></Field>
             </div>
+            {!isNew && <SitePhotoField siteId={site.id} admin={admin} />}
             <SectionLabel>Map pin & geofence</SectionLabel>
             <div class="card stack">
               <div class="row-between"><span class="foot muted">{site.lat != null ? `${site.lat.toFixed(5)}, ${site.lng!.toFixed(5)}` : 'No pin yet'}</span>
@@ -338,3 +341,28 @@ function PortalTab({ site }: { site: Site }) {
 }
 
 export { sitesFor };
+
+function SitePhotoField({ siteId, admin }: { siteId: string; admin: boolean }) {
+  const cover = useData(() => siteCover(siteId), [siteId]);
+  const [busy, setBusy] = useState(false);
+  if (!admin && !cover.data) return null;
+  return (
+    <div class="card row-between" data-testid="site-photo-field">
+      <span class="row" style={{ gap: 12 }}><SiteThumb siteId={siteId} kind="other" size={52} />
+        <span><b style={{ display: 'block' }}>Site photo</b><span class="foot muted">{cover.data ? 'Shown on the site card and header.' : 'Helps guards and owners recognise the site.'}</span></span></span>
+      {admin && (
+        <label class={`btn btn-outline${busy ? ' loading' : ''}`} style={{ position: 'relative', overflow: 'hidden' }}>
+          <Icon name="camera" /> {cover.data ? 'Replace' : 'Upload'}
+          <input type="file" accept="image/*" style={{ position: 'absolute', inset: 0, opacity: 0 }} data-testid="site-photo-input" disabled={busy}
+            onChange={async (e) => {
+              const f = (e.target as HTMLInputElement).files?.[0];
+              (e.target as HTMLInputElement).value = '';
+              if (!f) return;
+              setBusy(true);
+              try { await setSitePhoto(siteId, f); toast('Site photo saved'); } catch (er) { toast((er as Error).message, 'error'); } finally { setBusy(false); }
+            }} />
+        </label>
+      )}
+    </div>
+  );
+}

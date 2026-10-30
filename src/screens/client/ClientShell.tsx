@@ -51,7 +51,9 @@ function ClientHome({ ready }: { ready: boolean }) {
   const dars = useData(() => listRecords<R>('patrol_dars', org), [org]);
   const runs = useData(() => listRecords<R>('patrol_tour_runs', org), [org]);
   // Client-visible BOLOs for the client's sites (clients can't read patrol_bolos directly).
-  const bolos = useData(() => getBackend().rpc<R[]>('patrol_client_bolos').catch(() => [] as R[]), [org]);
+  const [bolosList, setBolos] = useState<R[]>([]);
+  useEffect(() => { void getBackend().rpc<R[] | null>('patrol_client_bolos').then((r) => setBolos(r ?? [])).catch(() => setBolos([])); }, [org]);
+  const bolos = { data: bolosList };
   const inc = (incidents.data ?? []).filter((i) => i.client_visible && i.status !== 'draft' && mySites.has(i.site_id as string)).sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)));
   const dar = (dars.data ?? []).filter((d) => d.client_visible && mySites.has(d.site_id as string)).sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)));
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (6 - i)); return d; });

@@ -47,3 +47,26 @@ Notes: migration `supabase/migrations/20261025000100_patrol_feedback.sql` (patro
 - Elmi (Abdinasir) signed up but doesn't appear in More > People (only "Client client" owner shows). Find why: did his sign-up create a patrol_members row for the org (invite/join flow), RLS hiding other members, or offline cache not syncing the members list. Fix so every org member shows for owners, synced from server.
 - Add "Last seen" per person: green pulsing dot when they have location on/active recently (e.g. last GPS ping within ~5 min while clocked in), otherwise grey dot + "Last seen 2h ago" from their latest GPS point (clock-in/scan/log). Owners only.
 - ROOT CAUSE (checked 8:20 AM Oct 25): Elmi signed up fresh (lionofseattle@gmail.com) and onboarding created a NEW org 01a1739b-... with him as owner, instead of joining Karim's org 01a16ffd-.... Fix: a sign-up without an invite must not silently create a 2nd company; prompt "Join with invite code" vs "Create company", and owner invites should be the normal path.
+
+## Pass 7 status log (Oct 29–30, 2026)
+Migrations written, NOT applied (coordinator applies): `supabase/migrations/20261029000100_patrol_pass7.sql`, `supabase/migrations/20261029000200_patrol_shift_pdf.sql`. The app keeps working before they're applied (fallbacks noted below).
+
+| Item | Status | Notes |
+|---|---|---|
+| 7 Client portal redesign | SKIPPED (pending) | Only if everything else is green; see bottom of log. |
+| 8 Offline cache reconcile | DONE | Every server refresh (bootstrap, guard history, dashboard, client) now removes cached rows inside the query window that the server no longer returns; rows of orgs no signed-in user belongs to are pruned on login/refresh/org change. Pending local edits are never dropped. |
+| 9 "Client client" label | DONE (code) | DB fixed by coordinator. `patrol_redeem_invite` no longer touches an existing member's name/role/phone; client codes are refused for accounts that already work for a company (`use_separate_account`). |
+| 10 "Patrol start" first in + list | DONE | Short Log form (title/notes, time, GPS, photos) → DAR entry in "Shift Log" + opens the checkpoint round. Never an incident. Home one-tap toggle kept. |
+| 11 Remove "notify client" toggle | DONE | Client-visibility fields filtered from the guard form; migration strips `client_notified` from live `field_config`. Owners still set visibility in admin review. |
+| 12 End-of-shift PDF | DONE | Built on clock-out (clock in/out + GPS, patrol starts/ends, scans, log entries, incidents with photos + category details, BOLOs), share sheet, saved to the shift (attachment parent `shift`, needs migration 000200; skipped automatically until applied). Owners: Daily reports → "Shift PDF". |
+| 13 Client sign-up never overwrites a member | DONE | Same as 9; RLS test covers it. |
+| 14 Display name + avatars | PARTIAL (by design) | Display name editing shipped (More → Edit). Avatars: 12-piece original toy set, PREVIEWS ONLY in `/workspace/lion-patrol-shots/avatars/` (sheet + PNG/SVG each); source in `design/avatars/` (outside `src/`, not in the bundle). Waiting for Karim's OK. |
+| 15 Timesheets | DONE | Guard confirms hours at clock-out (or flags them with a note); admin More → Timesheets: weekly hours per guard, Mon–Sun, OT over 40 h (WA), shift details, Gusto hours CSV (1 or 2 weeks). No break tracking. Time records never auto-deleted; a site with time records < 3 years old can't be deleted (deactivate instead). |
+| 16 Scheduling via chat | DONE | `patrol_add_shift_by_names(org, site, guard, start, end, notes)` + `docs/SCHEDULING_VIA_CHAT.md` (instructions to paste into Grok Bot). |
+| 17 Dark PDFs | DONE | Incident, DAR, end-of-shift, client-portal and QR sheets are dark (QR codes stay black-on-white inside their frame so they scan). |
+| 18 Owner-only alerts | DONE | `patrol_owner_alerts` (RLS: owners/admins only, no insert policy). Missed checkpoints, overdue rounds, no-show 10 min after shift start, geofence blocks. Detector runs from on-duty guard phones and owner dashboards (returns only a count); owners get a detail-free email ("N new owner alerts") via the owners-only EmailJS path. Geofenced clock-in for guards (app + server trigger). |
+| 19 Site photos | DONE | Upload/replace in Sites → site → Details; thumbnail on the site card, header image on the site view. Uses existing `site` attachments (no migration). |
+| 20 Owner map | DONE | Live → Map (owners/admins only): OSM tiles (CSP updated), site pins with photo popup, on-duty guards at latest GPS point only while clocked in, plain markers (no avatars). |
+| 21 Link preview tags | DONE (5e86269) | |
+| 22 People + sign-up choice | DONE | Sign-up never auto-creates a company: "Join with invite code" vs "Create company". People shows all members (refreshed from the server on open) with last seen: pulsing green dot = on duty + GPS ≤ 5 min, else grey + "Last seen Xh ago" / "Never". |
+| Earlier gaps | DONE | Per-category fields in admin incident detail, client app, portal and PDFs; client-visible BOLO photos on the portal + client app (storage policy limited to active client-visible BOLO photos at sites with a live portal link); auto "Patrol ended" log when every checkpoint is scanned. |

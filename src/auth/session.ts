@@ -189,6 +189,20 @@ export async function createOrg(name: string, displayName: string, timezone = 'A
   await setOrg(orgId);
 }
 
+/** Item 14: change your own display name (the member row of the current company; RLS allows name/phone only). */
+export async function updateMyName(name: string) {
+  const id = identity.value, m = membership.value;
+  if (!id || !m) throw new Error('Not signed in');
+  const { enqueue } = await import('../data/outbox/queue');
+  await enqueue({ userId: id.userId, orgId: m.org_id, kind: 'update', table: 'patrol_members', payload: { display_name: name }, match: { id: m.id }, entityKey: `patrol_members:${m.id}`, label: 'Update your name' },
+    [{ table: 'patrol_members', row: { id: m.id, display_name: name } as unknown as import('../data/db').Row, orgId: m.org_id }]);
+  const ident = { ...id, memberships: id.memberships.map((x) => (x.id === m.id ? { ...x, display_name: name } : x)) };
+  await (await db()).put('identity', ident);
+  identity.value = ident;
+  bumpData();
+  void kick();
+}
+
 export async function refreshIdentity() {
   const s = await getBackend().auth.getSession();
   if (s) await finishLogin(s);
