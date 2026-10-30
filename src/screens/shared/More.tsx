@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import { Screen, TopBar, List, Row, SectionLabel, SyncPill, Avatar, Button, Sheet, Field, toast } from '../../ui/kit';
 import { identity, membership, role, uiMode, setUiMode, backendMode, resetDemo, exitDemo, signOut, switchGuard, lockNow, isStaff, isAdmin, updateMyName } from '../../auth/session';
 import { navigate } from '../../router';
@@ -84,7 +84,7 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
         <p class="foot faint" style={{ textAlign: 'center', marginTop: 24 }}>Lion Patrol · Lion Security Services<br />Build {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}</p>
       </div>
       <EnrollPinSheet open={enroll} onClose={() => setEnroll(false)} />
-      <NameSheet open={nameOpen} onClose={() => setNameOpen(false)} />
+      {nameOpen && <NameSheet open onClose={() => setNameOpen(false)} />}
       <Sheet open={confirmOut} onClose={() => setConfirmOut(false)} title="Sign out?" testid="signout-sheet"
         footer={<>
           <Button variant="danger" size="lg" block onClick={async () => { setConfirmOut(false); await signOut({ forget: true }); toast('Signed out'); navigate('/', { replace: true }); }} data-testid="signout-confirm">Sign out and forget this device</Button>
@@ -103,7 +103,6 @@ function NameSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [name, setName] = useState(m?.display_name ?? '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { if (open) { setName(membership.value?.display_name ?? ''); setErr(null); } }, [open]);
   return (
     <Sheet open={open} onClose={onClose} title="Your name" testid="name-sheet"
       footer={<Button variant="primary" size="lg" block loading={busy} data-testid="name-save" onClick={async () => {
