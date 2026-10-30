@@ -1,7 +1,8 @@
 import { Screen, TopBar, SyncPill, List, Row, SectionLabel, Empty, Avatar, Button, toast } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
-import { currentOrgId, orgName } from '../../auth/session';
+import { currentOrgId, orgName, isAdmin } from '../../auth/session';
+import { listOwnerAlerts, ackOwnerAlert, type OwnerAlert } from '../../data/ownerAlerts';
 import { loadOps, completionBySite } from './ops';
 import { setAlertStatus } from '../../data/admin';
 import { relTime, fmtTime } from '../../lib/format';
@@ -49,9 +50,10 @@ export function Dashboard() {
   const totalPct = comp.reduce((n, c) => n + c.expected, 0) ? Math.round((comp.reduce((n, c) => n + c.scanned, 0) / comp.reduce((n, c) => n + c.expected, 0)) * 100) : 0;
   return (
     <Screen tabbar>
-      <TopBar title="Live" large sub={orgName.value} right={<SyncPill />} />
+      <TopBar title="Live" large sub={orgName.value} right={<SyncPill />} action={isAdmin.value ? <Button icon="map" onClick={() => navigate('/a/map')} data-testid="open-map">Map</Button> : undefined} />
       <div class="screen-body stack-lg">
         {data && <AlertBanner alerts={data.alerts} members={data.members} sites={data.sites} />}
+        {isAdmin.value && <OwnerAlerts />}
         {data && <GettingStarted d={data} />}
         <div class="grid-3">
           <Stat label="On duty" value={String(onDuty.length)} testid="stat-onduty" />
@@ -115,7 +117,7 @@ export function Dashboard() {
   );
 }
 
-function Stat({ label, value, tone, testid }: { label: string; value: string; tone?: 'warning' | 'success'; testid?: string }) {
+export function Stat({ label, value, tone, testid }: { label: string; value: string; tone?: 'warning' | 'success'; testid?: string }) {
   return (
     <div class="card" style={{ padding: 14 }} data-testid={testid}>
       <div class="tnum" style={{ fontSize: 28, lineHeight: '32px', fontWeight: 700, color: tone === 'warning' ? 'var(--warning)' : tone === 'success' ? 'var(--success)' : 'var(--gold)' }}>{value}</div>
@@ -141,6 +143,26 @@ function GettingStarted({ d }: { d: import('./ops').OpsData }) {
         {steps.map(([done, title, sub, href], i) => (
           <Row key={i} icon={done ? 'check' : 'chevron-right'} iconBg={done ? 'var(--success-soft)' : 'var(--raised-2)'} iconColor={done ? 'var(--success)' : 'var(--text-2)'}
             title={<span style={done ? { color: 'var(--text-3)', textDecoration: 'line-through' } : undefined}>{title}</span>} sub={sub} chevron={!done} onClick={done ? undefined : () => navigate(href)} testid={`setup-step-${i}`} />
+        ))}
+      </List>
+    </div>
+  );
+}
+
+const ALERT_ICON: Record<string, string> = { missed_checkpoint: 'qr', overdue_patrol: 'clock', no_show: 'user-x', geofence: 'pin' };
+/** Item 18: owners/admins only (RLS returns no rows to anyone else). */
+function OwnerAlerts() {
+  const org = currentOrgId.value;
+  const list = useData(() => listOwnerAlerts(org), [org]);
+  const open = (list.data ?? []).filter((a) => !a.acknowledged_at).slice(0, 8);
+  if (!open.length) return null;
+  return (
+    <div data-testid="owner-alerts">
+      <SectionLabel>Owner alerts</SectionLabel>
+      <List>
+        {open.map((a: OwnerAlert) => (
+          <Row key={a.id} testid="owner-alert" icon={ALERT_ICON[a.kind] ?? 'alert'} iconBg="var(--warning-soft)" iconColor="var(--warning)" title={a.title} sub={`${a.body} · ${relTime(a.created_at)}`}
+            right={<Button variant="ghost" onClick={async () => { await ackOwnerAlert(a); toast('Alert dismissed'); }} data-testid="owner-alert-ack">Dismiss</Button>} />
         ))}
       </List>
     </div>

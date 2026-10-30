@@ -447,3 +447,28 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
 .seen-dot.live { background: var(--success); animation: seen-pulse 1.8s ease-out infinite; }
 @keyframes seen-pulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); } 70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
 @media (prefers-reduced-motion: reduce) { .seen-dot.live { animation: none; } }
+
+/* site photos (item 19) */
+.site-thumb { border-radius: 12px; object-fit: cover; flex: none; background: var(--raised-2); border: 1px solid var(--line, rgba(255,255,255,.08)); }
+.site-hero { position: relative; border-radius: 16px; overflow: hidden; aspect-ratio: 16 / 7; background: var(--raised); }
+.site-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.site-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,15,28,0) 45%, rgba(10,15,28,.85)); pointer-events: none; }
+.site-hero > .site-hero-actions { position: absolute; right: 10px; bottom: 10px; z-index: 1; }
+
+/* owner map (item 20): OSM tiles darkened to match the app */
+.owner-map .osm-dark { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+.map-site-pin span { display: block; width: 22px; height: 22px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--gold); border: 3px solid #0A0F1C; box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.map-popup .leaflet-popup-content-wrapper, .map-popup .leaflet-popup-tip { background: var(--raised); color: var(--text); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.map-popup .leaflet-popup-content { margin: 12px; }
+.map-pop { display: flex; flex-direction: column; gap: 3px; font-size: 14px; }
+.map-pop-img img { width: 100%; height: 110px; object-fit: cover; border-radius: 10px; margin-bottom: 6px; display: block; }
+.map-pop-sub { color: var(--text-2); font-size: 13px; }
+
+/* timesheets (item 15) */
+.ts-table-wrap { padding: 0; overflow-x: auto; }
+.ts-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 620px; }
+.ts-table th { text-align: right; font-size: 12px; font-weight: 600; color: var(--text-2); padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.ts-table td { text-align: right; padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,.05); }
+.ts-table th:first-child, .ts-table td:first-child { text-align: left; position: sticky; left: 0; background: var(--raised); min-width: 150px; }
+.ts-table tr.tap { cursor: pointer; }
+.warning-text { color: var(--warning); }

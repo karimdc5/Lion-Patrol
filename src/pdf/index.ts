@@ -19,6 +19,7 @@ export async function qrSheetPdf(site: Site, cps: Checkpoint[], orgName = COMPAN
 import { getRecord, listRecords, listByParent, putServerRows } from '../data/repos/records';
 import { db, type Row } from '../data/db';
 import { getBackend } from '../auth/session';
+import { isNetworkError } from '../data/backend/types';
 import type { OrgInfo, PdfPhoto } from './report';
 import { extraDetails, type FieldConfig } from '../domain/incident';
 
@@ -130,6 +131,11 @@ export async function darPdf(id: string) {
 // ---------------------------------------------------------------- end-of-shift PDF (item 12)
 const gps = (lat: unknown, lng: unknown, acc?: unknown) => (lat != null && lng != null ? `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}${acc != null ? ` (±${Math.round(Number(acc))} m)` : ''}` : null);
 
+/** False only when the server answers but doesn't know parent type 'shift' yet (migration 20261029000200 not applied). */
+async function shiftParentSupported(): Promise<boolean> {
+  try { await getBackend().select('patrol_attachments', { eq: { parent_type: 'shift' }, limit: 1, columns: 'id' }); return true; } catch (e) { return isNetworkError(e); }
+}
+
 /** The shift's saved PDF (bytes), if the guard's device uploaded one. */
 async function savedShiftPdf(teId: string): Promise<Uint8Array | null> {
   let atts = (await listByParent<Row>('patrol_attachments', teId)).filter((a) => a.parent_type === 'shift' && a.kind === 'document');
@@ -207,7 +213,7 @@ export async function endOfShiftPdf(teId: string, opts: { save?: boolean; prefer
     incidents: incOut, bolos: bolos.map((b) => ({ title: String(b.title), at: String(b.created_at), description: [b.description, b.person_desc && `Person: ${b.person_desc}`, b.vehicle_desc && `Vehicle: ${b.vehicle_desc}`].filter(Boolean).join(' · ') })),
     photos: await photoBytes(logAtts),
   });
-  if (opts.save) {
+  if (opts.save && (await shiftParentSupported())) {
     const { addAttachment } = await import('../data/guard');
     const bytes = r.bytes.slice().buffer as ArrayBuffer;
     await addAttachment('shift', teId, { kind: 'document', mime: 'application/pdf', ext: 'pdf', bytes, thumb: null, name: filename }).catch(() => undefined);

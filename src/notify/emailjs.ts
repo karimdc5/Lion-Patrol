@@ -12,10 +12,20 @@ export function assertOwnerRecipients(recipients: string[], allowed: string[]) {
   if (!recipients.length) throw new Error('No owner recipients configured');
 }
 
-export interface EmailEvent { event: 'incident' | 'sos'; id: string; orgId: string }
+export interface EmailEvent { event: 'incident' | 'sos' | 'owner_alert'; id: string; orgId: string; count?: number }
 
 /** Build the EmailJS template params for an event. Pure; unit tested. */
 export function buildEmail(ev: EmailEvent, row: Record<string, unknown>, siteName: string, recipients: string[]) {
+  if (ev.event === 'owner_alert') {
+    // Sent from whichever device detected it (possibly a guard's): no details, owners open the app.
+    const n = ev.count ?? 1;
+    return {
+      to_email: recipients.join(','),
+      subject: `[Lion Patrol] ${n} new owner alert${n === 1 ? '' : 's'}`,
+      message: `Lion Patrol detected ${n} new owner alert${n === 1 ? '' : 's'} (missed checkpoints, no-shows or geofence).\nOpen the owner dashboard to review: ${PUBLIC_URL}a`,
+      site_name: '', guard_name: '', link: `${PUBLIC_URL}a`,
+    };
+  }
   if (ev.event === 'sos') {
     const where = row.lat != null ? `https://maps.apple.com/?q=${row.lat},${row.lng}` : 'Location unavailable';
     return {
@@ -39,6 +49,17 @@ export async function deliverEmail(ev: EmailEvent, backend: Backend, opts: { dem
   if (CLIENT_NOTIFICATIONS_ENABLED as boolean) throw new Error('Client notifications are disabled in this build');
   const targets = await backend.rpc<NotifyTargets | null>('patrol_notify_targets', { p_org: ev.orgId });
   if (!targets || !targets.enabled || !targets.recipients.length) return 'skipped';
+  if (ev.event === 'owner_alert') {
+    if (EMAIL_TESTING_OWNERS_ONLY && !targets.owners_only) throw new Error('Testing guard: owners-only mode must be on');
+    assertOwnerRecipients(targets.recipients, targets.recipients);
+    if (opts.demo) return 'demo';
+    const res = await fetch(EMAILJS.endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service_id: EMAILJS.serviceId, template_id: EMAILJS.templateId, user_id: EMAILJS.publicKey, template_params: buildEmail(ev, {}, '', targets.recipients) }),
+    });
+    if (!res.ok) throw new BackendError(String(res.status), `EmailJS ${res.status}`, res.status >= 500 ? res.status : 400);
+    return 'sent';
+  }
   const table = ev.event === 'sos' ? 'patrol_alerts' : 'patrol_incidents';
   const row = (await backend.select<Record<string, unknown>>(table, { eq: { id: ev.id } }))[0];
   if (!row) throw new BackendError('23503', 'notification target not synced yet', 409);

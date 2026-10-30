@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
           "default-src 'self'",
           "script-src 'self'",
           "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data: blob: https://djkinciawtoqlxkpiesq.supabase.co https://*.basemaps.cartocdn.com",
+          "img-src 'self' data: blob: https://djkinciawtoqlxkpiesq.supabase.co https://*.basemaps.cartocdn.com https://tile.openstreetmap.org",
           "media-src 'self' blob: https://djkinciawtoqlxkpiesq.supabase.co",
           "connect-src 'self' https://djkinciawtoqlxkpiesq.supabase.co wss://djkinciawtoqlxkpiesq.supabase.co https://api.emailjs.com",
           "worker-src 'self' blob:",

@@ -479,6 +479,121 @@ do $$ begin
 end $$;
 reset role;
 
+
+-- ===================================================================== pass 7 (20261029000100)
+-- owner-only alerts: only owners/admins of the org can read; nobody can insert directly
+insert into public.patrol_owner_alerts (org_id, kind, dedupe_key, site_id, title, body)
+values ('10000000-0000-4000-8000-00000000000a', 'no_show', 'rls-test', '30000000-0000-4000-8000-0000000000a1', 'No-show at Site A1', 'test');
+create temp table if not exists rls_p7 (k text primary key, n int);
+grant all on rls_p7 to authenticated, anon;
+do $$
+declare u text; expected int; n int;
+begin
+  foreach u in array array['a1:1','a3:0','a4:0','a5:0','b1:0','b2:0','c1:0'] loop
+    perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-4000-8000-0000000000%s","role":"authenticated"}', split_part(u, ':', 1)), true);
+    execute 'set local role authenticated';
+    select count(*) into n from public.patrol_owner_alerts;
+    execute 'reset role';
+    expected := split_part(u, ':', 2)::int;
+    if n <> expected then raise exception 'RLS FAIL: owner alerts visible to % (% rows)', split_part(u, ':', 1), n; end if;
+  end loop;
+end $$;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a3","role":"authenticated"}', true);
+do $$
+declare r jsonb; n int;
+begin
+  update public.patrol_owner_alerts set acknowledged_at = now();
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'RLS FAIL: guard acknowledged an owner alert'; end if;
+  begin
+    insert into public.patrol_owner_alerts (org_id, kind, dedupe_key, title) values ('10000000-0000-4000-8000-00000000000a', 'no_show', 'x', 'x');
+    raise exception 'RLS FAIL: guard inserted an owner alert';
+  exception when insufficient_privilege then null; end;
+  r := public.patrol_check_owner_alerts('10000000-0000-4000-8000-00000000000a');
+  if not (r ? 'created') or (r - 'created') <> '{}'::jsonb then raise exception 'RLS FAIL: detector leaks more than a count (%)', r; end if;
+  -- shift by name is staff-only
+  begin
+    perform public.patrol_add_shift_by_names('10000000-0000-4000-8000-00000000000a', 'Site A2', 'Guard A2', now(), now() + interval '8 hours');
+    raise exception 'RLS FAIL: guard scheduled a shift';
+  exception when insufficient_privilege then null; end;
+end $$;
+reset role;
+
+-- owner acknowledges (only acknowledged_at changes)
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated","email":"rls-owner-a@test.invalid"}', true);
+do $$
+declare a public.patrol_owner_alerts; r jsonb; v_code text;
+begin
+  update public.patrol_owner_alerts set acknowledged_at = now(), title = 'hacked' where dedupe_key = 'rls-test';
+  select * into a from public.patrol_owner_alerts where dedupe_key = 'rls-test';
+  if a.acknowledged_at is null or a.title <> 'No-show at Site A1' or a.acknowledged_by is null then raise exception 'RLS FAIL: owner ack (%)', to_jsonb(a); end if;
+  -- schedule by name
+  r := public.patrol_add_shift_by_names('10000000-0000-4000-8000-00000000000a', 'a1', 'guard a2', now() + interval '1 day', now() + interval '1 day 8 hours', 'chat');
+  if (r ->> 'member_id') <> '20000000-0000-4000-8000-0000000000a3' or (r ->> 'site_id') <> '30000000-0000-4000-8000-0000000000a1' then raise exception 'RLS FAIL: shift by name (%)', r; end if;
+  begin
+    perform public.patrol_add_shift_by_names('10000000-0000-4000-8000-00000000000a', 'Site', 'Guard A2', now(), now() + interval '1 hour');
+    raise exception 'RLS FAIL: ambiguous site accepted';
+  exception when invalid_parameter_value then null; end;
+  -- time records are kept: a site with time entries can't be deleted
+  begin
+    delete from public.patrol_sites where id = '30000000-0000-4000-8000-0000000000a1';
+    raise exception 'RLS FAIL: site with time records deleted';
+  exception when raise_exception then
+    if sqlerrm not like '%site_has_time_records%' then raise; end if;
+  end;
+  -- a client code redeemed by the owner's own account is refused and changes nothing (item 9/13)
+  v_code := public.patrol_create_invite('10000000-0000-4000-8000-00000000000a', 'client', array['30000000-0000-4000-8000-0000000000a1']::uuid[]) ->> 'code';
+  insert into rls_p7 values ('client_code', 0) on conflict do nothing;
+  r := public.patrol_redeem_invite(v_code, 'Client client');
+  if (r ->> 'ok')::boolean or r ->> 'error' <> 'use_separate_account' then raise exception 'RLS FAIL: client code on owner account (%)', r; end if;
+  if (select display_name from public.patrol_members where user_id = auth.uid()) <> 'Owner A' then raise exception 'RLS FAIL: owner name overwritten'; end if;
+  if (select role from public.patrol_members where user_id = auth.uid()) <> 'owner' then raise exception 'RLS FAIL: owner role changed'; end if;
+  v_code := public.patrol_create_invite('10000000-0000-4000-8000-00000000000a', 'guard', array['30000000-0000-4000-8000-0000000000a1']::uuid[]) ->> 'code';
+  update rls_p7 set n = 1 where k = 'client_code';
+  perform set_config('rls.guard_code', v_code, true);
+end $$;
+reset role;
+-- an existing guard redeeming another code keeps their name; only site access is added
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a3","role":"authenticated","email":"rls-guard-a2@test.invalid"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.patrol_redeem_invite(current_setting('rls.guard_code'), 'Somebody Else', '555-0000');
+  if not (r ->> 'ok')::boolean then raise exception 'RLS FAIL: guard redeem (%)', r; end if;
+  if (select display_name from public.patrol_members where user_id = auth.uid()) <> 'Guard A2' then raise exception 'RLS FAIL: guard name overwritten by invite'; end if;
+  if (select phone from public.patrol_members where user_id = auth.uid()) is not null then raise exception 'RLS FAIL: guard phone overwritten by invite'; end if;
+  if not exists (select 1 from public.patrol_site_access where member_id = '20000000-0000-4000-8000-0000000000a3' and site_id = '30000000-0000-4000-8000-0000000000a1') then raise exception 'RLS FAIL: invite site access'; end if;
+end $$;
+reset role;
+-- geofenced clock-in (guards only)
+update public.patrol_sites set lat = 47.0, lng = -122.0, geofence_m = 150 where id = '30000000-0000-4000-8000-0000000000a2';
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a3","role":"authenticated"}', true);
+do $$
+begin
+  begin
+    insert into public.patrol_time_entries (org_id, site_id, member_id, clock_in_at, clock_in_lat, clock_in_lng, gps_notice_accepted_at)
+    values ('10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a3',now(),47.1,-122.0,now());
+    raise exception 'RLS FAIL: clock-in outside geofence accepted';
+  exception when check_violation then if sqlerrm <> 'outside_geofence' then raise; end if; end;
+  begin
+    insert into public.patrol_time_entries (org_id, site_id, member_id, clock_in_at, gps_notice_accepted_at)
+    values ('10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a3',now(),now());
+    raise exception 'RLS FAIL: clock-in without GPS accepted';
+  exception when check_violation then if sqlerrm <> 'clock_in_gps_required' then raise; end if; end;
+  insert into public.patrol_time_entries (org_id, site_id, member_id, clock_in_at, clock_in_lat, clock_in_lng, clock_in_accuracy_m, gps_notice_accepted_at)
+  values ('10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a3',now(),47.0005,-122.0005,10,now());
+  perform public.patrol_report_geofence_block('30000000-0000-4000-8000-0000000000a2', 47.1, -122.0, 12);
+  if exists (select 1 from public.patrol_owner_alerts) then raise exception 'RLS FAIL: guard can read the geofence alert'; end if;
+end $$;
+reset role;
+do $$ begin
+  if not exists (select 1 from public.patrol_owner_alerts where kind = 'geofence' and member_id = '20000000-0000-4000-8000-0000000000a3') then raise exception 'RLS FAIL: geofence alert not recorded'; end if;
+end $$;
+
 -- ===================================================================== function privileges (hardening)
 do $$
 declare f text;

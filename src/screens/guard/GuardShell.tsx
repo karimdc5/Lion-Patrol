@@ -15,7 +15,8 @@ import { DarScreen } from './Dar';
 import { PatrolStartForm } from './PatrolStart';
 import { GuardIncidentView, GuardDarView } from './Reports';
 import { SosScreen, SosSheet, sosSheetOpen } from './Sos';
-import { loadOpenEntry, refreshGuardHistory } from '../../data/guard';
+import { loadOpenEntry, refreshGuardHistory, onShift } from '../../data/guard';
+import { checkOwnerAlerts } from '../../data/ownerAlerts';
 import { dataVersion } from '../../data/repos/records';
 import { currentOrgId, memberId } from '../../auth/session';
 
@@ -32,6 +33,14 @@ export function GuardShell() {
   const v = dataVersion.value;
   useEffect(() => { void loadOpenEntry(); }, [v, currentOrgId.value, memberId.value]);
   useEffect(() => { void refreshGuardHistory(true); }, [currentOrgId.value, memberId.value]);
+  // Owner-alert detector (item 18) runs from on-duty devices too; the guard only ever learns a count.
+  const on = !!onShift.value;
+  useEffect(() => {
+    if (!on) return;
+    void checkOwnerAlerts();
+    const t = setInterval(() => { if (document.visibilityState === 'visible') void checkOwnerAlerts(); }, 3 * 60_000);
+    return () => clearInterval(t);
+  }, [on, currentOrgId.value]);
   let screen;
   let m: Record<string, string> | null;
   if (p === '/g/patrol') screen = <PatrolScreen />;
