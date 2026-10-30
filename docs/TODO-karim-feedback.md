@@ -48,6 +48,19 @@ Notes: migration `supabase/migrations/20261025000100_patrol_feedback.sql` (patro
 - Add "Last seen" per person: green pulsing dot when they have location on/active recently (e.g. last GPS ping within ~5 min while clocked in), otherwise grey dot + "Last seen 2h ago" from their latest GPS point (clock-in/scan/log). Owners only.
 - ROOT CAUSE (checked 8:20 AM Oct 25): Elmi signed up fresh (lionofseattle@gmail.com) and onboarding created a NEW org 01a1739b-... with him as owner, instead of joining Karim's org 01a16ffd-.... Fix: a sign-up without an invite must not silently create a 2nd company; prompt "Join with invite code" vs "Create company", and owner invites should be the normal path.
 
+## 23. Guard card tracking (OWNERS ONLY)
+- Each guard's WA guard card number + expiration date on their member profile (owner-editable). Owner-only reminder alert 30 days before expiry and when expired. Never visible to clients.
+- Sync with Karim's onboarding app (public.onboarding_submissions: link_id -> share_links.id, sensitive jsonb, submitted_at). READ ONLY via an owner-only SECURITY DEFINER patrol_ RPC that returns only name/email + guard card number + expiry (never SSN/DOB/bank/address). Owner "Import from onboarding" mirrors into patrol_ tables. If keys can't be determined or data is encrypted: manual entry + note.
+
+## 24. Post orders per site
+- Rules, contacts, codes/gate codes, notes; owner-editable on the site. Guards must acknowledge ONLY on their first shift at that site (ack per member+site in a patrol_ table); afterwards available from site detail, not forced. Codes never visible to clients.
+
+## 25. Photo time/GPS stamp
+- Burn date, time, GPS lat/long (+accuracy) and site name into incident photos at capture (canvas), before upload/queue; legible bottom banner on dark background; works offline.
+
+## 26. Monthly client invoice
+- Per-site billing rate (owner-only). Invoice = confirmed clocked hours (patrol_time_entries) x site rate, by site per client/month, line items by date/guard hours. Dark PDF with letterhead, invoice number, due date, "Pay by ACH — WaFd Bank" note (payment details from org settings, nothing hard-coded). Owner reviews/edits draft, marks Sent/Paid manually, downloads PDF. NEVER email clients.
+
 ## Pass 7 status log (Oct 29–30, 2026)
 Migrations written, NOT applied (coordinator applies): `supabase/migrations/20261029000100_patrol_pass7.sql`, `supabase/migrations/20261029000200_patrol_shift_pdf.sql`. The app keeps working before they're applied (fallbacks noted below).
 
