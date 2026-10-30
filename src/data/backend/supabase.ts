@@ -7,7 +7,10 @@ import { BackendError, type AuthApi, type AuthEvent, type Backend, type SelectQu
 
 const STORAGE_KEY = 'lp-auth';
 /** Tables whose primary key isn't `id`. */
-const CONFLICT: Record<string, string> = { patrol_site_access: 'site_id,member_id', patrol_org_settings: 'org_id', patrol_member_status: 'member_id' };
+const CONFLICT: Record<string, string> = {
+  patrol_site_access: 'site_id,member_id', patrol_org_settings: 'org_id', patrol_member_status: 'member_id',
+  patrol_guard_cards: 'member_id', patrol_site_codes: 'site_id', patrol_site_billing: 'site_id', patrol_org_billing: 'org_id', patrol_post_order_acks: 'member_id,site_id',
+};
 const TIMEOUT_MS = 15_000;
 
 function toStored(s: Session | null): StoredSession | null {

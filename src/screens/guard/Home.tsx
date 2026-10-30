@@ -3,8 +3,8 @@ import { Screen, TopBar, List, Row, SectionLabel, Empty, Skeleton, Button } from
 import { Icon } from '../../ui/icons';
 import { HoldButton } from '../../ui/Hold';
 import { useData } from '../../ui/useData';
-import { currentOrgId, memberId, membership, isStaff } from '../../auth/session';
-import { sitesFor, shiftsFor, checkpointsFor } from '../../data/repos/queries';
+import { currentOrgId, memberId, membership, isStaff, setUiMode } from '../../auth/session';
+import { sitesFor, shiftsFor, checkpointsFor, siteLabels } from '../../data/repos/queries';
 import { onShift, openRun, listDrafts } from '../../data/guard';
 import { fmtDay, fmtTime, hms, relTime } from '../../lib/format';
 import { navigate } from '../../router';
@@ -21,6 +21,7 @@ export function GuardHome() {
   const te = onShift.value;
   const sites = useData(() => sitesFor(org, me, staff), [org, me, staff]);
   const shifts = useData(() => shiftsFor(org), [org]);
+  const labels = useData(() => siteLabels(org), [org]);
   const site = sites.data?.find((s) => s.id === te?.site_id);
   const cps = useData(() => checkpointsFor(org, te?.site_id), [org, te?.site_id]);
   const run = useData(() => (te ? openRun(te.site_id) : Promise.resolve(null)), [te?.id]);
@@ -35,6 +36,11 @@ export function GuardHome() {
     <Screen tabbar>
       <TopBar title={`Hi, ${first}`} large right={<GuardRight />} />
       <div class="screen-body stack-lg">
+        {staff && (
+          <Button variant="outline" icon="layers" block onClick={async () => { navigate('/a'); await setUiMode('admin'); }} data-testid="back-to-admin">
+            Back to admin{te ? ' (you stay clocked in)' : ''}
+          </Button>
+        )}
         {te && <BoloPinned siteId={te.site_id} canCreate />}
         <div class="hero" data-testid="duty-hero">
           <div class="row">
@@ -96,7 +102,7 @@ export function GuardHome() {
             <SectionLabel>Upcoming shifts</SectionLabel>
             {shifts.loading ? <Skeleton h={100} r={16} /> : upcoming.length ? (
               <List>
-                {upcoming.map((s) => <Row key={s.id} icon="calendar" title={fmtDay(s.starts_at)} sub={`${fmtTime(s.starts_at)} – ${fmtTime(s.ends_at)} · ${sites.data?.find((x) => x.id === s.site_id)?.name ?? ''}`} />)}
+                {upcoming.map((s) => <Row key={s.id} icon="calendar" title={fmtDay(s.starts_at)} sub={`${fmtTime(s.starts_at)} – ${fmtTime(s.ends_at)} · ${labels.data?.label(s.site_id) ?? ''}`} testid="upcoming-shift" />)}
               </List>
             ) : <Empty icon="calendar" title="No shifts scheduled" body="Your schedule appears here when a supervisor assigns you." />}
           </div>

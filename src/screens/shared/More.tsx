@@ -39,6 +39,8 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
               <Row icon="note" title="Daily activity reports" chevron href="/a/dars" testid="more-dars" />
               {isAdmin.value && <Row icon="map" title="Map" sub="Sites and on-duty guards (owners only)" chevron href="/a/map" testid="more-map" />}
               {isAdmin.value && <Row icon="clock" title="Timesheets" sub="Weekly hours, overtime, Gusto export" chevron href="/a/timesheets" testid="more-timesheets" />}
+              {isAdmin.value && <Row icon="key" title="Guard cards" sub="WA licenses, expiry reminders, onboarding import" chevron href="/a/guard-cards" testid="more-guard-cards" />}
+              {isAdmin.value && <Row icon="file" title="Invoices" sub="Monthly client invoices from clocked hours" chevron href="/a/invoices" testid="more-invoices" />}
               <Row icon="settings" title="Settings & categories" chevron href="/a/settings" testid="more-settings" />
             </List>
           </>
@@ -51,7 +53,7 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
                 title={uiMode.value === 'admin' ? 'Switch to Guard mode' : 'Switch to Admin mode'}
                 sub={uiMode.value === 'admin' ? 'Clock in, patrol and report from your post' : 'Dashboard, sites, people and settings'}
                 chevron testid="mode-switch"
-                onClick={async () => { const next = uiMode.value === 'admin' ? 'guard' : 'admin'; await setUiMode(next); navigate(next === 'admin' ? '/a' : '/g', { replace: true }); }} />
+                onClick={async () => { const next = uiMode.value === 'admin' ? 'guard' : 'admin'; navigate(next === 'admin' ? '/a' : '/g', { replace: true }); await setUiMode(next); }} />
             </List>
           </>
         )}

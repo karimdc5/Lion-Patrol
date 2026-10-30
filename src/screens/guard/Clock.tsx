@@ -6,6 +6,7 @@ import { currentOrgId, memberId, isStaff, role } from '../../auth/session';
 import { sitesFor, shiftsFor } from '../../data/repos/queries';
 import { hasConsent, acceptConsent, clockIn, clockOut, onShift, openDar, reportGeofenceBlock } from '../../data/guard';
 import { showPdf } from '../../ui/PdfReady';
+import { hasAcked } from '../../data/postOrders';
 import { listByParent } from '../../data/repos/records';
 import { getFix, distanceM, geofenceCheck, type Fix } from '../../lib/geo';
 import { navigate } from '../../router';
@@ -67,7 +68,8 @@ export function ClockScreen() {
       }
       await clockIn(selected, myShift?.site_id === selected ? myShift.id : null, acceptedAt, here);
       toast('Clocked in. Stay safe.');
-      navigate('/g', { replace: true });
+      // Item 24: first shift at this site → read and acknowledge the post orders first.
+      navigate((await hasAcked(selected)) ? '/g' : `/g/post-orders/${selected}?first=1`, { replace: true });
     } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
   };
   const start = async () => {
@@ -102,9 +104,15 @@ export function ClockScreen() {
       </div>
       <div class="sticky-bar">
         {blocked && <div class="form-error" role="alert" data-testid="geofence-blocked" style={{ marginBottom: 10 }}>{blocked}</div>}
+        {blocked && <Button variant="ghost" block onClick={() => navigate('/g', { replace: true })} data-testid="clock-back-home" style={{ marginBottom: 8 }}>Back to Home</Button>}
         <Button variant="primary" size="lg" block disabled={!selected} loading={busy} onClick={() => void start()} data-testid="clock-in-btn">Clock in</Button>
       </div>
-      <GpsNotice open={notice} onDecline={() => { setNotice(false); toast('Location notice is required to clock in.', 'info'); }}
+      <GpsNotice open={notice} onDecline={() => {
+        // QA bug (b): explain instead of silently bouncing back. Consistent with the geofence design:
+        // clocking in always records location (guards must be at the site), so it can't be skipped.
+        setNotice(false);
+        setBlocked('Location is required to clock in. Lion Patrol records it only while you’re on duty, so the owners can see you’re at your post. Tap Clock in and choose “Accept and continue”, or go back to Home.');
+      }}
         onAccept={async () => { setNotice(false); const at = await acceptConsent('gps_notice'); await doClockIn(at); }} />
     </Screen>
   );

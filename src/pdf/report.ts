@@ -382,3 +382,53 @@ export async function buildShiftPdf(input: ShiftPdfInput): Promise<{ bytes: Uint
   const bytes = await doc.save();
   return { bytes, pages: doc.getPageCount() };
 }
+
+// ---------------------------------------------------------------- monthly client invoice (item 26)
+export interface InvoicePdfInput {
+  org: OrgInfo; site: SiteInfo; logoPng?: Uint8Array | null;
+  invoice: { invoice_no: string; period: string; issue_date: string; due_date: string; status: string; client_name?: string | null; bill_to?: string | null; notes?: string | null };
+  lines: Array<{ date: string; guard: string; hours: number; rate: number; description?: string }>;
+  payment: { note: string; details: string; terms_days: number };
+}
+const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ymdLabel = (d: string) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${d}T12:00:00Z`));
+
+export async function buildInvoicePdf(input: InvoicePdfInput): Promise<{ bytes: Uint8Array; pages: number }> {
+  const inv = input.invoice;
+  const { doc, L, f } = await setup('INVOICE', inv.invoice_no, input.org, input.logoPng);
+  doc.setTitle(`Invoice ${inv.invoice_no} - ${input.site.name}`);
+  L.first(`Issued ${ymdLabel(inv.issue_date)}`);
+  const hours = input.lines.reduce((n, l) => n + l.hours, 0);
+  const total = Math.round(input.lines.reduce((n, l) => n + l.hours * l.rate, 0) * 100) / 100;
+  L.paragraph(`Security services · ${inv.period}`, { size: 17, font: f.bold, color: INK, lead: 22 });
+  L.paragraph(input.site.name + (input.site.address ? ` · ${input.site.address}` : ''), { size: 10.5, color: GREY, lead: 18 });
+  L.section('Invoice');
+  L.grid([
+    ['Bill to', [inv.client_name, inv.bill_to].filter(Boolean).join(' · ') || input.site.name], ['Invoice number', inv.invoice_no],
+    ['Service period', inv.period], ['Invoice date', ymdLabel(inv.issue_date)],
+    ['Due date', ymdLabel(inv.due_date)], ['Amount due', money(total)],
+  ]);
+  L.section('Services');
+  if (input.lines.length) {
+    L.table(['Date', 'Officer', 'Hours', 'Rate', 'Amount'], [96, 200, 70, 70, 80],
+      input.lines.map((l) => [ymdLabel(l.date), l.description && l.description !== 'Security officer services' ? `${l.guard} · ${l.description}` : l.guard, l.hours.toFixed(2), money(l.rate), money(l.hours * l.rate)]));
+  } else L.paragraph('No billable hours in this period.', { color: GREY });
+  L.ensure(70);
+  L.y -= 6;
+  const rightLine = (label: string, value: string, bold = false, size = 11) => {
+    const font = bold ? f.bold : f.reg;
+    L.page.drawText(label, { x: W - M - 240, y: L.y, size, font, color: bold ? INK : GREY });
+    L.page.drawText(value, { x: W - M - font.widthOfTextAtSize(value, size), y: L.y, size, font, color: bold ? GOLD : INK });
+    L.y -= size + 9;
+  };
+  rightLine('Total hours', hours.toFixed(2));
+  rightLine('Amount due', money(total), true, 14);
+  L.section('Payment');
+  L.paragraph(input.payment.note || 'Pay by ACH — WaFd Bank', { font: f.bold, color: INK });
+  if (input.payment.details) L.paragraph(input.payment.details);
+  L.paragraph(`Terms: net ${input.payment.terms_days} days. Please include the invoice number ${inv.invoice_no} with your payment.`, { size: 9.5, color: GREY });
+  if (inv.notes) { L.section('Notes'); L.paragraph(inv.notes); }
+  L.footers(`${input.org.name} · Invoice ${inv.invoice_no} · Thank you for your business.`);
+  const bytes = await doc.save();
+  return { bytes, pages: doc.getPageCount() };
+}

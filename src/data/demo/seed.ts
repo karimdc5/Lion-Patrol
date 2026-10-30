@@ -247,4 +247,22 @@ function busyHistory(s: MockState, now: number) {
   // ---- next week's schedule for Tasha
   const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
   for (let d = 0; d < 7; d++) t('patrol_shifts').push({ id: id('900'), org_id: org, site_id: DEMO.sites.willow, member_id: mid(users.tasha), starts_at: iso(day0.getTime() + d * 24 * H + 21 * H), ends_at: iso(day0.getTime() + d * 24 * H + 29 * H), notes: null, cancelled_at: null, created_at: iso(now - 7 * 24 * H), updated_at: iso(now - 7 * 24 * H) });
+  // ---- pass 8: guard cards, post-order codes + acknowledgments, billing (owners only)
+  const D = 864e5;
+  const day = (n: number) => new Date(now + n * D).toISOString().slice(0, 10);
+  t('patrol_guard_cards').push({ id: mid(users.marcus), member_id: mid(users.marcus), org_id: org, card_no: 'WA-SG-1048832', expires_on: day(210), source: 'manual', created_at: iso(now - 30 * D), updated_at: iso(now - 30 * D) });
+  t('patrol_guard_cards').push({ id: mid(users.tasha), member_id: mid(users.tasha), org_id: org, card_no: 'WA-SG-0977415', expires_on: day(19), source: 'manual', created_at: iso(now - 30 * D), updated_at: iso(now - 30 * D) });
+  t('patrol_site_codes').push({ id: DEMO.sites.market, site_id: DEMO.sites.market, org_id: org, codes: 'Rear gate keypad: 4417#\nAlarm panel (disarm only if the manager asks): 2580', guard_notes: 'Keys are in the lockbox by the loading dock (code 1957).', updated_at: iso(now - 20 * D) });
+  t('patrol_site_codes').push({ id: DEMO.sites.willow, site_id: DEMO.sites.willow, org_id: org, codes: 'Main gate: #1200\nPool gate fob is on the guard key ring', guard_notes: '', updated_at: iso(now - 20 * D) });
+  for (const [u, site] of [[users.marcus, DEMO.sites.market], [users.tasha, DEMO.sites.willow], [users.abdinasir, DEMO.sites.market]] as const) {
+    t('patrol_post_order_acks').push({ id: `${mid(u)}:${site}`, member_id: mid(u), site_id: site, org_id: org, acked_at: iso(now - 25 * D), orders_updated_at: null });
+  }
+  t('patrol_site_billing').push({ id: DEMO.sites.market, site_id: DEMO.sites.market, org_id: org, hourly_rate: 38, client_name: 'Kent Station Market LLC', client_email: 'ap@kentstationmarket.demo', billing_address: '418 Ramsay Way, Kent, WA 98032', updated_at: iso(now - 30 * D) });
+  t('patrol_site_billing').push({ id: DEMO.sites.willow, site_id: DEMO.sites.willow, org_id: org, hourly_rate: 36.5, client_name: 'Willow Creek Leasing', client_email: 'office@willowcreek.demo', billing_address: '31600 20th Ave S, Federal Way, WA 98003', updated_at: iso(now - 30 * D) });
+  t('patrol_org_billing').push({ id: org, org_id: org, payment_note: 'Pay by ACH — WaFd Bank', payment_details: 'Account details on request (demo).', terms_days: 15, invoice_prefix: 'LSS-INV', updated_at: iso(now - 30 * D) });
+  // The onboarding app's own tables (read-only to Lion Patrol); fake demo values only.
+  t('share_links').push({ id: 'onb-demo-1', kind: 'employee_onboarding', data: { email: 'jordan.ellis@example.com', firstName: 'Jordan', lastName: 'Ellis' } });
+  t('onboarding_submissions').push({ id: 'onb-demo-1', link_id: 'onb-demo-1', submitted_at: iso(now - 3 * D), sensitive: { legal: { first: 'Jordan', last: 'Ellis', dob: '1990-01-01' }, ssn: '000-00-0000', address: { street: '1 Demo St' }, license: { has: 'yes', number: 'WA-SG-2203119', exp: day(400) }, bank: { routing: '000000000' } } });
+  t('share_links').push({ id: 'onb-demo-2', kind: 'employee_onboarding', data: { email: users.dana.email } });
+  t('onboarding_submissions').push({ id: 'onb-demo-2', link_id: 'onb-demo-2', submitted_at: iso(now - 40 * D), sensitive: { legal: { first: 'Dana', last: 'Whitfield' }, ssn: '000-00-0001', license: { has: 'yes', number: 'WA-SG-0661204', exp: day(-5) } } });
 }

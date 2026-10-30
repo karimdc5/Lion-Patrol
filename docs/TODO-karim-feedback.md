@@ -61,6 +61,17 @@ Notes: migration `supabase/migrations/20261025000100_patrol_feedback.sql` (patro
 ## 26. Monthly client invoice
 - Per-site billing rate (owner-only). Invoice = confirmed clocked hours (patrol_time_entries) x site rate, by site per client/month, line items by date/guard hours. Dark PDF with letterhead, invoice number, due date, "Pay by ACH — WaFd Bank" note (payment details from org settings, nothing hard-coded). Owner reviews/edits draft, marks Sent/Paid manually, downloads PDF. NEVER email clients.
 
+## 27. Server-side alert check (no app open)
+- Supabase pg_cron job every ~5 min runs the owner-alert detector for every org: missed checkpoint rounds, overdue rounds, guard no-shows 10 min after shift start. Inserts into patrol_owner_alerts with the same dedupe keys the phones use (unique constraint) — never duplicates. Notify only the owners list (Edge Function only if needed for email); never clients; email stubbed in tests.
+
+## Gusto CSV fixes (Oct 30)
+- Gusto's lowercase headers: last_name, first_name, gusto_employee_id, regular_hours, overtime_hours, double_overtime_hours (…). Optional gusto_employee_id on members. Drop the email and pay-period columns. Double OT blank, not 0.00. Fix two-word last-name split. Fix the Timesheets footer column count.
+
+## QA bugs (Startup QA Bot, Oct 30)
+- (a) Shifts show a blank site name after the site is deactivated → show the site name marked "inactive".
+- (b) Guard mode: "Not now" on the location consent at clock-in loops back to the clock-in screen → clear message; consistent with the geofence design.
+- (c) Owner in guard mode who clocked in/out can't reach admin URLs (/a/sites redirects to /g) → admin pages reachable after clock-out + clear "Back to admin" button.
+
 ## Pass 7 status log (Oct 29–30, 2026)
 Migrations written, NOT applied (coordinator applies): `supabase/migrations/20261029000100_patrol_pass7.sql`, `supabase/migrations/20261029000200_patrol_shift_pdf.sql`. The app keeps working before they're applied (fallbacks noted below).
 

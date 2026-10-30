@@ -33,6 +33,7 @@ test('clock in requires accepting the GPS notice; consent + time entry + DAR syn
   await page.getByTestId('site-option').filter({ hasText: 'Kent Station Market' }).click();
   await page.getByTestId('clock-in-btn').click();
   await page.getByTestId('gps-decline').click();
+  await expect(page.getByTestId('geofence-blocked')).toContainText('Location is required to clock in'); // QA bug (b): explained, not a silent loop
   await expect(page.getByRole('heading', { name: 'Hi, Marcus' })).toHaveCount(0); // still on the clock-in screen
   await page.getByTestId('clock-in-btn').click();
   await page.getByTestId('gps-accept').click();

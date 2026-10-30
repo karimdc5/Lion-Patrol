@@ -136,3 +136,15 @@ export async function pruneOrgs(keepOrgIds: string[]) {
   if (removed) bumpData();
   return removed;
 }
+
+/** Local cache id for server rows of tables keyed by something other than `id`. */
+export function withLocalId(table: string, r: Record<string, unknown>): Row {
+  if (typeof r.id === 'string') return r as Row;
+  switch (table) {
+    case 'patrol_guard_cards': return { ...r, id: String(r.member_id) } as Row;
+    case 'patrol_site_codes': case 'patrol_site_billing': return { ...r, id: String(r.site_id) } as Row;
+    case 'patrol_org_billing': return { ...r, id: String(r.org_id) } as Row;
+    case 'patrol_post_order_acks': return { ...r, id: `${r.member_id}:${r.site_id}` } as Row;
+    default: return { ...r, id: JSON.stringify(r) } as Row;
+  }
+}

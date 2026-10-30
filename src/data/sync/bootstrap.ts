@@ -1,6 +1,6 @@
-import type { Backend } from '../backend/types';
+import { isNetworkError, type Backend } from '../backend/types';
 import type { Bootstrap } from '../types';
-import { putServerRows, pruneOrgs, scopeOf, type ReconcileScope } from '../repos/records';
+import { putServerRows, pruneOrgs, scopeOf, withLocalId, type ReconcileScope } from '../repos/records';
 import { db, kvSet, type Row } from '../db';
 import { lastSyncAt } from './status';
 
@@ -68,6 +68,18 @@ export async function runBootstrap(backend: Backend, userId: string, email = '')
       await putServerRows('patrol_bolos', bolos, { scope: scopeOf({ in: { org_id: orgIds }, eq: { status: 'active' }, limit: 200 }, bolos, startedAt) });
       if (bolos.length) await putServerRows('patrol_attachments', await backend.select<Row>('patrol_attachments', { in: { parent_id: bolos.map((b) => b.id) } }));
     } catch { /* offline or not migrated yet: keep cache */ }
+    // Post-order codes + this user's acknowledgments (item 24); needed offline at clock-in.
+    for (const t of ['patrol_site_codes', 'patrol_post_order_acks']) {
+      try {
+        const q = { in: { org_id: orgIds }, limit: 1000 };
+        const rows = (await backend.select<Record<string, unknown>>(t, q)).map((r) => withLocalId(t, r));
+        await putServerRows(t, rows, { scope: scopeOf(q, rows, startedAt) });
+        await kvSet(`missing:${t}`, false);
+      } catch (e) {
+        // A server without the table (migration not applied yet): the feature stays off instead of nagging.
+        if (!isNetworkError(e)) await kvSet(`missing:${t}`, true);
+      }
+    }
     try {
       const q = { in: { org_id: orgIds }, eq: { parent_type: 'site' }, limit: 500 };
       const photos = await backend.select<Row>('patrol_attachments', q);

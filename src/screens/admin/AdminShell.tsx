@@ -13,6 +13,8 @@ import { Schedule } from './Schedule';
 import { DarsList } from './Dars';
 import { OwnerMap } from './Map';
 import { Timesheets } from './Timesheets';
+import { GuardCards } from './GuardCards';
+import { InvoicesList, InvoiceEditor } from './Invoices';
 import { isAdmin } from '../../auth/session';
 import { useOpsRefresh } from './useOps';
 
@@ -21,7 +23,7 @@ const TABS: TabDef[] = [
   { href: '/a/feed', label: 'Activity', icon: 'activity', match: (p) => startsWith('/a/feed', p) },
   { href: '/a/incidents', label: 'Incidents', icon: 'file', match: (p) => startsWith('/a/incidents', p) },
   { href: '/a/sites', label: 'Sites', icon: 'building', match: (p) => startsWith('/a/sites', p) },
-  { href: '/a/more', label: 'More', icon: 'more', match: (p) => ['/a/more', '/a/people', '/a/schedule', '/a/settings', '/a/dars', '/a/map', '/a/timesheets'].some((x) => startsWith(x, p)) },
+  { href: '/a/more', label: 'More', icon: 'more', match: (p) => ['/a/more', '/a/people', '/a/schedule', '/a/settings', '/a/dars', '/a/map', '/a/timesheets', '/a/guard-cards', '/a/invoices'].some((x) => startsWith(x, p)) },
 ];
 const SIDE = [
   ...TABS.slice(0, 4),
@@ -30,6 +32,8 @@ const SIDE = [
   { href: '/a/dars', label: 'Daily reports', icon: 'note', match: (p: string) => startsWith('/a/dars', p) },
   { href: '/a/map', label: 'Map', icon: 'map', match: (p: string) => startsWith('/a/map', p), owner: true },
   { href: '/a/timesheets', label: 'Timesheets', icon: 'clock', match: (p: string) => startsWith('/a/timesheets', p), owner: true },
+  { href: '/a/guard-cards', label: 'Guard cards', icon: 'key', match: (p: string) => startsWith('/a/guard-cards', p), owner: true },
+  { href: '/a/invoices', label: 'Invoices', icon: 'file', match: (p: string) => startsWith('/a/invoices', p), owner: true },
   { href: '/a/settings', label: 'Settings', icon: 'settings', match: (p: string) => startsWith('/a/settings', p) },
   { href: '/a/more', label: 'More', icon: 'more', match: (p: string) => startsWith('/a/more', p) },
 ];
@@ -50,12 +54,15 @@ export default function AdminShell() {
   else if (p === '/a/dars') screen = <DarsList />;
   else if (p === '/a/map' && isAdmin.value) screen = <OwnerMap />;
   else if (p === '/a/timesheets' && isAdmin.value) screen = <Timesheets />;
+  else if (p === '/a/guard-cards' && isAdmin.value) screen = <GuardCards />;
+  else if (p === '/a/invoices' && isAdmin.value) screen = <InvoicesList />;
+  else if ((m = match('/a/invoices/:id', p)) && isAdmin.value) screen = <InvoiceEditor key={m.id} id={m.id!} />;
   else if (p === '/a/settings') screen = <SettingsScreen />;
   else if (p === '/a/settings/categories' && isAdmin.value) screen = <CategoriesScreen />;
   else if (p === '/a/more') screen = <MoreScreen base="/a" />;
   else if (p === '/a/more/sync') screen = <SyncScreen base="/a" />;
   else screen = <Dashboard />;
-  const hideTabs = /^\/a\/(incidents|sites|people)\/.+|^\/a\/settings\/categories|^\/a\/more\/sync|^\/a\/map/.test(p);
+  const hideTabs = /^\/a\/(incidents|sites|people)\/.+|^\/a\/settings\/categories|^\/a\/more\/sync|^\/a\/map|^\/a\/invoices\/.+/.test(p);
   return (
     <div class="has-sidebar" data-shell="admin">
       <aside class="shell-side" aria-label="Sections">

@@ -20,6 +20,8 @@ import { setBoloStatus } from '../../data/guard';
 import { BoloCard } from '../../ui/BoloCard';
 import { AttachmentTray } from '../../ui/Attachments';
 import { SiteThumb, SiteHeaderPhoto, siteCover } from '../../ui/SitePhoto';
+import { siteCodes, saveSiteCodes, listAcks } from '../../data/postOrders';
+import { fetchBilling, siteBilling, saveSiteBilling } from '../../data/owner';
 
 const MapView = lazyScreen(() => import('../../ui/MapView'), () => <div class="map-box skel" />);
 
@@ -92,6 +94,7 @@ export function SiteEditor({ id }: { id: string }) {
               <Field label="ZIP"><input class="input" inputMode="numeric" value={site.zip ?? ''} disabled={!admin} onInput={(e) => up({ zip: (e.target as HTMLInputElement).value })} /></Field>
             </div>
             {!isNew && <SitePhotoField siteId={site.id} admin={admin} />}
+            {!isNew && admin && <SiteBillingField siteId={site.id} />}
             <SectionLabel>Map pin & geofence</SectionLabel>
             <div class="card stack">
               <div class="row-between"><span class="foot muted">{site.lat != null ? `${site.lat.toFixed(5)}, ${site.lng!.toFixed(5)}` : 'No pin yet'}</span>
@@ -111,6 +114,8 @@ export function SiteEditor({ id }: { id: string }) {
           </div>
         )}
         {tab === 'orders' && <PostOrdersEditor html={site.post_orders_html} updated={site.post_orders_updated_at} disabled={!admin} onChange={(h) => { up({ post_orders_html: h }); setOrdersChanged(true); }} />}
+        {tab === 'orders' && !isNew && <SiteCodesEditor siteId={site.id} admin={admin} />}
+        {tab === 'orders' && !isNew && <AckList siteId={site.id} />}
         {tab === 'checkpoints' && <CheckpointsTab site={site} />}
         {tab === 'contacts' && <ContactsTab site={site} disabled={!admin} onChange={(contacts) => up({ contacts })} />}
         {tab === 'access' && <AccessTab site={site} disabled={!admin} />}
@@ -363,6 +368,64 @@ function SitePhotoField({ siteId, admin }: { siteId: string; admin: boolean }) {
             }} />
         </label>
       )}
+    </div>
+  );
+}
+
+/** Item 24: gate/alarm codes + guard notes (guards and staff only; never on the client's site row or portal). */
+function SiteCodesEditor({ siteId, admin }: { siteId: string; admin: boolean }) {
+  const cur = useData(() => siteCodes(siteId), [siteId]);
+  const [codes, setCodes] = useState<string | null>(null);
+  const [notes, setNotes] = useState<string | null>(null);
+  const c = codes ?? cur.data?.codes ?? '';
+  const n = notes ?? cur.data?.guard_notes ?? '';
+  const dirty = codes != null || notes != null;
+  return (
+    <div class="card stack" data-testid="site-codes-editor">
+      <div class="row-between"><b>Codes & guard notes</b><span class="pill pill-muted"><Icon name="lock" size={14} /> Guards only</span></div>
+      <Field label="Gate / door / alarm codes"><textarea class="input" rows={3} value={c} disabled={!admin} placeholder="Rear gate keypad: 4417#" onInput={(e) => setCodes((e.target as HTMLTextAreaElement).value)} data-testid="site-codes" style={{ fontFamily: 'ui-monospace, Menlo, monospace' }} /></Field>
+      <Field label="Notes for guards"><textarea class="input" rows={2} value={n} disabled={!admin} placeholder="Where the keys are, who to call after hours…" onInput={(e) => setNotes((e.target as HTMLTextAreaElement).value)} data-testid="site-guard-notes" /></Field>
+      <p class="foot muted">Never shown to clients (not in the portal or client app). Guards read and acknowledge post orders on their first shift here.</p>
+      {admin && <Button disabled={!dirty} onClick={async () => { await saveSiteCodes(siteId, c, n); setCodes(null); setNotes(null); toast('Codes saved'); }} data-testid="site-codes-save">Save codes</Button>}
+    </div>
+  );
+}
+
+function AckList({ siteId }: { siteId: string }) {
+  const org = currentOrgId.value;
+  const acks = useData(async () => (await listAcks(org)).filter((a) => a.site_id === siteId), [org, siteId]);
+  const members = useData(() => membersFor(org), [org]);
+  if (!acks.data?.length) return <p class="foot faint" style={{ padding: '0 4px' }}>No guard has acknowledged these post orders yet.</p>;
+  return (
+    <div data-testid="po-ack-list">
+      <SectionLabel>Acknowledged by</SectionLabel>
+      <List>{acks.data.map((a) => <Row key={a.id} icon="check" iconColor="var(--success)" title={members.data?.find((m) => m.id === a.member_id)?.display_name ?? 'Guard'} sub={fmtDate(a.acked_at)} />)}</List>
+    </div>
+  );
+}
+
+/** Item 26: owner-only billing rate + bill-to for monthly invoices (RLS: owners/admins only; never on the client's site row). */
+function SiteBillingField({ siteId }: { siteId: string }) {
+  const org = currentOrgId.value;
+  useEffect(() => { void fetchBilling(); }, [org]);
+  const cur = useData(() => siteBilling(siteId), [siteId]);
+  const [f, setF] = useState<{ rate: string; client: string; email: string; address: string } | null>(null);
+  const v = f ?? { rate: cur.data?.hourly_rate != null ? String(cur.data.hourly_rate) : '', client: cur.data?.client_name ?? '', email: cur.data?.client_email ?? '', address: cur.data?.billing_address ?? '' };
+  return (
+    <div class="card stack" data-testid="site-billing">
+      <div class="row-between"><b>Billing</b><span class="pill pill-muted"><Icon name="lock" size={14} /> Owners only</span></div>
+      <div class="grid-2">
+        <Field label="Rate per guard hour ($)"><input class="input" inputMode="decimal" value={v.rate} onInput={(e) => setF({ ...v, rate: (e.target as HTMLInputElement).value })} data-testid="site-rate" /></Field>
+        <Field label="Client (bill to)"><input class="input" value={v.client} onInput={(e) => setF({ ...v, client: (e.target as HTMLInputElement).value })} data-testid="site-bill-client" /></Field>
+      </div>
+      <Field label="Billing address"><input class="input" value={v.address} onInput={(e) => setF({ ...v, address: (e.target as HTMLInputElement).value })} /></Field>
+      <Field label="Accounts-payable email (reference only)" hint="Lion Patrol never emails clients."><input class="input" type="email" value={v.email} onInput={(e) => setF({ ...v, email: (e.target as HTMLInputElement).value })} /></Field>
+      <Button disabled={!f} data-testid="site-billing-save" onClick={async () => {
+        const rate = v.rate.trim() === '' ? null : Number(v.rate.replace(/[$,]/g, ''));
+        if (rate != null && (Number.isNaN(rate) || rate < 0)) { toast('Enter the rate as a number, e.g. 38.00', 'error'); return; }
+        await saveSiteBilling({ site_id: siteId, org_id: org!, hourly_rate: rate, client_name: v.client.trim() || null, client_email: v.email.trim() || null, billing_address: v.address.trim() || null });
+        setF(null); toast('Billing saved');
+      }}>Save billing</Button>
     </div>
   );
 }

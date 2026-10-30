@@ -286,7 +286,7 @@ export function IncidentEditor({ id }: { id: string }) {
 
         <div class="form-section" data-err={E('photos') ? 1 : 0}>
           <div class={`cap ${req.has('photos') ? 'req' : ''}`}>Photos, video & files</div>
-          <AttachmentTray parentType="incident" parentId={form.id} ensureParent={() => syncDraft(latest.current ?? form)} />
+          <AttachmentTray parentType="incident" parentId={form.id} ensureParent={() => syncDraft(latest.current ?? form)} stampSite={sites.data?.find((x) => x.id === form.site_id)?.name ?? ''} />
           {E('photos') && <div class="field-error">{E('photos')}</div>}
         </div>
 

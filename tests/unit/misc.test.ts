@@ -85,3 +85,13 @@ describe('per-category field config', () => {
     expect(m.sections.has('vehicles')).toBe(false);
   });
 });
+
+import { stampLines } from '../../src/media/compress';
+describe('photo stamp (item 25)', () => {
+  it('formats date/time (Pacific), site, GPS ± accuracy', () => {
+    const [a, b] = stampLines({ at: new Date('2026-10-30T09:05:07Z'), lat: 47.382612, lng: -122.234601, accuracy: 11.6, site: 'Kent Station Market' });
+    expect(a).toBe('Oct 30, 2026, 2:05:07 AM PDT · Kent Station Market');
+    expect(b).toBe('GPS 47.38261, -122.23460 ±12 m · Lion Patrol');
+    expect(stampLines({ at: new Date(), lat: null, lng: null, accuracy: null, site: 'X' })[1]).toBe('GPS unavailable · Lion Patrol');
+  });
+});

@@ -4,7 +4,8 @@ import { Sheet, Button, toast } from './kit';
 import { useData } from './useData';
 import { db } from '../data/db';
 import { listAttachments, addAttachment, removeAttachment, hasConsent, acceptConsent, labelFor, type AttachmentRow, type ParentType } from '../data/guard';
-import { prepareFile, MediaError, type Prepared } from '../media/compress';
+import { prepareFile, MediaError, type Prepared, type StampInfo } from '../media/compress';
+import { getFix } from '../lib/geo';
 import { publicSettings } from '../data/repos/queries';
 import { currentOrgId } from '../auth/session';
 import { syncState } from '../data/sync/status';
@@ -24,9 +25,9 @@ function useBlobUrl(id: string, which: 'bytes' | 'thumb') {
   return url;
 }
 
-export async function prepareWithLimits(file: File, voice = false, durationS?: number): Promise<Prepared> {
+export async function prepareWithLimits(file: File, voice = false, durationS?: number, stamp?: StampInfo): Promise<Prepared> {
   const s = await publicSettings(currentOrgId.value);
-  return prepareFile(file, { maxVideoMb: s?.max_video_mb ?? 50, maxVideoS: s?.max_video_s ?? 60, voice, durationS });
+  return prepareFile(file, { maxVideoMb: s?.max_video_mb ?? 50, maxVideoS: s?.max_video_s ?? 60, voice, durationS, stamp });
 }
 
 function Thumb({ a, onOpen, onRemove }: { a: AttachmentRow; onOpen: () => void; onRemove?: () => void }) {
@@ -60,8 +61,10 @@ function Viewer({ a, onClose }: { a: AttachmentRow | null; onClose: () => void }
 }
 
 /** Horizontal attachment tray + add actions. `ensureParent` must make sure the parent row is queued and return its op id. */
-export function AttachmentTray({ parentType, parentId, ensureParent, editable = true, label = 'Attachments' }: {
+export function AttachmentTray({ parentType, parentId, ensureParent, editable = true, label = 'Attachments', stampSite }: {
   parentType: ParentType; parentId: string; ensureParent?: () => Promise<string | null>; editable?: boolean; label?: string;
+  /** Item 25: burn date/time, GPS and this site name into photos at capture (works offline). */
+  stampSite?: string;
 }) {
   const list = useData(() => listAttachments(parentId), [parentId]);
   const [busy, setBusy] = useState(false);
@@ -73,7 +76,10 @@ export function AttachmentTray({ parentType, parentId, ensureParent, editable = 
     try {
       const parentOp = ensureParent ? await ensureParent() : null;
       for (const f of files) {
-        const p = await prepareWithLimits(f, voice, durationS);
+        const stamp = stampSite != null && f.type.startsWith('image/')
+          ? await getFix(4000).then((fx) => ({ at: new Date(), lat: fx?.lat ?? null, lng: fx?.lng ?? null, accuracy: fx?.accuracy ?? null, site: stampSite }))
+          : undefined;
+        const p = await prepareWithLimits(f, voice, durationS, stamp);
         await addAttachment(parentType, parentId, p, parentOp);
       }
     } catch (e) {

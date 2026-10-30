@@ -1,6 +1,6 @@
 // Row shapes for the patrol_* tables (subset of columns the client uses).
 export type Role = 'owner' | 'admin' | 'supervisor' | 'guard' | 'client';
-export interface Member { id: string; org_id: string; user_id: string; role: Role; status: 'active' | 'disabled'; display_name: string; email?: string | null; phone?: string | null; badge_no?: string | null }
+export interface Member { id: string; org_id: string; user_id: string; role: Role; status: 'active' | 'disabled'; display_name: string; email?: string | null; phone?: string | null; badge_no?: string | null; gusto_employee_id?: string | null }
 export interface Org { id: string; name: string; timezone: string; phone?: string | null; email?: string | null; address?: string | null; license_no?: string | null; legal_name?: string | null }
 export interface OrgSettings { org_id: string; notify_emails: string[]; client_notifications_enabled: boolean; auto_share_with_client: boolean; report_prefix: string; gps_ping_interval_s: number; ping_retention_days: number; max_video_mb: number; max_video_s: number; tour_interval_min: number; tour_max_duration_min: number; email_enabled?: boolean; email_min_severity?: string; email_owners_only?: boolean }
 export interface PublicSettings { org_id: string; gps_ping_interval_s: number; max_video_mb: number; max_video_s: number; tour_interval_min: number; tour_max_duration_min: number; report_prefix: string }

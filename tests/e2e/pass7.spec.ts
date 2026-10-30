@@ -216,9 +216,10 @@ test('item 15: timesheets — weekly hours/OT and a Gusto CSV export', async ({ 
   await page.getByTestId('ts-row').filter({ hasText: 'Tasha Greene' }).click();
   await expect(page.getByTestId('ts-detail')).toContainText('On duty');
   await page.getByTestId('ts-export').click();
-  await expect.poll(() => page.evaluate(() => (window as unknown as { __lpLastCsv?: { text: string } }).__lpLastCsv?.text ?? '')).toContain('Last Name,First Name,Email,Regular Hours,Overtime Hours');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __lpLastCsv?: { text: string } }).__lpLastCsv?.text ?? '')).toContain('last_name,first_name,gusto_employee_id,regular_hours,overtime_hours,double_overtime_hours');
   const csv = await page.evaluate(() => (window as unknown as { __lpLastCsv: { text: string } }).__lpLastCsv.text);
-  expect(csv).toMatch(/Greene,Tasha,tasha@lionsecurity\.demo,\d+\.\d\d,0\.00,0\.00,/);
+  expect(csv).toMatch(/Greene,Tasha,,\d+\.\d\d,0\.00,\r\n/);
+  await expect(page.getByTestId('ts-foot').locator('td')).toHaveCount(10);
 });
 
 test('item 17: PDFs are dark-themed (DAR render saved as PNG)', async ({ page }) => {

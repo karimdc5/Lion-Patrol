@@ -7,6 +7,7 @@ import { membersFor, sitesFor } from '../../data/repos/queries';
 import { listRecords, getRecord } from '../../data/repos/records';
 import { createInvite, listInvites, fetchInvites, revokeInvite, updateMember, setSiteAccess, refreshDashboard } from '../../data/admin';
 import { syncNow } from '../../data/sync/engine';
+import { GuardCardEditor } from './GuardCards';
 import { useEffect } from 'preact/hooks';
 import { roleLabel, relTime, fmtDate, lastSeen } from '../../lib/format';
 import { PUBLIC_URL } from '../../config';
@@ -153,6 +154,8 @@ export function MemberDetail({ id }: { id: string }) {
             </List>
           </div>
         )}
+        <GuardCardEditor member={mem} />
+        {admin && mem.role !== 'client' && <GustoIdField mem={mem} />}
         <div class="card stack">
           <div class="row"><span class="list-icon" style={{ background: 'var(--gold-soft)', color: 'var(--gold)' }}><Icon name="key" /></span><b>Quick unlock PIN</b></div>
           <p class="sub muted">PINs are set by each person on their own phone (More → Set a PIN). The PIN never leaves the device and nobody else can see it. After 10 wrong tries the saved login is erased. If a phone is lost, disable the account here; their saved login stops working immediately.</p>
@@ -169,3 +172,15 @@ export function MemberDetail({ id }: { id: string }) {
 }
 
 export { Empty };
+
+/** Optional Gusto employee id, used in the Timesheets → Gusto hours CSV. */
+function GustoIdField({ mem }: { mem: Member }) {
+  const [v, setV] = useState<string | null>(null);
+  const cur = v ?? mem.gusto_employee_id ?? '';
+  return (
+    <div class="card row" style={{ gap: 10, alignItems: 'flex-end' }}>
+      <Field label="Gusto employee ID (optional)"><input class="input" value={cur} onInput={(e) => setV((e.target as HTMLInputElement).value)} data-testid="gusto-id" /></Field>
+      <Button disabled={v == null} onClick={async () => { await updateMember(mem, { gusto_employee_id: cur.trim() || null }); setV(null); toast('Gusto ID saved'); }} data-testid="gusto-id-save">Save</Button>
+    </div>
+  );
+}

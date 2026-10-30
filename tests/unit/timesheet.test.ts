@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { weekStart, weekByMember, payPeriod, toGustoCsv, addDays, type TimeRow } from '../../src/domain/timesheet';
+import { weekStart, weekByMember, payPeriod, toGustoCsv, splitName, type TimeRow } from '../../src/domain/timesheet';
 
 const mon = weekStart(new Date(2026, 9, 28, 15)); // Wed Oct 28 2026 → Mon Oct 26
 const at = (dayOffset: number, hour: number) => new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + dayOffset, hour).toISOString();
@@ -30,13 +30,19 @@ describe('timesheet', () => {
     expect(w!.flagged).toBe(1);
     expect(w!.total).toBe(10);
   });
+  it('splits compound last names', () => {
+    expect(splitName('Maria de la Cruz')).toEqual({ first: 'Maria', last: 'de la Cruz' });
+    expect(splitName('Mary Ann Van Dyke')).toEqual({ first: 'Mary Ann', last: 'Van Dyke' });
+    expect(splitName('Abdinasir Elmi')).toEqual({ first: 'Abdinasir', last: 'Elmi' });
+  });
   it('pay period OT is per workweek, then summed; Gusto CSV', () => {
     const rows = [...[0, 1, 2, 3, 4].map((d) => shift(`a${d}`, 'm1', d, 8, 10)), ...[7, 8].map((d) => shift(`b${d}`, 'm1', d, 8, 10)), shift('c', 'm2', 3, 8, 6)];
-    const lines = payPeriod(rows, mon, 2, [{ member_id: 'm1', name: 'Marcus Reed', email: 'm@x.test' }, { member_id: 'm2', name: 'Cher' }]);
+    const lines = payPeriod(rows, mon, 2, [{ member_id: 'm1', name: 'Marcus Reed', email: 'm@x.test', gusto_employee_id: 'G-1001' }, { member_id: 'm2', name: 'Cher' }]);
     expect(lines.map((l) => [l.person.name, l.regular, l.overtime])).toEqual([['Cher', 6, 0], ['Marcus Reed', 60, 10]]);
-    const csv = toGustoCsv(lines, mon, addDays(mon, 13));
-    expect(csv.split('\r\n')[0]).toBe('Last Name,First Name,Email,Regular Hours,Overtime Hours,Double Overtime Hours,Pay Period Start,Pay Period End');
-    expect(csv).toContain('Reed,Marcus,m@x.test,60.00,10.00,0.00,2026-10-26,2026-11-08');
-    expect(csv).toContain(',Cher,,6.00,0.00,0.00,');
+    const csv = toGustoCsv(lines);
+    expect(csv.split('\r\n')[0]).toBe('last_name,first_name,gusto_employee_id,regular_hours,overtime_hours,double_overtime_hours');
+    expect(csv).toContain('Reed,Marcus,G-1001,60.00,10.00,\r\n');
+    expect(csv).toContain(',Cher,,6.00,0.00,\r\n');
+    expect(csv).not.toContain('@');
   });
 });

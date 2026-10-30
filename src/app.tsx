@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks';
 import { signal } from '@preact/signals';
-import { phase, identity, uiMode, offerEnroll, backendMode, setUiMode } from './auth/session';
+import { phase, identity, uiMode, offerEnroll, backendMode, setUiMode, isStaff } from './auth/session';
 import { path, navigate } from './router';
 import { Login } from './screens/public/Login';
 import { Join, Signup } from './screens/public/Join';
@@ -72,7 +72,10 @@ function RoleShell() {
     const m = p.match(/^\/q\/([A-Za-z0-9-]+)/);
     if (m && mode !== 'client') { if (mode === 'admin') void setUiMode('guard'); navigate(`/g/scan?code=${m[1]}`, { replace: true }); }
   }, [p]);
-  const prefix = mode === 'admin' ? '/a' : mode === 'client' ? '/c' : '/g';
+  // QA bug (c): an owner/admin/supervisor who used guard mode can still open admin URLs (e.g. /a/sites).
+  const wantsAdmin = mode === 'guard' && isStaff.value && (p === '/a' || p.startsWith('/a/'));
+  useEffect(() => { if (wantsAdmin) void setUiMode('admin'); }, [wantsAdmin]);
+  const prefix = mode === 'admin' || wantsAdmin ? '/a' : mode === 'client' ? '/c' : '/g';
   const inShell = p === prefix || p.startsWith(prefix + '/');
   // No deps on purpose: a screen may navigate('/') in the same tick as this redirect.
   useEffect(() => { if (!inShell) navigate(prefix, { replace: true }); });
@@ -84,7 +87,7 @@ function RoleShell() {
   if (!inShell) return <div class="screen" />;
   return (
     <>
-      {mode === 'admin' ? <AdminShell /> : mode === 'client' ? <ClientShell /> : <GuardShell />}
+      {mode === 'admin' || wantsAdmin ? <AdminShell /> : mode === 'client' ? <ClientShell /> : <GuardShell />}
       <EnrollPinSheet open={offerEnroll.value} onClose={() => { offerEnroll.value = false; }} />
     </>
   );

@@ -594,6 +594,68 @@ do $$ begin
   if not exists (select 1 from public.patrol_owner_alerts where kind = 'geofence' and member_id = '20000000-0000-4000-8000-0000000000a3') then raise exception 'RLS FAIL: geofence alert not recorded'; end if;
 end $$;
 
+
+-- ===================================================================== pass 8 (20261030000100/200)
+create table if not exists public.share_links (id text primary key, kind text, data jsonb);
+create table if not exists public.onboarding_submissions (link_id text primary key references public.share_links(id), sensitive jsonb not null, submitted_at timestamptz not null default now());
+insert into public.share_links values ('rls-onb', 'employee_onboarding', '{"email":"rls-guard-a2@test.invalid"}');
+insert into public.onboarding_submissions (link_id, sensitive) values ('rls-onb',
+  '{"ssn":"000-00-0000","legal":{"first":"Guard","last":"A2","dob":"1990-01-01"},"address":{"street":"1 Secret St"},"bank":{"account":"999"},"license":{"has":"yes","number":"wa-sg-123","exp":"2026-11-15"}}');
+insert into public.patrol_guard_cards (member_id, org_id, card_no, expires_on) values ('20000000-0000-4000-8000-0000000000a3','10000000-0000-4000-8000-00000000000a','wa sg 777', current_date + 10);
+insert into public.patrol_site_codes (site_id, org_id, codes) values ('30000000-0000-4000-8000-0000000000a1','10000000-0000-4000-8000-00000000000a','gate 4417');
+insert into public.patrol_site_billing (site_id, org_id, hourly_rate) values ('30000000-0000-4000-8000-0000000000a1','10000000-0000-4000-8000-00000000000a', 38);
+do $$
+declare u text; n int; c int; b int;
+begin
+  if (select card_no from public.patrol_guard_cards limit 1) <> 'WASG777' then raise exception 'RLS FAIL: card number normalised'; end if;
+  -- who sees guard cards / billing / codes: a1 owner; a3 guard (site A2, + A1 from invite); a4 client (A1); a5 supervisor
+  foreach u in array array['a1:1:1:1','a3:0:0:1','a4:0:0:0','a5:0:0:1','b1:0:0:0'] loop
+    perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-4000-8000-0000000000%s","role":"authenticated"}', split_part(u, ':', 1)), true);
+    execute 'set local role authenticated';
+    select count(*) into n from public.patrol_guard_cards;
+    select count(*) into b from public.patrol_site_billing;
+    select count(*) into c from public.patrol_site_codes;
+    execute 'reset role';
+    if n <> split_part(u, ':', 2)::int or b <> split_part(u, ':', 3)::int or c <> split_part(u, ':', 4)::int then
+      raise exception 'RLS FAIL: pass8 visibility for % (cards %, billing %, codes %)', split_part(u, ':', 1), n, b, c; end if;
+  end loop;
+end $$;
+-- onboarding bridge: owner + app_admin only; only name/email/card fields
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+do $$
+declare r jsonb; k text;
+begin
+  r := public.patrol_onboarding_guard_cards('10000000-0000-4000-8000-00000000000a');
+  if jsonb_array_length(r) <> 1 or r -> 0 ->> 'card_no' <> 'wa-sg-123' or r -> 0 ->> 'expires_on' <> '2026-11-15'
+     or r -> 0 ->> 'member_id' <> '20000000-0000-4000-8000-0000000000a3' then raise exception 'RLS FAIL: onboarding import (%)', r; end if;
+  for k in select jsonb_object_keys(r -> 0) loop
+    if k not in ('link_id','first_name','last_name','email','has_card','card_no','expires_on','submitted_at','member_id') then raise exception 'RLS FAIL: onboarding leaks %', k; end if;
+  end loop;
+  if r::text ~ '(000-00-0000|1990-01-01|Secret|999)' then raise exception 'RLS FAIL: onboarding leaks sensitive values'; end if;
+end $$;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a5","role":"authenticated"}', true);
+do $$ begin
+  begin perform public.patrol_onboarding_guard_cards('10000000-0000-4000-8000-00000000000a'); raise exception 'RLS FAIL: supervisor read onboarding';
+  exception when insufficient_privilege then null; end;
+  if public.patrol_claim_owner_alert_emails('10000000-0000-4000-8000-00000000000b') <> 0 then raise exception 'RLS FAIL: claim other org'; end if;
+end $$;
+reset role;
+-- cron run creates the guard-card alert once; a second run (and the phones) never duplicate it
+do $$
+declare n1 int; n2 int;
+begin
+  perform public.patrol_cron_owner_alerts();
+  select count(*) into n1 from public.patrol_owner_alerts where kind = 'guard_card';
+  perform public.patrol_cron_owner_alerts();
+  perform public.patrol_check_owner_alerts('10000000-0000-4000-8000-00000000000a');
+  select count(*) into n2 from public.patrol_owner_alerts where kind = 'guard_card';
+  if n1 <> 1 or n2 <> 1 then raise exception 'RLS FAIL: cron dedupe (% then %)', n1, n2; end if;
+  if has_function_privilege('authenticated', 'public.patrol_cron_owner_alerts()', 'execute') then raise exception 'RLS FAIL: cron fn callable'; end if;
+end $$;
+
 -- ===================================================================== function privileges (hardening)
 do $$
 declare f text;

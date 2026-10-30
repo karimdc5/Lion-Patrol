@@ -93,7 +93,7 @@ export async function setSiteAccess(siteId: string, memberId: string, on: boolea
   }
   bumpData(); void kick();
 }
-export async function updateMember(m: Member, patch: Partial<Pick<Member, 'role' | 'status' | 'display_name' | 'phone'>>) {
+export async function updateMember(m: Member, patch: Partial<Pick<Member, 'role' | 'status' | 'display_name' | 'phone' | 'gusto_employee_id'>>) {
   const { userId, orgId } = ctx();
   await enqueue({ userId, orgId, kind: 'update', table: 'patrol_members', payload: patch, match: { id: m.id }, entityKey: `patrol_members:${m.id}`, label: `Update ${m.display_name}` },
     [{ table: 'patrol_members', row: { id: m.id, ...patch }, orgId }]);

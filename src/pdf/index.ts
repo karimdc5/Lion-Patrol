@@ -221,4 +221,18 @@ export async function endOfShiftPdf(teId: string, opts: { save?: boolean; prefer
   return { ...r, filename };
 }
 
+/** Item 26: dark monthly invoice PDF for one patrol_invoices row (owner-reviewed; never emailed). */
+export async function invoicePdf(inv: { org_id: string; site_id: string; invoice_no: string; period_month: string; issue_date: string; due_date: string; status: string; client_name: string | null; bill_to: string | null; notes: string | null; lines: Array<{ date: string; guard: string; hours: number; rate: number; description?: string }> }) {
+  const { orgBilling } = await import('../data/owner');
+  const { monthLabel } = await import('../domain/invoice');
+  const pay = await orgBilling(inv.org_id);
+  const { buildInvoicePdf } = await import('./report');
+  const r = await buildInvoicePdf({
+    org: await orgInfo(inv.org_id), site: await siteInfo(inv.site_id), logoPng: await logo(),
+    invoice: { invoice_no: inv.invoice_no, period: monthLabel(inv.period_month), issue_date: inv.issue_date, due_date: inv.due_date, status: inv.status, client_name: inv.client_name, bill_to: inv.bill_to, notes: inv.notes },
+    lines: inv.lines, payment: { note: pay.payment_note, details: pay.payment_details, terms_days: pay.terms_days },
+  });
+  return { ...r, filename: `${inv.invoice_no}.pdf` };
+}
+
 export { buildFromPortal } from './portal';

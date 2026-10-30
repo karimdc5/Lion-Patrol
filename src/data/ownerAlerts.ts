@@ -20,7 +20,8 @@ export async function checkOwnerAlerts(minGapMs = 60_000): Promise<number> {
   lastCheck = Date.now();
   try {
     const r = await getBackend().rpc<{ created: number } | null>('patrol_check_owner_alerts', { p_org: org });
-    const n = r?.created ?? 0;
+    // Claim un-emailed alerts (incl. ones the 5-minute server cron created) so each is emailed once.
+    const n = await getBackend().rpc<number>('patrol_claim_owner_alert_emails', { p_org: org }).catch(() => r?.created ?? 0);
     if (n > 0) {
       await enqueue({ userId, orgId: org, kind: 'email', payload: { event: 'owner_alert', id: uuidv7(), orgId: org, count: n }, entityKey: `email:owner_alert:${uuidv7()}`, label: 'Notify owners (email)' });
       void kick();

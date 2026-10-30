@@ -49,7 +49,7 @@ export function weekByMember(rows: TimeRow[], start: Date, now = Date.now()): Me
   return [...by.values()];
 }
 
-export interface PayrollPerson { member_id: string; name: string; email?: string | null }
+export interface PayrollPerson { member_id: string; name: string; email?: string | null; gusto_employee_id?: string | null }
 export interface PayrollLine { person: PayrollPerson; regular: number; overtime: number }
 
 /** Regular/OT per person over one or more whole workweeks (OT computed per week, then summed). */
@@ -67,16 +67,23 @@ export function payPeriod(rows: TimeRow[], firstWeek: Date, weeks: number, peopl
 }
 
 const csvCell = (v: string | number) => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-/** Gusto "import hours" CSV: one row per employee for the pay period (no double OT in WA). */
-export function toGustoCsv(lines: PayrollLine[], periodStart: Date, periodEndInclusive: Date): string {
-  const head = ['Last Name', 'First Name', 'Email', 'Regular Hours', 'Overtime Hours', 'Double Overtime Hours', 'Pay Period Start', 'Pay Period End'];
+const PARTICLES = new Set(['da', 'das', 'de', 'del', 'della', 'der', 'di', 'dos', 'du', 'la', 'le', 'st', 'st.', 'van', 'von', 'bin', 'ibn', 'al', 'el', 'mac', 'ter', 'ten', 'y']);
+/** "Maria de la Cruz" → { first: "Maria", last: "de la Cruz" }; "Mary Ann Van Dyke" → { first: "Mary Ann", last: "Van Dyke" }. */
+export function splitName(name: string): { first: string; last: string } {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { first: parts[0] ?? '', last: '' };
+  let i = parts.length - 1;
+  while (i > 1 && PARTICLES.has(parts[i - 1]!.toLowerCase())) i--;
+  return { first: parts.slice(0, i).join(' '), last: parts.slice(i).join(' ') };
+}
+
+/** Gusto hours import CSV (Gusto's lowercase headers), one row per employee. WA has no double OT: left blank. */
+export function toGustoCsv(lines: PayrollLine[]): string {
+  const head = ['last_name', 'first_name', 'gusto_employee_id', 'regular_hours', 'overtime_hours', 'double_overtime_hours'];
   const body = lines.map(({ person, regular, overtime }) => {
-    const parts = person.name.trim().split(/\s+/);
-    const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : parts[0] ?? '';
-    const last = parts.length > 1 ? parts.at(-1)! : '';
-    return [last, first, person.email ?? '', regular.toFixed(2), overtime.toFixed(2), '0.00', ymd(periodStart), ymd(periodEndInclusive)].map(csvCell).join(',');
+    const { first, last } = splitName(person.name);
+    return [last, first, person.gusto_employee_id ?? '', regular.toFixed(2), overtime.toFixed(2), ''].map(csvCell).join(',');
   });
   return [head.join(','), ...body].join('\r\n') + '\r\n';
 }
