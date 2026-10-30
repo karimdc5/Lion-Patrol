@@ -28,7 +28,37 @@ async function decode(file: Blob): Promise<{ draw: CanvasImageSource; w: number;
   return { draw: img, w: img.naturalWidth, h: img.naturalHeight, close: () => URL.revokeObjectURL(url) };
 }
 
-function canvasJpeg(src: CanvasImageSource, w: number, h: number, maxEdge: number, quality: number): Promise<{ blob: Blob; w: number; h: number }> {
+// ---------------------------------------------------------------- photo stamp (item 25)
+export interface StampInfo { at: Date; lat: number | null; lng: number | null; accuracy: number | null; site: string; tz?: string }
+/** The two banner lines burned into incident photos. Pure; unit tested. */
+export function stampLines(i: StampInfo): [string, string] {
+  const tz = i.tz ?? 'America/Los_Angeles';
+  const when = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: tz, timeZoneName: 'short' }).format(i.at);
+  const gps = i.lat != null && i.lng != null
+    ? `GPS ${i.lat.toFixed(5)}, ${i.lng.toFixed(5)}${i.accuracy != null ? ` ±${Math.round(i.accuracy)} m` : ''}`
+    : 'GPS unavailable';
+  return [`${when} · ${i.site || 'Site'}`, `${gps} · Lion Patrol`];
+}
+/** Bottom banner on a dark band, sized to the image so it stays legible at any resolution. */
+export function drawStamp(ctx: CanvasRenderingContext2D, w: number, h: number, lines: [string, string]) {
+  const fs = Math.max(14, Math.round(Math.min(w, h) * 0.034));
+  const pad = Math.round(fs * 0.7), lead = Math.round(fs * 1.3);
+  const band = pad * 2 + lead + fs;
+  ctx.fillStyle = 'rgba(10, 15, 28, 0.78)';
+  ctx.fillRect(0, h - band, w, band);
+  ctx.fillStyle = '#D4A537';
+  ctx.fillRect(0, h - band, Math.max(4, Math.round(fs * 0.25)), band);
+  ctx.textBaseline = 'alphabetic';
+  const x = pad + Math.round(fs * 0.4), maxW = w - x - pad;
+  ctx.font = `600 ${fs}px -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif`;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText(lines[0], x, h - band + pad + fs, maxW);
+  ctx.font = `500 ${Math.round(fs * 0.86)}px -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif`;
+  ctx.fillStyle = '#C9D1DC';
+  ctx.fillText(lines[1], x, h - band + pad + fs + lead, maxW);
+}
+
+function canvasJpeg(src: CanvasImageSource, w: number, h: number, maxEdge: number, quality: number, stamp?: [string, string]): Promise<{ blob: Blob; w: number; h: number }> {
   const scale = Math.min(1, maxEdge / Math.max(w, h));
   const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
   const c = document.createElement('canvas');
@@ -36,15 +66,17 @@ function canvasJpeg(src: CanvasImageSource, w: number, h: number, maxEdge: numbe
   const ctx = c.getContext('2d')!;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(src, 0, 0, cw, ch);
+  if (stamp) drawStamp(ctx, cw, ch, stamp);
   return new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve({ blob: b, w: cw, h: ch }) : reject(new Error('encode failed'))), 'image/jpeg', quality));
 }
 
 /** Re-encode through canvas: ≤2000px JPEG q0.75, EXIF (incl. GPS) stripped, orientation baked in. */
-export async function compressImage(file: Blob): Promise<{ bytes: ArrayBuffer; thumb: ArrayBuffer; width: number; height: number }> {
+export async function compressImage(file: Blob, stamp?: StampInfo): Promise<{ bytes: ArrayBuffer; thumb: ArrayBuffer; width: number; height: number }> {
   const d = await decode(file);
   try {
-    const full = await canvasJpeg(d.draw, d.w, d.h, MAX_IMAGE_EDGE, 0.75);
-    const th = await canvasJpeg(d.draw, d.w, d.h, THUMB_EDGE, 0.6);
+    const lines = stamp ? stampLines(stamp) : undefined;
+    const full = await canvasJpeg(d.draw, d.w, d.h, MAX_IMAGE_EDGE, 0.75, lines);
+    const th = await canvasJpeg(d.draw, d.w, d.h, THUMB_EDGE, 0.6, lines);
     return { bytes: await full.blob.arrayBuffer(), thumb: await th.blob.arrayBuffer(), width: full.w, height: full.h };
   } finally { d.close(); }
 }
@@ -68,11 +100,11 @@ async function videoMeta(file: Blob): Promise<{ duration: number; poster: ArrayB
 
 export class MediaError extends Error {}
 
-export async function prepareFile(file: File, opts: { maxVideoMb: number; maxVideoS: number; voice?: boolean; durationS?: number }): Promise<Prepared> {
+export async function prepareFile(file: File, opts: { maxVideoMb: number; maxVideoS: number; voice?: boolean; durationS?: number; stamp?: StampInfo }): Promise<Prepared> {
   const mime = file.type || 'application/octet-stream';
   const name = file.name || 'file';
   if (mime.startsWith('image/')) {
-    const c = await compressImage(file);
+    const c = await compressImage(file, opts.stamp);
     return { kind: 'image', mime: 'image/jpeg', ext: 'jpg', bytes: c.bytes, thumb: c.thumb, width: c.width, height: c.height, name };
   }
   if (mime.startsWith('video/')) {

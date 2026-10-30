@@ -4,7 +4,7 @@ import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
 import { currentOrgId } from '../../auth/session';
 import { listRecords } from '../../data/repos/records';
-import { membersFor, sitesFor } from '../../data/repos/queries';
+import { membersFor, sitesFor, siteLabels } from '../../data/repos/queries';
 import { saveShift, cancelShift } from '../../data/admin';
 import { uuidv7 } from '../../lib/uuid';
 import { fmtTime } from '../../lib/format';
@@ -27,7 +27,8 @@ export function Schedule() {
   const live = (shifts.data ?? []).filter((s) => !s.cancelled_at);
   const onDay = (d: string) => live.filter((s) => ymd(new Date(s.starts_at)) === d).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   const name = (id: string | null) => (id ? members.data?.find((m) => m.id === id)?.display_name ?? 'Guard' : 'Open shift');
-  const siteName = (id: string) => sites.data?.find((s) => s.id === id)?.name ?? '';
+  const labels = useData(() => siteLabels(org), [org]);
+  const siteName = (id: string) => labels.data?.label(id) ?? '';
   const newShift = (): Shift => {
     const d = new Date(`${day}T22:00`);
     return { id: uuidv7(), org_id: org!, site_id: sites.data?.[0]?.id ?? '', member_id: null, starts_at: d.toISOString(), ends_at: new Date(d.getTime() + 8 * 3600e3).toISOString(), notes: null, cancelled_at: null };

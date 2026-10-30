@@ -23,3 +23,10 @@ export const membersFor = async (orgId: string | null) => (await listRecords<Mem
 export const publicSettings = async (orgId: string | null) => (await listRecords<PublicSettings>('patrol_public_settings', orgId))[0] ?? null;
 export const orgSettings = async (orgId: string | null) => (await listRecords<OrgSettings>('patrol_org_settings', orgId))[0] ?? null;
 export const memberStatuses = async (orgId: string | null) => listRecords<MemberStatus>('patrol_member_status', orgId);
+
+/** Site name for history/schedule rows, including deactivated sites ("Name (inactive)"). QA bug (a). */
+// Wrapped in an object: useData's setState would treat a bare function as an updater.
+export const siteLabels = async (orgId: string | null): Promise<{ label: (id: string | null | undefined) => string }> => {
+  const all = await listRecords<Site>('patrol_sites', orgId);
+  return { label: (id) => { const s = all.find((x) => x.id === id); return s ? `${s.name}${s.active === false ? ' (inactive)' : ''}` : 'Unknown site'; } };
+};

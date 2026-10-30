@@ -508,3 +508,7 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
 .cp-foot { padding-top: 8px; }
 .client-theme .topbar { background: var(--bg); }
 .client-theme .tl-day { background: rgba(244, 246, 250, .92); }
+.po-codes { margin: 0; font: 600 16px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; color: var(--text); }
+.inv-line { display: flex; align-items: center; gap: 8px; }
+.inv-line .input { width: 64px; padding: 0 8px; height: 40px; text-align: right; }
+.ts-table tfoot td { border-top: 1px solid rgba(255,255,255,.14); border-bottom: 0; font-weight: 600; }

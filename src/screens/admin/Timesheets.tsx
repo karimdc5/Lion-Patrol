@@ -49,10 +49,10 @@ export function Timesheets() {
     const first = weeks === 2 ? addDays(start, -7) : start;
     if (org) await fetchRange(org, first, addDays(start, 7));
     const times = await listRecords<TimeRow & Row>('patrol_time_entries', org);
-    const people = (data.data?.members ?? []).map((m) => ({ member_id: m.id, name: m.display_name, email: m.email }));
+    const people = (data.data?.members ?? []).map((m) => ({ member_id: m.id, name: m.display_name, gusto_employee_id: (m as Member & { gusto_employee_id?: string | null }).gusto_employee_id ?? null }));
     const lines = payPeriod(times, first, weeks, people);
     if (!lines.length) { toast('No hours in this period.', 'info'); return; }
-    const csv = toGustoCsv(lines, first, addDays(start, 6));
+    const csv = toGustoCsv(lines);
     const filename = `gusto-hours-${first.toISOString().slice(0, 10)}-to-${addDays(start, 6).toISOString().slice(0, 10)}.csv`;
     const file = new File([csv], filename, { type: 'text/csv' });
     if (__E2E__) (window as unknown as { __lpLastCsv?: { name: string; text: string } }).__lpLastCsv = { name: filename, text: csv };
@@ -99,6 +99,14 @@ export function Timesheets() {
                     </tr>
                   ))}
                 </tbody>
+                <tfoot data-testid="ts-foot">
+                  <tr>
+                    <td><b>Total</b></td>
+                    {DAYS.map((_, i) => <td key={i} class="tnum">{h(Math.round(rows.reduce((n, w) => n + w.days[i]!, 0) * 100) / 100)}</td>)}
+                    <td class="tnum"><b>{tot.total.toFixed(1)}</b></td>
+                    <td class={`tnum ${tot.ot ? 'warning-text' : ''}`}>{tot.ot ? tot.ot.toFixed(1) : '–'}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -126,7 +134,7 @@ export function Timesheets() {
         })()}
         <div class="card stack">
           <div class="headline">Payroll export</div>
-          <div class="foot muted">Gusto hours CSV (Last name, First name, Email, Regular, Overtime). Overtime is calculated per workweek.</div>
+          <div class="foot muted">Gusto hours CSV (last_name, first_name, gusto_employee_id, regular_hours, overtime_hours). Overtime is calculated per workweek. Set each person’s Gusto employee ID in People.</div>
           <div class="seg">
             <button class={weeks === 1 ? 'active' : ''} onClick={() => setWeeks(1)}>This week</button>
             <button class={weeks === 2 ? 'active' : ''} onClick={() => setWeeks(2)} data-testid="ts-2weeks">2 weeks (ending this week)</button>

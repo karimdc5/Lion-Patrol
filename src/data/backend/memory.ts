@@ -143,7 +143,9 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         return !!parent && visible(s, c, parentTable!, parent);
       }
       case 'patrol_bolos': return staff || c.workable.includes(r.site_id);
-      case 'patrol_owner_alerts': return c.adminOrgs.includes(r.org_id);
+      case 'patrol_owner_alerts': case 'patrol_guard_cards': case 'patrol_site_billing': case 'patrol_org_billing': case 'patrol_invoices': return c.adminOrgs.includes(r.org_id);
+      case 'patrol_site_codes': return staff || c.workable.includes(r.site_id);
+      case 'patrol_post_order_acks': return mine || staff;
       case 'patrol_invites': return c.adminOrgs.includes(r.org_id);
       case 'patrol_share_links': case 'patrol_portal_links': return staff;
       default: return false;
@@ -164,6 +166,8 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       return c.staffOrgs.includes(r.org_id) || c.memberIds.includes(r.created_by);
     }
     if (table === 'patrol_owner_alerts') return op === 'update' && c.adminOrgs.includes(r.org_id);
+    if (['patrol_guard_cards', 'patrol_site_billing', 'patrol_org_billing', 'patrol_invoices', 'patrol_site_codes'].includes(table)) return c.adminOrgs.includes(r.org_id);
+    if (table === 'patrol_post_order_acks') return op === 'insert' && r.member_id === c.memberIn(r.org_id) && c.workable.includes(r.site_id);
     if (ADMIN_TABLES.has(table)) return c.adminOrgs.includes(r.org_id ?? r.id);
     if (STAFF_TABLES.has(table)) return c.staffOrgs.includes(r.org_id);
     if (table === 'patrol_members' && op === 'update') return c.adminOrgs.includes(r.org_id) || r.user_id === c.userId;
@@ -528,7 +532,33 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         const came = (s.tables.patrol_time_entries ?? []).some((t) => t.member_id === sh.member_id && Date.parse(t.clock_in_at) > Date.parse(sh.starts_at) - 2 * 3600e3 && Date.parse(t.clock_in_at) < Date.parse(sh.ends_at));
         if (!came) add(`noshow:${sh.id}`, { kind: 'no_show', site_id: sh.site_id, member_id: sh.member_id, shift_id: sh.id, title: `No-show at ${siteOf(sh.site_id)?.name ?? 'site'}`, body: `${name(sh.member_id)} has not clocked in for the shift that started ${new Date(sh.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.` });
       }
+      const today = new Date().toISOString().slice(0, 10);
+      const soon = new Date(now + 30 * 864e5).toISOString().slice(0, 10);
+      for (const g of (s.tables.patrol_guard_cards ?? []).filter((x) => x.org_id === a.p_org && x.expires_on && x.expires_on <= soon)) {
+        const m = (s.tables.patrol_members ?? []).find((x) => x.id === g.member_id && x.status === 'active');
+        if (!m) continue;
+        const expired = g.expires_on < today;
+        add(`${expired ? 'cardexp' : 'card30'}:${g.member_id}:${g.expires_on}`, { kind: 'guard_card', member_id: g.member_id, title: `${expired ? 'Guard card expired' : 'Guard card expires soon'}: ${m.display_name}`, body: `WA guard card ${g.card_no ?? ''} ${expired ? 'expired on' : 'expires on'} ${g.expires_on}.` });
+      }
       return { created };
+    },
+    patrol_claim_owner_alert_emails(s, c, a) {
+      if (!c.workerOrgs.includes(a.p_org)) return 0;
+      let n = 0;
+      for (const x of s.tables.patrol_owner_alerts ?? []) if (x.org_id === a.p_org && !x.notified_at && !x.acknowledged_at) { x.notified_at = nowIso(); n++; }
+      return n;
+    },
+    patrol_onboarding_guard_cards(s, c, a) {
+      if (!c.members.some((m) => m.org_id === a.p_org && m.role === 'owner') || !s.appAdmins.includes(c.userId!)) throw new BackendError('42501', 'owners_only', 403);
+      return (s.tables.onboarding_submissions ?? []).map((o) => {
+        const link = (s.tables.share_links ?? []).find((l) => l.id === o.link_id);
+        const email = String(link?.data?.email ?? '').trim().toLowerCase() || null;
+        const exp = o.sensitive?.license?.exp;
+        // Only these fields ever leave the onboarding data (never SSN, DOB, address, bank).
+        return { link_id: o.link_id, first_name: o.sensitive?.legal?.first ?? null, last_name: o.sensitive?.legal?.last ?? null, email, has_card: o.sensitive?.license?.has ?? null,
+          card_no: o.sensitive?.license?.number || null, expires_on: /^\d{4}-\d{2}-\d{2}$/.test(exp ?? '') ? exp : null, submitted_at: o.submitted_at,
+          member_id: (s.tables.patrol_members ?? []).find((m) => m.org_id === a.p_org && m.role !== 'client' && email && String(m.email).toLowerCase() === email)?.id ?? null };
+      }).sort((x, y) => String(y.submitted_at).localeCompare(String(x.submitted_at)));
     },
     patrol_report_geofence_block(s, c, a) {
       const site = (s.tables.patrol_sites ?? []).find((x) => x.id === a.p_site);
@@ -602,7 +632,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const c = ctx(s, userId);
       const list = (s.tables[table] ??= []);
       for (const raw of rows as R[]) {
-        const row = { ...raw, id: raw.id ?? (table === 'patrol_site_access' ? `${raw.site_id}:${raw.member_id}` : uuidv7()) };
+        const row = { ...raw, id: raw.id ?? memId(table, raw) };
         const existing = list.find((r) => r.id === row.id);
         if (existing) {
           if (opts?.ignoreDuplicates) continue;
@@ -622,7 +652,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const c = ctx(s, userId);
       const list = (s.tables[table] ??= []);
       for (const raw0 of rows as R[]) {
-        const raw = table === 'patrol_org_settings' ? { ...raw0, id: raw0.org_id } : raw0;
+        const raw = raw0.id ? raw0 : { ...raw0, id: memId(table, raw0) };
         const idx = list.findIndex((r) => r.id === raw.id);
         const prev = idx >= 0 ? list[idx] : undefined;
         if (!canWrite(c, table, prev ? { ...prev, ...raw } : raw, prev ? 'update' : 'insert')) {
@@ -687,6 +717,18 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       },
     },
   };
+}
+
+/** Primary key → row id for tables without an `id` column. */
+function memId(table: string, r: R | Record<string, any>): string {
+  switch (table) {
+    case 'patrol_site_access': return `${r.site_id}:${r.member_id}`;
+    case 'patrol_post_order_acks': return `${r.member_id}:${r.site_id}`;
+    case 'patrol_org_settings': case 'patrol_org_billing': return String(r.org_id);
+    case 'patrol_guard_cards': return String(r.member_id);
+    case 'patrol_site_codes': case 'patrol_site_billing': return String(r.site_id);
+    default: return uuidv7();
+  }
 }
 
 function bolosPhotos(s: MockState, boloId: string) {

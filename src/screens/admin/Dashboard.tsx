@@ -149,7 +149,7 @@ function GettingStarted({ d }: { d: import('./ops').OpsData }) {
   );
 }
 
-const ALERT_ICON: Record<string, string> = { missed_checkpoint: 'qr', overdue_patrol: 'clock', no_show: 'user-x', geofence: 'pin' };
+const ALERT_ICON: Record<string, string> = { missed_checkpoint: 'qr', overdue_patrol: 'clock', no_show: 'user-x', geofence: 'pin', guard_card: 'key' };
 /** Item 18: owners/admins only (RLS returns no rows to anyone else). */
 function OwnerAlerts() {
   const org = currentOrgId.value;
