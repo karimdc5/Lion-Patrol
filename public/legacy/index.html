@@ -1,0 +1,1963 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>Lion Patrol</title>
+<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Lion%20Patrol%22,%22short_name%22:%22Lion%20Patrol%22,%22display%22:%22standalone%22,%22background_color%22:%22%230a0b0a%22,%22theme_color%22:%22%230a0b0a%22}" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0b0a; --surface:#141513; --raised:#1c1d1a; --raised2:#232420; --border:#2a2b27;
+    --fg:#f2efe6; --muted:#8d8b82; --faint:#5a594f;
+    --gold:#c9a86a; --gold-bright:#e2c793; --gold-deep:#a9824f;
+    --success:#4c9a6a; --success-bright:#66b483;
+    --danger:#c85c4a; --danger-bright:#dd7562; --warn:#d9a441;
+    --font-display:"Cormorant Garamond","Times New Roman",serif;
+    --font-sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --shadow-sm:0 2px 10px rgba(0,0,0,.4);
+    --shadow-md:0 8px 24px rgba(0,0,0,.5);
+    --shadow-gold:0 6px 20px rgba(201,168,106,.22);
+    --shadow-danger:0 6px 20px rgba(200,92,74,.22);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%; background:var(--bg); color:var(--fg); font-family:var(--font-sans);}
+  #app{min-height:100dvh; display:flex; flex-direction:column;}
+  .screen{flex:1; display:flex; flex-direction:column; padding:20px 20px calc(20px + env(safe-area-inset-bottom));}
+  .brand{display:flex; align-items:center; gap:10px; margin-bottom:28px;}
+  .brand svg{width:30px; height:30px; color:var(--gold); filter:drop-shadow(0 0 6px rgba(201,168,106,.35));}
+  .avatar{width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:700; font-size:14px; flex-shrink:0; box-shadow:var(--shadow-sm);}
+  .avatar.sm{width:30px; height:30px; font-size:11px;}
+  .brand-text{line-height:1;}
+  .brand-text .l{font-family:var(--font-display); font-size:24px; font-weight:600; letter-spacing:.01em;}
+  .brand-text .s{font-size:10px; letter-spacing:.22em; color:var(--muted); text-transform:uppercase; margin-top:3px;}
+  h1{font-family:var(--font-display); font-size:23px; font-weight:600; margin:0 0 4px;}
+  p.sub{color:var(--muted); font-size:14px; margin:0 0 20px;}
+  label{display:block; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin:16px 0 6px;}
+  select, input[type=text], input[type=password], input[type=tel], textarea{
+    width:100%; background:var(--raised); border:1px solid var(--border); color:var(--fg);
+    border-radius:10px; padding:14px 14px; font-size:16px; font-family:var(--font-sans); outline:none;
+  }
+  select:focus, input:focus, textarea:focus{border-color:var(--gold);}
+  textarea{min-height:90px; resize:vertical; font-family:inherit;}
+  .pin-dots{display:flex; gap:12px; justify-content:center; margin:20px 0;}
+  .pin-dot{width:16px; height:16px; border-radius:50%; border:1.5px solid var(--faint);}
+  .pin-dot.filled{background:var(--gold); border-color:var(--gold); box-shadow:0 0 8px rgba(201,168,106,.5);}
+  .keypad{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:auto;}
+  .key{background:linear-gradient(180deg,var(--raised2),var(--raised)); border:1px solid var(--border); border-radius:14px; color:var(--fg);
+    font-size:22px; font-family:var(--font-sans); padding:18px 0; text-align:center; box-shadow:var(--shadow-sm);}
+  .key:active{background:var(--border); box-shadow:none; transform:translateY(1px);}
+  .key.ghost{background:transparent; border:none; box-shadow:none; color:var(--muted); font-size:14px;}
+  .btn{display:flex; align-items:center; justify-content:center; gap:10px; width:100%; text-align:center; border:none; border-radius:13px; padding:14px;
+    font-size:16px; font-weight:600; font-family:var(--font-sans); margin-top:8px; transition:transform .08s ease, box-shadow .08s ease; text-decoration:none; box-sizing:border-box;}
+  .btn svg{width:19px; height:19px; flex-shrink:0;}
+  .btn-primary{background:linear-gradient(180deg,var(--gold-bright),var(--gold) 60%,var(--gold-deep)); color:#1a1610; box-shadow:var(--shadow-gold);}
+  .btn-primary:active{transform:translateY(1px) scale(.99); box-shadow:0 2px 10px rgba(201,168,106,.18);}
+  .btn-secondary{background:linear-gradient(180deg,var(--raised2),var(--raised)); color:var(--fg); border:1px solid var(--border); box-shadow:var(--shadow-sm);}
+  .btn-secondary:active{transform:translateY(1px) scale(.99); box-shadow:none;}
+  .btn-danger{background:linear-gradient(180deg,var(--danger-bright),var(--danger)); color:#fff; box-shadow:var(--shadow-danger);}
+  .btn-danger:active{transform:translateY(1px) scale(.99); box-shadow:0 2px 10px rgba(200,92,74,.18);}
+  .btn-assist{background:rgba(200,92,74,.08); color:var(--danger-bright); border:1.5px solid var(--danger); box-shadow:none;}
+  .btn-assist:active{transform:translateY(1px) scale(.99); background:rgba(200,92,74,.16);}
+  .btn:disabled{opacity:.4;}
+  .err{color:var(--danger); font-size:13px; margin-top:10px; min-height:16px;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:22px;}
+  .status-pill{display:inline-flex; align-items:center; gap:6px; font-size:11px; text-transform:uppercase;
+    letter-spacing:.08em; padding:5px 10px; border-radius:999px; background:var(--raised); border:1px solid var(--border);}
+  .status-pill .dot{width:7px; height:7px; border-radius:50%; background:var(--faint);}
+  .status-pill.on .dot{background:var(--success); box-shadow:0 0 0 3px rgba(76,154,106,.2);}
+  .sync-pill{display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:5px 10px; border-radius:999px;
+    border:1px solid var(--border); background:var(--raised); color:var(--muted);}
+  .sync-pill::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .sync-pill.ok{color:var(--faint);}
+  .sync-pill.warn{color:var(--warn); border-color:var(--warn); background:rgba(217,164,65,.08);}
+  .sync-pill.danger{color:var(--danger); border-color:var(--danger); background:rgba(200,92,74,.08);}
+  .card{background:linear-gradient(160deg,var(--surface),var(--bg) 140%); border:1px solid var(--border); border-radius:16px; padding:15px; margin-bottom:12px; box-shadow:var(--shadow-sm);}
+  .card h3{font-family:var(--font-display); margin:0 0 4px; font-size:19px; font-weight:600;}
+  .card p{margin:0; color:var(--muted); font-size:13px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .action-tile{background:linear-gradient(160deg,var(--surface),var(--bg) 140%); border:1px solid var(--border); border-radius:14px; padding:14px 10px;
+    text-align:center; color:var(--fg); cursor:pointer; transition:transform .08s ease, background .08s ease; box-shadow:var(--shadow-sm);}
+  .action-tile:active{transform:scale(.96); background:var(--raised);}
+  .action-tile svg{width:21px; height:21px; margin-bottom:5px; color:var(--gold);}
+  .action-tile div{font-size:12.5px; font-weight:600;}
+  .backbar{display:flex; align-items:center; gap:10px; margin-bottom:18px; color:var(--muted); font-size:14px;}
+  #qr-reader{border-radius:14px; overflow:hidden; border:1px solid var(--border);}
+  .checkpoint-row{display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border);}
+  .checkpoint-row:last-child{border-bottom:none;}
+  .cp-status{font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:4px 8px; border-radius:6px;}
+  .cp-status.pending{color:var(--faint); background:var(--raised);}
+  .cp-status.done{color:var(--success); background:rgba(76,154,106,.12);}
+  .cp-status.unverified{color:var(--warn); background:rgba(217,164,65,.12);}
+  .cp-status.queued{color:var(--warn); background:rgba(217,164,65,.12);}
+  .field-map{height:65vh; min-height:340px; border-radius:14px; overflow:hidden; border:1px solid var(--border);}
+  .leaflet-container{background:var(--raised) !important; font-family:var(--font-sans) !important;}
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip{background:var(--surface) !important; color:var(--fg) !important;}
+  .leaflet-control-attribution{background:rgba(10,11,10,.7) !important; color:var(--faint) !important; font-size:9px !important;}
+  .leaflet-control-attribution a{color:var(--muted) !important;}
+  .map-tooltip{background:var(--surface) !important; border:1px solid var(--border) !important; color:var(--fg) !important;
+    font-family:var(--font-sans) !important; font-size:11px !important; box-shadow:none !important;}
+  .toast{position:fixed; left:20px; right:20px; bottom:calc(20px + env(safe-area-inset-bottom));
+    background:var(--raised); border:1px solid var(--border); color:var(--fg); padding:14px 16px;
+    border-radius:12px; font-size:14px; text-align:center; z-index:50; box-shadow:var(--shadow-md);}
+  .toast.success{border-color:var(--success);}
+  .toast.danger{border-color:var(--danger);}
+  .chip-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  .chip{background:var(--raised); border:1px solid var(--border); border-radius:999px; padding:8px 14px; font-size:13px; transition:transform .08s ease;}
+  .chip:active{transform:scale(.94);}
+  .chip.active{background:var(--gold); color:#141311; border-color:var(--gold);}
+  .photo-preview{width:100%; border-radius:12px; margin-top:10px; border:1px solid var(--border);}
+  .muted-link{color:var(--muted); font-size:13px; text-align:center; margin-top:14px;}
+  .dispatch-card{border-color:var(--warn); background:linear-gradient(160deg,rgba(217,164,65,.09),rgba(217,164,65,.02)); transition:transform .08s ease;}
+  .dispatch-card:active{transform:scale(.98);}
+  .dispatch-label{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--warn); font-weight:600;}
+  .icon20{width:20px; height:20px; display:flex;}
+  .icon20 svg{width:100%; height:100%;}
+  .btn-ack{width:100%;}
+  .msg-row{display:flex;}
+  .msg-row.admin{justify-content:flex-start;}
+  .msg-row.officer{justify-content:flex-end;}
+  .msg-bubble{max-width:78%; padding:10px 13px; border-radius:14px; font-size:14px; line-height:1.35; word-break:break-word;}
+  .msg-bubble.admin{background:var(--raised); border:1px solid var(--border); border-bottom-left-radius:4px;}
+  .msg-bubble.officer{background:linear-gradient(180deg,var(--gold-bright),var(--gold)); color:#1a1610; border-bottom-right-radius:4px;}
+
+  /* Status console — the one place this screen spends its design boldness */
+  .status-console{position:relative; border-radius:18px; padding:15px 18px 13px 20px; margin-bottom:10px; overflow:hidden;
+    background:linear-gradient(150deg,var(--surface) 0%,var(--bg) 160%); border:1px solid var(--border); box-shadow:var(--shadow-md);}
+  .status-console::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--sc-accent, var(--gold));}
+  .status-console .eyebrow{font-size:11px; text-transform:uppercase; letter-spacing:.14em; font-weight:700; color:var(--sc-accent, var(--gold));}
+  .status-console h3{font-family:var(--font-display); font-size:26px; font-weight:600; margin:6px 0 2px;}
+  .status-console p{color:var(--muted); font-size:12.5px; margin:0;}
+  .status-console .pulse{position:relative; width:11px; height:11px; border-radius:50%; background:var(--sc-accent, var(--gold)); flex-shrink:0;}
+  .status-console .pulse::after{content:""; position:absolute; inset:-5px; border-radius:50%; border:2px solid var(--sc-accent, var(--gold)); opacity:.7; animation:pulsering 2.2s ease-out infinite;}
+  @keyframes pulsering{0%{transform:scale(.5); opacity:.7;} 100%{transform:scale(2); opacity:0;}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// =========================================================
+// CONFIG — replace with your Supabase project values
+// =========================================================
+const SUPABASE_URL = "https://raedwcoztdpwvvmzvdmz.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhZWR3Y296dGRwd3Z2bXp2ZG16Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMTU5MDgsImV4cCI6MjEwMjY5MTkwOH0.FSCVAzugN5hfAeruGjytgsjOGegLmR3fdWYHlrqs5sg";
+const STORAGE_BUCKET = "lion-patrol";
+
+// EmailJS — end-of-shift report emails. Set these up at emailjs.com:
+// create a template with variables: to_email, officer_name, callsign, site_name,
+// clock_in, clock_out, summary — then paste your IDs below.
+const EMAILJS_PUBLIC_KEY = "nwtsiZispHGMJGhoj";
+const EMAILJS_SERVICE_ID = "service_6g8we6b";
+const EMAILJS_TEMPLATE_ID = "template_zu0uf0o";
+const SHIFT_REPORT_EMAIL = "lionofseattle@gmail.com";
+
+// Dispatch/Command phone number for the "Call Command" quick-dial button.
+// Leave blank to hide that button — officers will still see "Call 911".
+const COMMAND_PHONE = "";
+if(window.emailjs && EMAILJS_PUBLIC_KEY !== "YOUR_EMAILJS_PUBLIC_KEY"){
+  emailjs.init(EMAILJS_PUBLIC_KEY);
+}
+
+// =========================================================
+// DEMO MODE — realistic presentation data for client walkthroughs.
+// Enabled only by adding ?demo=1 to the URL; there is no visible
+// switch anywhere in the UI. Nothing here ever touches the real
+// database — every read/write goes to an in-memory copy that
+// resets the instant the page reloads. Demo PIN for every officer: 1234.
+// =========================================================
+const DEMO_MODE = new URLSearchParams(location.search).get("demo") === "1";
+const DEMO_PIN = "1234";
+
+function buildDemoSeed(){
+  const minAgo = (m)=> new Date(Date.now() - m*60000).toISOString();
+  const hrAgo  = (h)=> new Date(Date.now() - h*3600000).toISOString();
+  const dayAgo = (d)=> new Date(Date.now() - d*86400000).toISOString();
+  const img = (seed)=> `https://picsum.photos/seed/lionpatrol-${seed}/640/480`;
+
+  const sites = [
+    {id:"demo-site-1", name:"Harborview Corporate Campus", code:"SEA-01", kind:"commercial", address:"400 Elliott Ave W", city:"Seattle", lat:47.6205, lng:-122.3629, required_officers:2, status:"secure"},
+    {id:"demo-site-2", name:"Cascade Ridge Apartments", code:"SEA-02", kind:"residential", address:"1200 12th Ave", city:"Seattle", lat:47.6142, lng:-122.3169, required_officers:1, status:"secure"},
+    {id:"demo-site-3", name:"Northgate Retail Plaza", code:"SEA-03", kind:"commercial", address:"401 NE Northgate Way", city:"Seattle", lat:47.7106, lng:-122.3253, required_officers:2, status:"alert"},
+    {id:"demo-site-4", name:"Pier 66 Construction Site", code:"SEA-04", kind:"construction", address:"2601 Alaskan Way", city:"Seattle", lat:47.6097, lng:-122.3467, required_officers:1, status:"unmanned"},
+    {id:"demo-site-5", name:"Emerald Events Center", code:"SEA-05", kind:"event", address:"800 Occidental Ave S", city:"Seattle", lat:47.5980, lng:-122.3316, required_officers:1, status:"secure"},
+  ];
+
+  const officers = [
+    {id:"demo-officer-1", name:"Marcus Webb", callsign:"L1-01", rank:"Officer", phone:"(206) 555-0142", certifications:"Unarmed, First Aid/CPR", active:true, status:"on_duty", site_id:"demo-site-1", status_changed_at:minAgo(42)},
+    {id:"demo-officer-2", name:"Sarah Chen", callsign:"L1-02", rank:"Senior Officer", phone:"(206) 555-0187", certifications:"Unarmed, De-escalation, First Aid/CPR", active:true, status:"on_patrol", site_id:"demo-site-1", status_changed_at:minAgo(12)},
+    {id:"demo-officer-3", name:"David Ortiz", callsign:"L2-01", rank:"Officer", phone:"(206) 555-0164", certifications:"Unarmed", active:true, status:"on_break", site_id:"demo-site-2", status_changed_at:minAgo(8)},
+    {id:"demo-officer-4", name:"Angela Brooks", callsign:"L2-02", rank:"Officer", phone:"(206) 555-0119", certifications:"Unarmed, First Aid/CPR", active:true, status:"off_duty", site_id:null, status_changed_at:dayAgo(1)},
+    {id:"demo-officer-5", name:"James Whitfield", callsign:"L3-01", rank:"Shift Supervisor", phone:"(206) 555-0155", certifications:"Armed, De-escalation, Supervisor", active:true, status:"responding", site_id:"demo-site-3", status_changed_at:minAgo(3)},
+    {id:"demo-officer-6", name:"Priya Nair", callsign:"L3-02", rank:"Officer", phone:"(206) 555-0173", certifications:"Unarmed, First Aid/CPR", active:true, status:"traveling", site_id:"demo-site-3", status_changed_at:minAgo(6)},
+    {id:"demo-officer-7", name:"Tyrell Jackson", callsign:"L4-01", rank:"Officer", phone:"(206) 555-0128", certifications:"Unarmed", active:true, status:"on_duty", site_id:"demo-site-4", status_changed_at:minAgo(95)},
+    {id:"demo-officer-8", name:"Monique Davis", callsign:"L1-03", rank:"Officer", phone:"(206) 555-0196", certifications:"Unarmed", active:false, status:"off_duty", site_id:null, status_changed_at:dayAgo(9)},
+  ];
+
+  const checkpoints = [
+    {id:"demo-cp-1-1", site_id:"demo-site-1", name:"Main Lobby Entrance", seq:1, radius_m:30, lat:47.6206, lng:-122.3628, qr_token:"demo-cp-token-1-1"},
+    {id:"demo-cp-1-2", site_id:"demo-site-1", name:"Parking Garage — Level 2", seq:2, radius_m:30, lat:47.6203, lng:-122.3631, qr_token:"demo-cp-token-1-2"},
+    {id:"demo-cp-1-3", site_id:"demo-site-1", name:"Loading Dock — Rear", seq:3, radius_m:30, lat:47.6201, lng:-122.3625, qr_token:"demo-cp-token-1-3"},
+    {id:"demo-cp-1-4", site_id:"demo-site-1", name:"Rooftop Access", seq:4, radius_m:30, lat:47.6207, lng:-122.3630, qr_token:"demo-cp-token-1-4"},
+    {id:"demo-cp-2-1", site_id:"demo-site-2", name:"Main Gate", seq:1, radius_m:30, lat:47.6143, lng:-122.3168, qr_token:"demo-cp-token-2-1"},
+    {id:"demo-cp-2-2", site_id:"demo-site-2", name:"Pool & Courtyard", seq:2, radius_m:30, lat:47.6141, lng:-122.3171, qr_token:"demo-cp-token-2-2"},
+    {id:"demo-cp-2-3", site_id:"demo-site-2", name:"Mailroom", seq:3, radius_m:30, lat:47.6140, lng:-122.3166, qr_token:"demo-cp-token-2-3"},
+    {id:"demo-cp-3-1", site_id:"demo-site-3", name:"North Entrance", seq:1, radius_m:30, lat:47.7108, lng:-122.3254, qr_token:"demo-cp-token-3-1"},
+    {id:"demo-cp-3-2", site_id:"demo-site-3", name:"Food Court", seq:2, radius_m:30, lat:47.7105, lng:-122.3251, qr_token:"demo-cp-token-3-2"},
+    {id:"demo-cp-3-3", site_id:"demo-site-3", name:"Rear Delivery Bay", seq:3, radius_m:30, lat:47.7104, lng:-122.3256, qr_token:"demo-cp-token-3-3"},
+    {id:"demo-cp-4-1", site_id:"demo-site-4", name:"Site Trailer", seq:1, radius_m:30, lat:47.6098, lng:-122.3468, qr_token:"demo-cp-token-4-1"},
+    {id:"demo-cp-4-2", site_id:"demo-site-4", name:"Crane Zone Perimeter", seq:2, radius_m:30, lat:47.6096, lng:-122.3465, qr_token:"demo-cp-token-4-2"},
+    {id:"demo-cp-5-1", site_id:"demo-site-5", name:"Main Box Office", seq:1, radius_m:30, lat:47.5981, lng:-122.3317, qr_token:"demo-cp-token-5-1"},
+    {id:"demo-cp-5-2", site_id:"demo-site-5", name:"Backstage Access", seq:2, radius_m:30, lat:47.5979, lng:-122.3314, qr_token:"demo-cp-token-5-2"},
+  ];
+
+  const patrols = [
+    {id:"demo-patrol-1", site_id:"demo-site-1", officer_id:"demo-officer-2", name:"Patrol", status:"active", started_at:minAgo(25), completed_at:null},
+    {id:"demo-patrol-2", site_id:"demo-site-3", officer_id:"demo-officer-6", name:"Patrol", status:"active", started_at:minAgo(40), completed_at:null},
+    {id:"demo-patrol-3", site_id:"demo-site-1", officer_id:"demo-officer-1", name:"Patrol", status:"completed", started_at:hrAgo(3), completed_at:hrAgo(2.3)},
+    {id:"demo-patrol-4", site_id:"demo-site-2", officer_id:"demo-officer-3", name:"Patrol", status:"completed", started_at:dayAgo(1), completed_at:dayAgo(1)},
+  ];
+
+  const scans = [
+    {id:"demo-scan-1", patrol_id:"demo-patrol-1", officer_id:"demo-officer-2", checkpoint_id:"demo-cp-1-1", scanned_at:minAgo(24), verified:true, lat:47.6206, lng:-122.3628, photo_url:null},
+    {id:"demo-scan-2", patrol_id:"demo-patrol-1", officer_id:"demo-officer-2", checkpoint_id:"demo-cp-1-2", scanned_at:minAgo(15), verified:true, lat:47.6203, lng:-122.3631, photo_url:null},
+    {id:"demo-scan-3", patrol_id:"demo-patrol-1", officer_id:"demo-officer-2", checkpoint_id:"demo-cp-1-3", scanned_at:minAgo(4), verified:false, lat:47.6215, lng:-122.3601, photo_url:null},
+    {id:"demo-scan-4", patrol_id:"demo-patrol-3", officer_id:"demo-officer-1", checkpoint_id:"demo-cp-1-1", scanned_at:hrAgo(2.9), verified:true, lat:47.6206, lng:-122.3628, photo_url:null},
+    {id:"demo-scan-5", patrol_id:"demo-patrol-3", officer_id:"demo-officer-1", checkpoint_id:"demo-cp-1-2", scanned_at:hrAgo(2.7), verified:true, lat:47.6203, lng:-122.3631, photo_url:null},
+    {id:"demo-scan-6", patrol_id:"demo-patrol-3", officer_id:"demo-officer-1", checkpoint_id:"demo-cp-1-3", scanned_at:hrAgo(2.5), verified:true, lat:47.6201, lng:-122.3625, photo_url:null},
+    {id:"demo-scan-7", patrol_id:"demo-patrol-3", officer_id:"demo-officer-1", checkpoint_id:"demo-cp-1-4", scanned_at:hrAgo(2.35), verified:true, lat:47.6207, lng:-122.3630, photo_url:null},
+  ];
+
+  const incidents = [
+    {id:"demo-incident-1", site_id:"demo-site-1", officer_id:"demo-officer-1", title:"Attempted forced entry — rear loading dock", category:"access", severity:"high", status:"investigating", description:"Found pry marks on the loading dock door frame during the 2am round. Door was secure but showed clear tool damage. Notified the property manager and increased patrol frequency on that entrance overnight.", occurred_at:hrAgo(26), lat:47.6201, lng:-122.3625, photo_urls:[img("inc1a"), img("inc1b")]},
+    {id:"demo-incident-2", site_id:"demo-site-3", officer_id:"demo-officer-5", title:"Broken glass door panel — north entrance", category:"property", severity:"medium", status:"open", description:"Tempered glass panel on the north entrance door cracked, cause unknown — possible attempted break-in or accidental impact. Taped off and maintenance notified.", occurred_at:hrAgo(5), lat:47.7108, lng:-122.3254, photo_urls:[img("inc2a")]},
+    {id:"demo-incident-3", site_id:"demo-site-2", officer_id:"demo-officer-3", title:"Vehicle parked in fire lane", category:"general", severity:"low", status:"resolved", description:"Silver sedan parked blocking the fire lane near building B. Left a courtesy notice; vehicle moved within the hour.", occurred_at:dayAgo(2), lat:47.6142, lng:-122.3169, photo_urls:[img("inc3a")]},
+    {id:"demo-incident-4", site_id:"demo-site-1", officer_id:"demo-officer-2", title:"Suspicious individual near parking garage", category:"safety", severity:"medium", status:"resolved", description:"Individual observed loitering near the Level 2 garage entrance for roughly 20 minutes, not a tenant or visitor on file. Approached and asked to leave; complied without incident.", occurred_at:dayAgo(3), lat:47.6203, lng:-122.3631, photo_urls:[]},
+    {id:"demo-incident-5", site_id:"demo-site-3", officer_id:"demo-officer-6", title:"Medical — visitor fall, EMS called", category:"medical", severity:"high", status:"resolved", description:"Visitor slipped on a wet floor near the food court entrance. Conscious and alert; EMS responded and transported for evaluation as a precaution. Area cordoned and wet-floor signage placed.", occurred_at:dayAgo(5), lat:47.7105, lng:-122.3251, photo_urls:[img("inc5a")]},
+    {id:"demo-incident-6", site_id:"demo-site-4", officer_id:"demo-officer-7", title:"Motion-activated light out — south stairwell", category:"property", severity:"low", status:"open", description:"South stairwell motion light not triggering. Flagged to the site super for bulb/sensor replacement.", occurred_at:hrAgo(1), lat:47.6098, lng:-122.3468, photo_urls:[img("inc6a")]},
+  ];
+
+  const patrolReports = [
+    {id:"demo-report-1", site_id:"demo-site-1", officer_id:"demo-officer-1", patrol_type:"foot", started_at:hrAgo(3), ended_at:hrAgo(2.3), areas_patrolled:"Lobby, Level 1–2 garage, rear loading dock", details:"Standard round, no issues. Loading dock door double-checked after this morning's incident report.", activity_types:["Nothing to report"], media_urls:[]},
+    {id:"demo-report-2", site_id:"demo-site-2", officer_id:"demo-officer-3", patrol_type:"vehicle", started_at:dayAgo(1), ended_at:dayAgo(1), areas_patrolled:"Perimeter loop, guest parking, pool area", details:"Noted one propped fire door near the building C stairwell — closed and reported to management for hinge repair.", activity_types:["Unlocked/broken door"], media_urls:[img("rep2a")]},
+    {id:"demo-report-3", site_id:"demo-site-4", officer_id:"demo-officer-7", patrol_type:"foot", started_at:hrAgo(2), ended_at:hrAgo(1.5), areas_patrolled:"Site trailer, crane zone perimeter, material laydown", details:"Fencing intact, no trespass. Generator running normally.", activity_types:["Nothing to report"], media_urls:[]},
+  ];
+
+  const messages = [
+    {id:"demo-msg-1", officer_id:"demo-officer-1", site_id:"demo-site-1", sender:"admin", body:"Radio check please, over.", is_priority:false, created_at:hrAgo(4)},
+    {id:"demo-msg-2", officer_id:"demo-officer-1", site_id:"demo-site-1", sender:"officer", body:"Copy, radio's five-by-five.", is_priority:false, created_at:hrAgo(3.98)},
+    {id:"demo-msg-3", officer_id:"demo-officer-1", site_id:"demo-site-1", sender:"admin", body:"10-4. Let me know when you start your midnight round.", is_priority:false, created_at:hrAgo(3.95)},
+    {id:"demo-msg-4", officer_id:"demo-officer-5", site_id:"demo-site-3", sender:"officer", body:"NEED ASSISTANCE — James Whitfield at Northgate Retail Plaza. Location: https://maps.google.com/?q=47.7106,-122.3253", is_priority:true, created_at:minAgo(3)},
+    {id:"demo-msg-5", officer_id:"demo-officer-5", site_id:"demo-site-3", sender:"admin", body:"On it — PD notified, ETA 4 min. Stay clear of the entrance.", is_priority:false, created_at:minAgo(2)},
+    {id:"demo-msg-6", officer_id:"demo-officer-6", site_id:"demo-site-3", sender:"officer", body:"Starting round", is_priority:false, created_at:minAgo(40)},
+    {id:"demo-msg-7", officer_id:"demo-officer-6", site_id:"demo-site-3", sender:"admin", body:"Copy — all clear reported at Emerald last week too, good work.", is_priority:false, created_at:minAgo(38)},
+  ];
+
+  const pings = [
+    {id:"demo-ping-1", officer_id:"demo-officer-1", lat:47.6206, lng:-122.3628, recorded_at:minAgo(1)},
+    {id:"demo-ping-2", officer_id:"demo-officer-2", lat:47.6209, lng:-122.3620, recorded_at:minAgo(1)},
+    {id:"demo-ping-3", officer_id:"demo-officer-3", lat:47.6144, lng:-122.3170, recorded_at:minAgo(2)},
+    {id:"demo-ping-4", officer_id:"demo-officer-5", lat:47.7108, lng:-122.3254, recorded_at:minAgo(1)},
+    {id:"demo-ping-5", officer_id:"demo-officer-6", lat:47.7101, lng:-122.3260, recorded_at:minAgo(9)},
+    {id:"demo-ping-6", officer_id:"demo-officer-7", lat:47.6098, lng:-122.3468, recorded_at:minAgo(1)},
+  ];
+
+  const shifts = [
+    {id:"demo-shift-1", officer_id:"demo-officer-1", site_id:"demo-site-1", starts_at:minAgo(42), clock_in_at:minAgo(42), clock_out_at:null},
+    {id:"demo-shift-2", officer_id:"demo-officer-2", site_id:"demo-site-1", starts_at:hrAgo(4), clock_in_at:hrAgo(4), clock_out_at:null},
+    {id:"demo-shift-3", officer_id:"demo-officer-1", site_id:"demo-site-1", starts_at:dayAgo(1), clock_in_at:dayAgo(1), clock_out_at:dayAgo(1)},
+    {id:"demo-shift-4", officer_id:"demo-officer-3", site_id:"demo-site-2", starts_at:minAgo(180), clock_in_at:minAgo(180), clock_out_at:null},
+    {id:"demo-shift-5", officer_id:"demo-officer-5", site_id:"demo-site-3", starts_at:hrAgo(6), clock_in_at:hrAgo(6), clock_out_at:null},
+  ];
+
+  const officer_directory = officers.filter(o=>o.active).map(o=>({id:o.id, name:o.name, callsign:o.callsign, photo_url:null}));
+
+  return {sites, officers, officer_directory, checkpoints, patrols, checkpoint_scans:scans, incidents, patrol_reports:patrolReports, messages, location_pings:pings, shifts, dispatches:[]};
+}
+
+// Generic in-memory stand-in for the Supabase query builder — enough of
+// select/eq/neq/gte/lte/order/limit/single/maybeSingle/insert/update/delete
+// to run this app's existing queries unmodified against demo data.
+function makeDemoClient(seed, rpcHandlers){
+  rpcHandlers = rpcHandlers || {};
+  function newId(){ return "demo-" + Math.random().toString(36).slice(2,10); }
+  function matchRow(row, filters){
+    return filters.every(f=>{
+      const v = row[f.col];
+      switch(f.op){
+        case "eq": return v === f.val;
+        case "neq": return v !== f.val;
+        case "gte": return v >= f.val;
+        case "lte": return v <= f.val;
+        default: return true;
+      }
+    });
+  }
+  function table(name){
+    let filters = [], orderCol = null, orderAsc = true, limitN = null;
+    let wantSingle = false, wantMaybeSingle = false;
+    let insertPayload = null, updatePayload = null, wantDelete = false;
+    const q = {
+      select(){ return q; },
+      eq(c,v){ filters.push({col:c,op:"eq",val:v}); return q; },
+      neq(c,v){ filters.push({col:c,op:"neq",val:v}); return q; },
+      gte(c,v){ filters.push({col:c,op:"gte",val:v}); return q; },
+      lte(c,v){ filters.push({col:c,op:"lte",val:v}); return q; },
+      order(c,opts){ orderCol=c; orderAsc = !(opts && opts.ascending===false); return q; },
+      limit(n){ limitN=n; return q; },
+      single(){ wantSingle=true; return q; },
+      maybeSingle(){ wantMaybeSingle=true; return q; },
+      insert(payload){ insertPayload=payload; return q; },
+      update(payload){ updatePayload=payload; return q; },
+      delete(){ wantDelete=true; return q; },
+      then(resolve){ resolve(run()); },
+    };
+    function run(){
+      if(!seed[name]) seed[name] = [];
+      const arr = seed[name];
+      if(insertPayload){
+        const rows = (Array.isArray(insertPayload) ? insertPayload : [insertPayload]).map(r=>({id:newId(), ...r}));
+        arr.push(...rows);
+        return {data: wantSingle ? rows[0] : rows, error:null};
+      }
+      if(updatePayload){
+        const matched = arr.filter(r=>matchRow(r, filters));
+        matched.forEach(r=>Object.assign(r, updatePayload));
+        return {data: matched, error:null};
+      }
+      if(wantDelete){
+        seed[name] = arr.filter(r=>!matchRow(r, filters));
+        return {data:null, error:null};
+      }
+      let rows = arr.filter(r=>matchRow(r, filters));
+      if(orderCol){
+        rows = rows.slice().sort((a,b)=>{
+          const av=a[orderCol], bv=b[orderCol];
+          if(av===bv) return 0;
+          return (av>bv ? 1 : -1) * (orderAsc ? 1 : -1);
+        });
+      }
+      if(limitN!=null) rows = rows.slice(0, limitN);
+      if(wantSingle) return rows.length ? {data:rows[0], error:null} : {data:null, error:{message:"No rows found"}};
+      if(wantMaybeSingle) return {data: rows[0] || null, error:null};
+      return {data: rows, error:null};
+    }
+    return q;
+  }
+  return {
+    from(name){ return table(name); },
+    rpc(name, params){
+      return { then(resolve){
+        const handler = rpcHandlers[name];
+        resolve(handler ? handler(params, seed) : {data:null, error:{message:`Demo mode: ${name} not implemented`}});
+      }};
+    },
+    storage: {
+      from(){
+        return {
+          upload: async ()=> ({data:{path:"demo"}, error:null}),
+          createSignedUrl: async (path)=> ({data:{signedUrl: path}, error:null}),
+        };
+      }
+    }
+  };
+}
+
+const DEMO_RPC = {
+  verify_officer_pin(params, seed){
+    if(params.p_pin !== DEMO_PIN) return {data:null, error:{message:"Invalid PIN"}};
+    const o = seed.officers.find(x=>x.callsign===params.p_callsign);
+    if(!o) return {data:null, error:{message:"Not found"}};
+    return {data:{id:o.id, name:o.name, callsign:o.callsign, photo_url:null}, error:null};
+  },
+  officer_clock_in(params, seed){
+    const o = seed.officers.find(x=>x.id===params.p_officer_id);
+    if(o){ o.status="on_duty"; o.site_id=params.p_site_id; o.status_changed_at=new Date().toISOString(); }
+    const shift = {id:"demo-shift-"+Date.now(), officer_id:params.p_officer_id, site_id:params.p_site_id, clock_in_at:new Date().toISOString(), clock_out_at:null, starts_at:new Date().toISOString()};
+    seed.shifts.push(shift);
+    return {data:shift, error:null};
+  },
+  officer_clock_out(params, seed){
+    const shift = seed.shifts.find(s=>s.id===params.p_shift_id) || seed.shifts.find(s=>s.officer_id===params.p_officer_id && !s.clock_out_at);
+    if(shift) shift.clock_out_at = new Date().toISOString();
+    const o = seed.officers.find(x=>x.id===params.p_officer_id);
+    if(o){ o.status="off_duty"; o.status_changed_at=new Date().toISOString(); }
+    return {data:{ok:true}, error:null};
+  },
+  officer_ping(params, seed){
+    seed.location_pings.unshift({id:"demo-ping-"+Date.now(), officer_id:params.p_officer_id, lat:params.p_lat, lng:params.p_lng, recorded_at:new Date().toISOString()});
+    return {data:{ok:true}, error:null};
+  },
+  officer_set_status(params, seed){
+    const o = seed.officers.find(x=>x.id===params.p_officer_id);
+    if(o){ o.status = params.p_status; o.status_changed_at = new Date().toISOString(); }
+    return {data:{ok:true}, error:null};
+  },
+  officer_switch_site(params, seed){
+    const o = seed.officers.find(x=>x.id===params.p_officer_id);
+    if(o) o.site_id = params.p_site_id;
+    return {data:{ok:true}, error:null};
+  },
+  officer_scan_checkpoint(params, seed){
+    seed.checkpoint_scans.push({id:"demo-scan-"+Date.now(), patrol_id:params.p_patrol_id, officer_id:params.p_officer_id, checkpoint_id:params.p_checkpoint_id, scanned_at:new Date().toISOString(), verified:true, lat:params.p_lat, lng:params.p_lng, photo_url:params.p_photo_url||null});
+    return {data:{verified:true}, error:null};
+  },
+  officer_manual_checkpoint(params, seed){
+    seed.checkpoint_scans.push({id:"demo-scan-"+Date.now(), patrol_id:params.p_patrol_id, officer_id:params.p_officer_id, checkpoint_id:params.p_checkpoint_id, scanned_at:new Date().toISOString(), verified:true, lat:params.p_lat, lng:params.p_lng, photo_url:null});
+    return {data:{verified:true}, error:null};
+  },
+  officer_submit_incident(params, seed){
+    seed.incidents.unshift({id:"demo-incident-"+Date.now(), site_id:params.p_site_id, officer_id:params.p_officer_id, title:params.p_title, category:params.p_category, severity:params.p_severity, status:"open", description:params.p_description, occurred_at:new Date().toISOString(), lat:params.p_lat, lng:params.p_lng, photo_urls:params.p_photo_urls||[]});
+    return {data:{ok:true}, error:null};
+  },
+  officer_submit_patrol_report(params, seed){
+    seed.patrol_reports.unshift({id:"demo-report-"+Date.now(), site_id:params.p_site_id, officer_id:params.p_officer_id, patrol_type:params.p_patrol_type, started_at:params.p_started_at, ended_at:new Date().toISOString(), areas_patrolled:params.p_areas_patrolled, details:params.p_details, activity_types:params.p_activity_types||[], media_urls:params.p_media_urls||[]});
+    return {data:{ok:true}, error:null};
+  },
+  officer_send_message(params, seed){
+    seed.messages.push({id:"demo-msg-"+Date.now(), officer_id:params.p_officer_id, sender:"officer", body:params.p_body, is_priority:false, created_at:new Date().toISOString()});
+    return {data:{ok:true}, error:null};
+  },
+  officer_send_priority_message(params, seed){
+    seed.messages.push({id:"demo-msg-"+Date.now(), officer_id:params.p_officer_id, sender:"officer", body:params.p_body, is_priority:true, created_at:new Date().toISOString()});
+    return {data:{ok:true}, error:null};
+  },
+};
+
+const sb = DEMO_MODE ? makeDemoClient(buildDemoSeed(), DEMO_RPC) : supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// =========================================================
+// State
+// =========================================================
+let state = {
+  officer: null,      // {id, name, callsign, photo_url}
+  pin: null,           // kept in memory only, re-sent per write for verification
+  site: null,
+  shift: null,
+  patrol: null,
+  checkpoints: [],
+  scans: [],
+  watchId: null,
+};
+
+function loadSession(){
+  const raw = sessionStorage.getItem("lp_session");
+  if(!raw) return;
+  try{
+    const s = JSON.parse(raw);
+    state.officer = s.officer; state.pin = s.pin; state.site = s.site; state.shift = s.shift;
+  }catch(e){}
+}
+function saveSession(){
+  sessionStorage.setItem("lp_session", JSON.stringify({
+    officer: state.officer, pin: state.pin, site: state.site, shift: state.shift
+  }));
+}
+function clearSession(){
+  sessionStorage.removeItem("lp_session");
+  state = {officer:null, pin:null, site:null, shift:null, patrol:null, checkpoints:[], scans:[], watchId:null};
+}
+
+function toast(msg, kind="default"){
+  const el = document.createElement("div");
+  el.className = "toast " + kind;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+
+async function sendShiftReportEmail(clockInAt, site, finalNote){
+  if(DEMO_MODE){
+    console.log("Demo mode — skipping real shift report email.");
+    return;
+  }
+  if(!window.emailjs || EMAILJS_PUBLIC_KEY === "YOUR_EMAILJS_PUBLIC_KEY"){
+    console.warn("EmailJS not configured yet — skipping shift report email.");
+    return;
+  }
+  try{
+    const clockOutAt = new Date().toISOString();
+    const fmt = (iso)=> new Date(iso).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
+    const esc = (s)=> String(s ?? "").replace(/[<>&]/g, c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+
+    const [scansRes, incidentsRes, reportsRes, checkpointsRes] = await Promise.all([
+      sb.from("checkpoint_scans").select("*").eq("officer_id", state.officer.id).gte("scanned_at", clockInAt).lte("scanned_at", clockOutAt),
+      sb.from("incidents").select("*").eq("officer_id", state.officer.id).gte("occurred_at", clockInAt).lte("occurred_at", clockOutAt),
+      sb.from("patrol_reports").select("*").eq("officer_id", state.officer.id).gte("started_at", clockInAt).lte("ended_at", clockOutAt),
+      sb.from("checkpoints").select("*").eq("site_id", site?.id || ""),
+    ]);
+    const scans = scansRes.data || [];
+    const incidents = incidentsRes.data || [];
+    const reports = reportsRes.data || [];
+    const cpById = {};
+    (checkpointsRes.data||[]).forEach(c=>{ cpById[c.id] = c; });
+
+    const signedUrlCache = {};
+    async function getSignedMediaUrl(path){
+      if(!path) return null;
+      if(signedUrlCache[path]) return signedUrlCache[path];
+      const {data, error} = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(path, 60*60*24*365*10); // 10 years — effectively permanent
+      if(error || !data) return null;
+      signedUrlCache[path] = data.signedUrl;
+      return data.signedUrl;
+    }
+    async function mediaLinksHtml(paths){
+      if(!paths || !paths.length) return "";
+      const links = [];
+      let photoNum = 0, videoNum = 0;
+      for(const path of paths){
+        const url = await getSignedMediaUrl(path);
+        if(!url) continue;
+        const isVideo = /\.(mp4|mov|webm|m4v)$/i.test(path);
+        const label = isVideo ? `View Video ${++videoNum}` : `View Photo ${++photoNum}`;
+        links.push(`<a href="${url}" style="display:inline-block; font-size:11px; font-weight:600; color:#8a6a1f; background:#f5ecd6; border-radius:5px; padding:5px 10px; margin:6px 6px 0 0; text-decoration:none;">${label} &rarr;</a>`);
+      }
+      return links.length ? `<div>${links.join("")}</div>` : "";
+    }
+
+    const sectionHeading = (label, count)=>
+      `<div style="color:#8a6a1f; font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:700; margin:22px 0 10px; padding-bottom:6px; border-bottom:1px solid #eeece5;">${label} <span style="color:#a8a69c; font-weight:500;">(${count})</span></div>`;
+    const emptyRow = (label)=>
+      `<div style="color:#a8a69c; font-size:13px; font-style:italic; padding:2px 0 4px;">No ${label} logged this shift.</div>`;
+    const card = (accentColor, innerHtml)=>
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px; background:#faf9f6; border:1px solid #eeece5; border-left:3px solid ${accentColor}; border-radius:0 6px 6px 0;">
+        <tr><td style="padding:12px 16px;">${innerHtml}</td></tr>
+      </table>`;
+    const titleRow = (leftHtml, rightHtml)=>
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td style="font-size:13px; font-weight:700; color:#1a1a17;">${leftHtml}</td>
+        <td style="text-align:right; white-space:nowrap; padding-left:10px;">${rightHtml}</td>
+      </tr></table>`;
+    const badge = (text, color, bg)=>
+      `<span style="display:inline-block; font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; color:${color}; background:${bg}; border-radius:4px; padding:3px 8px;">${text}</span>`;
+
+    let summary = "";
+
+    if(finalNote){
+      summary += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px; background:#faf9f6; border:1px solid #eeece5; border-left:3px solid #b8933f; border-radius:0 6px 6px 0;">
+        <tr><td style="padding:12px 16px;">
+          <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:700; color:#8a6a1f; margin-bottom:4px;">Final Note</div>
+          <div style="color:#2a2a26; font-size:13px; line-height:1.5;">${esc(finalNote)}</div>
+        </td></tr>
+      </table>`;
+    }
+
+    summary += sectionHeading("Checkpoint Scans", scans.length);
+    if(scans.length){
+      summary += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:6px;">`;
+      summary += scans.map(s=>{
+        const cp = cpById[s.checkpoint_id];
+        const b = s.verified ? badge("Verified", "#3f7350", "#e6f0e8") : badge("Flagged", "#8a6a1f", "#f5ecd6");
+        return `<tr style="border-bottom:1px solid #eeece5;">
+          <td style="padding:9px 0; font-size:13px; color:#2a2a26;">${fmt(s.scanned_at)} &mdash; ${esc(cp?.name || "Unknown checkpoint")}</td>
+          <td style="padding:9px 0; text-align:right; white-space:nowrap;">${b}</td>
+        </tr>`;
+      }).join("");
+      summary += `</table>`;
+    } else {
+      summary += emptyRow("checkpoint scans");
+    }
+
+    summary += sectionHeading("Patrol Reports", reports.length);
+    if(reports.length){
+      for(const r of reports){
+        const tags = (r.activity_types||[]).map(a=>`<span style="display:inline-block; background:#f2e9d3; color:#7a5c1e; font-size:10px; font-weight:700; border-radius:4px; padding:3px 8px; margin:6px 6px 0 0;">${esc(a)}</span>`).join("");
+        const mediaLinks = await mediaLinksHtml(r.media_urls);
+        summary += card("#b8933f", `
+          ${titleRow(`${esc(r.patrol_type.charAt(0).toUpperCase()+r.patrol_type.slice(1))} Patrol`, `<span style="color:#8a887e; font-size:12px; font-weight:400;">${fmt(r.ended_at)}</span>`)}
+          <div style="color:#6b6a63; font-size:12px; margin-top:3px;">${esc(r.areas_patrolled) || "No area noted"}</div>
+          ${tags}
+          ${r.details ? `<div style="color:#2a2a26; font-size:12px; margin-top:8px; line-height:1.5;">${esc(r.details)}</div>` : ""}
+          ${mediaLinks}
+        `);
+      }
+    } else {
+      summary += emptyRow("patrol reports");
+    }
+
+    summary += sectionHeading("Incidents", incidents.length);
+    if(incidents.length){
+      for(const i of incidents){
+        const sevMap = { high: ["#a23c30","#f7e2df"], medium: ["#8a6a1f","#f5ecd6"], low: ["#6b6a63","#eeece5"] };
+        const [sevColor, sevBg] = sevMap[i.severity] || sevMap.low;
+        const mediaLinks = await mediaLinksHtml(i.photo_urls);
+        summary += card(sevColor, `
+          ${titleRow(esc(i.title), badge(i.severity, sevColor, sevBg))}
+          <div style="color:#8a887e; font-size:12px; margin-top:3px;">${fmt(i.occurred_at)} &mdash; ${esc(i.category.charAt(0).toUpperCase()+i.category.slice(1))}</div>
+          ${i.description ? `<div style="color:#2a2a26; font-size:12px; margin-top:8px; line-height:1.5;">${esc(i.description)}</div>` : ""}
+          ${mediaLinks}
+        `);
+      }
+    } else {
+      summary += emptyRow("incidents");
+    }
+
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: SHIFT_REPORT_EMAIL,
+      officer_name: state.officer.name,
+      callsign: state.officer.callsign,
+      site_name: site?.name || "Unknown site",
+      clock_in: fmt(clockInAt),
+      clock_out: fmt(clockOutAt),
+      summary: summary,
+    });
+  }catch(e){
+    console.error("Shift report email failed:", e);
+  }
+}
+
+function getLocation(){
+  return new Promise((resolve)=>{
+    if(!navigator.geolocation){ resolve({lat:null,lng:null}); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}),
+      err => resolve({lat:null, lng:null}),
+      {enableHighAccuracy:true, timeout:8000}
+    );
+  });
+}
+
+function startLocationPings(){
+  if(!navigator.geolocation) return;
+  state.watchId = navigator.geolocation.watchPosition(async (pos)=>{
+    if(!state.officer || !state.shift) return;
+    await callOrQueue("ping", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id,
+      p_lat: pos.coords.latitude, p_lng: pos.coords.longitude
+    });
+  }, ()=>{}, {enableHighAccuracy:true, maximumAge:60000});
+}
+function stopLocationPings(){
+  if(state.watchId!=null && navigator.geolocation) navigator.geolocation.clearWatch(state.watchId);
+  state.watchId = null;
+}
+
+// =========================================================
+// Camera / QR scanner lifecycle — the single source of truth
+// for whether a camera is running, so it can always be killed
+// from anywhere: back button, tab hidden, page closing.
+// =========================================================
+let activeScanner = null;   // Html5Qrcode instance, if one is running
+let scannerRunning = false;
+
+async function stopActiveScanner(){
+  if(!activeScanner){ return; }
+  const s = activeScanner;
+  activeScanner = null;
+  if(scannerRunning){
+    scannerRunning = false;
+    try{ await s.stop(); }catch(e){}
+  }
+  try{ s.clear(); }catch(e){}
+  // Safety net: iOS Safari has known cases where stop() doesn't fully
+  // release the hardware — directly kill any leftover video tracks too
+  document.querySelectorAll("#qr-reader video").forEach(v=>{
+    if(v.srcObject){
+      try{ v.srcObject.getTracks().forEach(t=>t.stop()); }catch(e){}
+      v.srcObject = null;
+    }
+  });
+  const reader = document.getElementById("qr-reader");
+  if(reader) reader.style.display = "none";
+  const torchBtn = document.getElementById("torchBtn");
+  if(torchBtn) torchBtn.remove();
+}
+
+// Registered once — kills the camera the instant the tab is hidden,
+// backgrounded, or the page is closing, regardless of what screen
+// the app thinks it's on
+document.addEventListener("visibilitychange", ()=>{ if(document.hidden) stopActiveScanner(); });
+window.addEventListener("pagehide", stopActiveScanner);
+window.addEventListener("beforeunload", stopActiveScanner);
+
+function vibrate(pattern){
+  if(navigator.vibrate){ try{ navigator.vibrate(pattern); }catch(e){} }
+}
+
+// =========================================================
+// Offline queue — the durable local store for every write
+// that must survive a dead zone. Persists in localStorage,
+// so it survives app restarts and phone reboots as long as
+// the officer doesn't clear Safari's site data.
+//
+// Scope, on purpose: scans, incidents, patrol reports, status
+// changes, and messages are queueable. Login, clock in/out,
+// switching sites, and starting a brand-new patrol still need
+// a live connection — those are the moments that need a real
+// server response before the app can meaningfully continue.
+// =========================================================
+const QUEUE_KEY = "lp_offline_queue";
+const FAILED_KEY = "lp_offline_failed";
+const LAST_SYNC_KEY = "lp_last_sync_at";
+
+function loadQueue(){ try{ return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]"); }catch(e){ return []; } }
+function saveQueue(q){ try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }catch(e){ console.error("Queue save failed:", e); } }
+function loadFailed(){ try{ return JSON.parse(localStorage.getItem(FAILED_KEY) || "[]"); }catch(e){ return []; } }
+function saveFailed(f){ try{ localStorage.setItem(FAILED_KEY, JSON.stringify(f)); }catch(e){} }
+function markSynced(){ localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString()); }
+function lastSyncAt(){ return localStorage.getItem(LAST_SYNC_KEY); }
+
+function newQueueId(){
+  return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now()+"-"+Math.random().toString(36).slice(2));
+}
+
+// Each handler performs the real Supabase call for a queued item's type.
+// Every one of these mirrors an existing direct call elsewhere in the app —
+// nothing new is invented here, this just gives queued items a way to replay.
+const QUEUE_HANDLERS = {
+  ping: (p)=> sb.rpc("officer_ping", p),
+  status: (p)=> sb.rpc("officer_set_status", p),
+  checkpoint_scan: (p)=> sb.rpc("officer_scan_checkpoint", p),
+  manual_checkpoint: (p)=> sb.rpc("officer_manual_checkpoint", p),
+  incident: (p)=> sb.rpc("officer_submit_incident", p),
+  patrol_report: (p)=> sb.rpc("officer_submit_patrol_report", p),
+  complete_patrol: (p)=> sb.from("patrols").update({status:"completed", completed_at:p.completed_at}).eq("id", p.patrol_id),
+  message: (p)=> sb.rpc("officer_send_message", p),
+  priority_message: (p)=> sb.rpc("officer_send_priority_message", p),
+};
+
+const QUEUE_LABEL = {
+  ping: "Location update", status: "Status change", checkpoint_scan: "Checkpoint scan",
+  manual_checkpoint: "Manual checkpoint mark", incident: "Incident report", patrol_report: "Patrol report",
+  complete_patrol: "Round completion", message: "Message", priority_message: "Assistance request",
+};
+
+function enqueue(type, payload){
+  const q = loadQueue();
+  q.push({id:newQueueId(), type, payload, createdAt:new Date().toISOString()});
+  saveQueue(q);
+  updateSyncPill();
+}
+
+// The single entry point every write in this app goes through. Tries the
+// real call first; if the network genuinely isn't there, it queues instead
+// of failing. If the SERVER responds (even with a rejection), that's not a
+// connectivity problem — it's surfaced immediately, not queued, because
+// retrying a rejected action later would just fail again silently.
+async function callOrQueue(type, payload){
+  if(!navigator.onLine){
+    enqueue(type, payload);
+    return {queued:true};
+  }
+  try{
+    const result = await QUEUE_HANDLERS[type](payload);
+    if(!result.error){
+      markSynced();
+      flushQueue(); // catch up any older backlog now that we know we're online
+    }
+    return result;
+  }catch(e){
+    // A thrown exception here means the fetch itself never reached the
+    // server — that's a connectivity failure, not an application error
+    enqueue(type, payload);
+    return {queued:true};
+  }
+}
+
+let flushing = false;
+async function flushQueue(){
+  if(flushing) return;
+  flushing = true;
+  try{
+    let q = loadQueue();
+    while(q.length){
+      const item = q[0];
+      const handler = QUEUE_HANDLERS[item.type];
+      if(!handler){ q.shift(); saveQueue(q); q = loadQueue(); continue; }
+      let result;
+      try{
+        result = await handler(item.payload);
+      }catch(e){
+        break; // still offline — stop here, the rest stays queued for next try
+      }
+      if(result.error){
+        // Server reached us and rejected it — move to the failed list instead
+        // of silently dropping it, so the officer can see and act on it
+        const failed = loadFailed();
+        failed.push({...item, failedAt:new Date().toISOString(), reason: result.error.message || "Rejected by server"});
+        saveFailed(failed);
+      }
+      q.shift();
+      saveQueue(q);
+      q = loadQueue();
+    }
+    if(loadQueue().length === 0) markSynced();
+  } finally {
+    flushing = false;
+    updateSyncPill();
+  }
+}
+
+function updateSyncPill(){
+  const pill = document.getElementById("syncPill");
+  if(!pill) return;
+  const pending = loadQueue().length;
+  const failed = loadFailed().length;
+  if(pending > 0){
+    pill.textContent = `Offline — ${pending} pending`;
+    pill.className = "sync-pill warn";
+  } else if(failed > 0){
+    pill.textContent = `${failed} item${failed===1?"":"s"} failed to sync`;
+    pill.className = "sync-pill danger";
+  } else {
+    const ts = lastSyncAt();
+    const t = ts ? timeInState(ts) : null;
+    pill.textContent = !t ? "Synced" : t === "just now" ? "Synced just now" : `Synced ${t} ago`;
+    pill.className = "sync-pill ok";
+  }
+}
+
+setInterval(flushQueue, 20000);
+window.addEventListener("online", flushQueue);
+
+async function setOfficerStatus(status){
+  const {error} = await callOrQueue("status", {p_officer_id: state.officer.id, p_pin: state.pin, p_status: status});
+  if(error) console.error("Status update failed:", error);
+  return !error;
+}
+
+const STATUS_LABEL = {
+  on_duty: "On Duty", on_patrol: "On Patrol", responding: "Responding",
+  on_break: "On Break", traveling: "Traveling",
+};
+const STATUS_COLOR = {
+  on_duty: "var(--gold)", on_patrol: "var(--success)", responding: "var(--danger)",
+  on_break: "var(--muted)", traveling: "var(--warn)",
+};
+function timeInState(since){
+  const mins = Math.floor((Date.now() - new Date(since).getTime())/60000);
+  if(mins < 1) return "just now";
+  if(mins < 60) return `${mins}m`;
+  const h = Math.floor(mins/60), m = mins%60;
+  return `${h}h ${m}m`;
+}
+
+function avatarStyle(name){
+  let hash = 0;
+  for(let i=0; i<name.length; i++){ hash = name.charCodeAt(i) + ((hash<<5)-hash); }
+  const hue = Math.abs(hash) % 360;
+  return `background:linear-gradient(135deg, hsl(${hue} 70% 48%), hsl(${(hue+45)%360} 65% 30%));`;
+}
+function initialsOf(name){
+  return (name||"").split(" ").map(x=>x[0]).filter(Boolean).slice(0,2).join("").toUpperCase();
+}
+
+const icons = {
+  clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
+  qr: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M20 14v3h-3M17 21h3v-3"/></svg>`,
+  warning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 1 21h22L12 3z"/><path d="M12 10v4M12 17h.01"/></svg>`,
+  logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>`,
+  clipboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="4" width="12" height="18" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6"/></svg>`,
+  shield: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5z"/></svg>`,
+  chat: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.4 8.4 0 0 1-8.4 8.4H12a8.4 8.4 0 0 1-3.4-.7L3 21l1.9-5.7A8.4 8.4 0 1 1 21 11.5z"/></svg>`,
+  siren: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2a7 7 0 0 0-7 7v6h14V9a7 7 0 0 0-7-7z"/><path d="M5 15h14v3a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1zM12 2V0M8 3l-1-1M16 3l1-1"/></svg>`,
+  lion: `<svg viewBox="0 0 64 64" fill="currentColor"><path d="M14 50c3.2-7.4 7.1-12.4 12.4-16.2-.5-3.6.3-7.7 3.2-10.4 2.5-2.3 6-3 9.2-2 .9-3 3.7-5.5 7.4-6 .7 3.2-.3 6.4-2.6 8.4 2.8 1.6 4.6 4.6 4.6 8 0 2.4-.9 4.6-2.4 6.3 3.6 3.6 6.1 8.1 7.6 11.9H14zm17.2-21c-1.6 1.3-2.2 3.5-1.7 5.5l7.5-2.4c-.4-2.6-3-4.5-5.8-3.1z"/></svg>`,
+  mappin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`,
+  people: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+  swap: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 3l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 21l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`,
+};
+
+// =========================================================
+// Screens
+// =========================================================
+const app = document.getElementById("app");
+
+async function renderLogin(){
+  const {data: officers} = await sb.from("officer_directory").select("*").order("name");
+  let selected = null, pin = "";
+
+  function draw(){
+    app.innerHTML = `
+      <div class="screen">
+        <div class="brand">${icons.lion}<div class="brand-text"><div class="l">Lion Patrol</div><div class="s">Field Sign-in</div></div></div>
+        <label>Officer</label>
+        <select id="officerSelect">
+          <option value="">Select your name</option>
+          ${(officers||[]).map(o=>`<option value="${o.id}" ${selected===o.id?"selected":""}>${o.name} — ${o.callsign}</option>`).join("")}
+        </select>
+        <label>PIN</label>
+        <div class="pin-dots">${[0,1,2,3].map(i=>`<div class="pin-dot ${pin.length>i?"filled":""}"></div>`).join("")}</div>
+        <div class="err" id="loginErr"></div>
+        <div class="keypad">
+          ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="key" data-n="${n}">${n}</button>`).join("")}
+          <button class="key ghost" id="clearPin">Clear</button>
+          <button class="key" data-n="0">0</button>
+          <button class="key ghost" id="delPin">⌫</button>
+        </div>
+        <button class="btn btn-primary" id="loginBtn" style="margin-top:16px;" ${(!selected||pin.length<4)?"disabled":""}>Sign in</button>
+      </div>`;
+
+    document.getElementById("officerSelect").onchange = (e)=>{ selected = e.target.value || null; draw(); };
+    document.querySelectorAll(".key[data-n]").forEach(b=>{
+      b.onclick = ()=>{ if(pin.length<4){ pin += b.dataset.n; draw(); } };
+    });
+    document.getElementById("clearPin").onclick = ()=>{ pin=""; draw(); };
+    document.getElementById("delPin").onclick = ()=>{ pin = pin.slice(0,-1); draw(); };
+    document.getElementById("loginBtn").onclick = doLogin;
+  }
+
+  async function doLogin(){
+    const officer = (officers||[]).find(o=>o.id===selected);
+    if(!officer) return;
+    document.getElementById("loginErr").textContent = "";
+    const {data, error} = await sb.rpc("verify_officer_pin", {p_callsign: officer.callsign, p_pin: pin});
+    if(error || !data){
+      document.getElementById("loginErr").textContent = "Incorrect PIN. Try again.";
+      pin = ""; draw();
+      return;
+    }
+    state.officer = {id:data.id, name:data.name, callsign:data.callsign, photo_url:data.photo_url};
+    state.pin = pin;
+    saveSession();
+    renderHome();
+  }
+
+  draw();
+}
+
+async function renderHome(){
+  const {data: sites} = await sb.from("sites").select("*").order("name");
+  const {data: myMessages} = await sb.from("messages").select("*")
+    .eq("officer_id", state.officer.id).order("created_at", {ascending:false}).limit(1);
+  const lastSeen = localStorage.getItem("lp_last_seen_msg_"+state.officer.id) || "0";
+  const hasUnread = myMessages && myMessages[0] && myMessages[0].sender==="admin" && myMessages[0].created_at > lastSeen;
+  const onDuty = !!state.shift;
+
+  let officerRow = null, patrolProgress = null, weeklyVerified = null;
+  if(onDuty){
+    const {data: o} = await sb.from("officers").select("*").eq("id", state.officer.id).single();
+    officerRow = o;
+    if(state.localStatus && officerRow?.status === state.localStatus){
+      state.localStatus = null; state.localStatusAt = null; // server confirmed it — stop overriding
+    }
+    const {data: activePatrol} = await sb.from("patrols").select("*")
+      .eq("site_id", state.site.id).eq("officer_id", state.officer.id).eq("status","active").maybeSingle();
+    if(activePatrol){
+      const [{data: cps}, {data: scans}] = await Promise.all([
+        sb.from("checkpoints").select("id").eq("site_id", state.site.id),
+        sb.from("checkpoint_scans").select("checkpoint_id").eq("patrol_id", activePatrol.id),
+      ]);
+      const doneCount = new Set((scans||[]).map(s=>s.checkpoint_id)).size;
+      patrolProgress = {done: doneCount, total: (cps||[]).length};
+    }
+
+    const weekAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+    const {data: weekScans} = await sb.from("checkpoint_scans").select("id,verified").eq("officer_id", state.officer.id).eq("verified", true).gte("scanned_at", weekAgo);
+    weeklyVerified = (weekScans || []).length;
+  }
+
+  // Prefer what the officer just picked over what we fetched — if a status
+  // change is still sitting in the offline queue, the server hasn't caught
+  // up yet, but the banner should show what they actually chose, not stale data
+  const status = state.localStatus || officerRow?.status || "on_duty";
+  const statusSince = state.localStatus ? state.localStatusAt : officerRow?.status_changed_at;
+  const statusColor = STATUS_COLOR[status] || "var(--gold)";
+  const patrolLabel = patrolProgress ? `Resume Patrol — ${patrolProgress.done} of ${patrolProgress.total}` : "Start Patrol";
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="topbar">
+        <div class="brand"><div class="avatar" style="${avatarStyle(state.officer.name)}">${initialsOf(state.officer.name)}</div><div class="brand-text"><div class="l">${state.officer.name}</div><div class="s">${state.officer.callsign}</div></div></div>
+        ${!onDuty ? `<div class="status-pill"><span class="dot"></span>Off Duty</div>` : `<span id="syncPill" class="sync-pill ok"></span>`}
+      </div>
+
+      ${loadFailed().length ? `<div class="muted-link" id="syncIssuesLink" style="color:var(--danger); margin:-14px 0 14px;">${loadFailed().length} item${loadFailed().length===1?"":"s"} failed to sync — Review</div>` : ""}
+
+      ${onDuty ? `
+        <div class="status-console" id="statusBanner" style="cursor:pointer; --sc-accent:${statusColor};">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+            <div>
+              <div class="eyebrow">${STATUS_LABEL[status] || status}</div>
+              <h3>${state.site?.name || "Assigned site"}</h3>
+              <p>${statusSince ? timeInState(statusSince) : ""} in this state</p>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:center; gap:8px; flex-shrink:0;">
+              <span class="pulse"></span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.6" width="14" height="14"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
+          </div>
+          <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;">Tap to update status</div>
+        </div>
+        ${weeklyVerified !== null ? `
+          <div style="display:flex; align-items:center; gap:8px; margin:-2px 0 10px 4px; color:var(--muted); font-size:12px;">
+            <span class="icon20" style="width:14px; height:14px; color:var(--success);">${icons.shield}</span>
+            <span>${weeklyVerified} verified round${weeklyVerified===1?'':'s'} this week</span>
+          </div>
+        ` : ""}
+      ` : ""}
+
+      <div class="card dispatch-card" id="tileMessages" style="cursor:pointer;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span class="icon20" style="color:var(--warn); flex-shrink:0;">${icons.chat}</span>
+            <div>
+              <div class="dispatch-label">Command</div>
+              <p style="margin:4px 0 0; font-size:14px;">${hasUnread ? "New message" : "Message Command"}</p>
+            </div>
+          </div>
+          ${hasUnread ? `<span style="width:9px;height:9px;border-radius:50%;background:var(--warn); flex-shrink:0;"></span>` : ""}
+        </div>
+      </div>
+
+      ${onDuty ? `
+        <button class="btn btn-primary" id="btnPatrol" style="margin-top:6px;">${icons.shield}${patrolLabel}</button>
+        <button class="btn btn-secondary" id="btnIncident">${icons.warning}Log Incident</button>
+
+        <button class="btn btn-assist" id="btnAssist" style="margin-top:12px;">${icons.siren}Need Assistance</button>
+        <div style="display:flex; gap:10px; margin-top:8px;">
+          <a href="tel:911" class="btn btn-secondary" style="margin-top:0; font-size:14px; padding:12px;">Call 911</a>
+          ${COMMAND_PHONE ? `<a href="tel:${COMMAND_PHONE}" class="btn btn-secondary" style="margin-top:0; font-size:14px; padding:12px;">Call Command</a>` : ""}
+        </div>
+        <button class="btn btn-danger" id="clockOutBtn" style="margin-top:12px;">${icons.logout}End Shift</button>
+
+        <div class="grid2" style="margin-top:14px;">
+          <div class="action-tile" id="mapLink">${icons.mappin}<div>Map</div></div>
+          <div class="action-tile" id="onDutyLink">${icons.people}<div>On Duty</div></div>
+          <div class="action-tile" id="historyLink">${icons.clock}<div>Patrol History</div></div>
+          <div class="action-tile" id="logPatrolLink">${icons.clipboard}<div>General Notes</div></div>
+          <div class="action-tile" id="switchSiteLink" style="grid-column:span 2;">${icons.swap}<div>Switch Site</div></div>
+        </div>
+      ` : `
+        <label>Site</label>
+        <select id="siteSelect">
+          <option value="">Select site</option>
+          ${(sites||[]).map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}
+        </select>
+        <button class="btn btn-primary" id="clockInBtn" style="margin-top:18px;" disabled>Clock In</button>
+        <div class="err" id="homeErr"></div>
+      `}
+
+      <div class="muted-link" id="signOutLink">Sign out</div>
+    </div>`;
+
+  if(!onDuty){
+    const sel = document.getElementById("siteSelect");
+    const btn = document.getElementById("clockInBtn");
+    sel.onchange = ()=>{ btn.disabled = !sel.value; };
+    btn.onclick = async ()=>{
+      btn.disabled = true; btn.textContent = "Getting location…";
+      const loc = await getLocation();
+      const {data, error} = await sb.rpc("officer_clock_in", {
+        p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: sel.value,
+        p_lat: loc.lat, p_lng: loc.lng
+      });
+      if(error){ document.getElementById("homeErr").textContent = "Couldn't clock in — try again."; btn.disabled=false; btn.textContent="Clock In"; return; }
+      state.shift = data;
+      state.site = (sites||[]).find(s=>s.id===sel.value);
+      saveSession();
+      startLocationPings();
+      vibrate(60);
+      toast("Clocked in", "success");
+      renderHome();
+    };
+  } else {
+    document.getElementById("statusBanner").onclick = renderChangeStatus;
+    document.getElementById("btnPatrol").onclick = renderPatrol;
+    document.getElementById("btnIncident").onclick = renderIncident;
+    document.getElementById("switchSiteLink").onclick = renderSwitchSite;
+    document.getElementById("logPatrolLink").onclick = renderLogPatrol;
+    document.getElementById("historyLink").onclick = renderPatrolHistory;
+    document.getElementById("onDutyLink").onclick = renderOnDutyOfficers;
+    document.getElementById("mapLink").onclick = renderOfficerMap;
+
+    document.getElementById("btnAssist").onclick = async ()=>{
+      if(!confirm("Send an emergency assistance request to Command? Your location will be shared.")) return;
+      const btn = document.getElementById("btnAssist");
+      btn.disabled = true; btn.textContent = "Sending…";
+      const loc = await getLocation();
+      const mapsLink = (loc.lat && loc.lng) ? `https://maps.google.com/?q=${loc.lat},${loc.lng}` : "location unavailable";
+      const body = `NEED ASSISTANCE — ${state.officer.name} at ${state.site?.name || "unknown site"}. Location: ${mapsLink}`;
+      const result = await callOrQueue("priority_message", {p_officer_id: state.officer.id, p_pin: state.pin, p_body: body});
+      if(result.error){ toast("Couldn't send — try again or call directly.", "danger"); btn.disabled=false; btn.textContent="Need Assistance"; return; }
+      vibrate([100,60,100,60,100]);
+      if(result.queued){
+        toast("No signal — request queued, will send the instant you're back in range. Call 911 if this is an emergency.", "danger");
+      } else {
+        toast("Assistance request sent to Command", "success");
+      }
+      btn.disabled = false; btn.textContent = "Need Assistance";
+    };
+
+    document.getElementById("clockOutBtn").onclick = renderEndShiftSummary;
+  }
+
+  document.getElementById("signOutLink").onclick = ()=>{
+    stopLocationPings();
+    clearSession();
+    renderLogin();
+  };
+
+  document.getElementById("tileMessages").onclick = renderMessages;
+
+  if(onDuty){
+    updateSyncPill();
+    const issuesLink = document.getElementById("syncIssuesLink");
+    if(issuesLink) issuesLink.onclick = renderSyncIssues;
+  }
+}
+
+async function renderSyncIssues(){
+  const failed = loadFailed();
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Sync Issues</h1>
+      <p class="sub">These were rejected by the server and won't retry automatically — check with Command if needed.</p>
+      ${failed.length ? failed.map(f=>`
+        <div class="card">
+          <h3 style="font-size:15px;">${QUEUE_LABEL[f.type] || f.type}</h3>
+          <p>${new Date(f.createdAt).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"})} — ${f.reason || "Unknown error"}</p>
+          <button class="btn btn-secondary" data-dismiss="${f.id}" style="margin-top:10px;">Dismiss</button>
+        </div>
+      `).join("") : `<div class="empty" style="padding:20px 0; text-align:center; color:var(--muted);">Nothing here</div>`}
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+  document.querySelectorAll("[data-dismiss]").forEach(btn=>{
+    btn.onclick = ()=>{
+      const remaining = loadFailed().filter(f=>f.id!==btn.dataset.dismiss);
+      saveFailed(remaining);
+      renderSyncIssues();
+    };
+  });
+}
+
+async function renderChangeStatus(){
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Update Status</h1>
+      <p class="sub">${state.site?.name || ""}</p>
+      <button class="btn btn-secondary" data-status="on_patrol">On Patrol</button>
+      <button class="btn btn-secondary" data-status="responding">Responding</button>
+      <button class="btn btn-secondary" data-status="on_break">On Break</button>
+      <button class="btn btn-secondary" data-status="traveling">Traveling</button>
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+  document.querySelectorAll("[data-status]").forEach(btn=>{
+    btn.onclick = async ()=>{
+      btn.disabled = true;
+      const ok = await setOfficerStatus(btn.dataset.status);
+      if(!ok){ toast("Couldn't update status — try again.", "danger"); btn.disabled=false; return; }
+      state.localStatus = btn.dataset.status;
+      state.localStatusAt = new Date().toISOString();
+      vibrate(40);
+      renderHome();
+    };
+  });
+}
+
+async function renderOnDutyOfficers(){
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>On Duty Now</h1>
+      <p class="sub">Who's working right now</p>
+      <div id="onDutyList" style="color:var(--muted); font-size:13px; text-align:center; padding:30px 0;">Loading…</div>
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+
+  const [{data: peers}, {data: sites}] = await Promise.all([
+    sb.from("officers").select("id,name,callsign,status,site_id,status_changed_at").neq("id", state.officer.id).neq("status","off_duty"),
+    sb.from("sites").select("id,name"),
+  ]);
+  const siteById = {};
+  (sites||[]).forEach(s=>{ siteById[s.id] = s.name; });
+
+  const list = document.getElementById("onDutyList");
+  if(!list) return;
+
+  if(!peers || !peers.length){
+    list.innerHTML = `<div style="padding:20px 0;">No one else is on duty right now</div>`;
+    list.style.textAlign = "left";
+    return;
+  }
+
+  list.style.cssText = "";
+  list.innerHTML = peers.map(p=>{
+    const color = STATUS_COLOR[p.status] || "var(--gold)";
+    return `<div class="card" style="border-left:3px solid ${color}; display:flex; align-items:center; gap:12px;">
+      <div class="avatar" style="${avatarStyle(p.name)}">${initialsOf(p.name)}</div>
+      <div style="flex:1;">
+        <div style="font-size:14px; font-weight:500;">${p.name}</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:2px;">
+          ${siteById[p.site_id] || "—"} · <span style="color:${color};">${STATUS_LABEL[p.status]||p.status}</span>
+          ${p.status_changed_at ? ` · ${timeInState(p.status_changed_at)}` : ""}
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+let officerMapInstance = null, officerSiteLayer = null, officerPeerLayer = null;
+
+async function renderOfficerMap(){
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Field Map</h1>
+      <p class="sub">Sites and on-duty officers</p>
+      <div id="officerMapHolder" class="field-map"></div>
+      <div style="display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--muted); flex-wrap:wrap;">
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;"></span>Site</span>
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--success);display:inline-block;"></span>Officer (live)</span>
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--faint);display:inline-block;"></span>Officer (stale)</span>
+      </div>
+    </div>`;
+  document.getElementById("backBtn").onclick = ()=>{
+    if(officerMapInstance){ officerMapInstance.remove(); officerMapInstance = null; }
+    renderHome();
+  };
+
+  const holder = document.getElementById("officerMapHolder");
+  if(officerMapInstance){ officerMapInstance.remove(); officerMapInstance = null; }
+  officerMapInstance = L.map(holder, {zoomControl:true, attributionControl:true}).setView([47.6062,-122.3321], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap contributors &copy; CARTO', subdomains:'abcd', maxZoom:19
+  }).addTo(officerMapInstance);
+  officerSiteLayer = L.layerGroup().addTo(officerMapInstance);
+  officerPeerLayer = L.layerGroup().addTo(officerMapInstance);
+
+  const [{data: sites}, {data: peers}, {data: pings}] = await Promise.all([
+    sb.from("sites").select("*"),
+    sb.from("officers").select("id,name,callsign,status").neq("status","off_duty"),
+    sb.from("location_pings").select("*").order("recorded_at", {ascending:false}).limit(200),
+  ]);
+
+  const bounds = [];
+  const goldRgb = getComputedColor("var(--gold)");
+  const successRgb = getComputedColor("var(--success)");
+  const faintRgb = getComputedColor("var(--faint)");
+
+  (sites||[]).forEach(s=>{
+    if(s.lat==null || s.lng==null) return;
+    L.circleMarker([s.lat, s.lng], {radius:8, color:goldRgb, fillColor:goldRgb, fillOpacity:0.85, weight:2})
+      .bindTooltip(s.code || s.name, {permanent:true, direction:"right", className:"map-tooltip", offset:[8,0]})
+      .addTo(officerSiteLayer);
+    bounds.push([s.lat, s.lng]);
+  });
+
+  const latestPingByOfficer = {};
+  (pings||[]).forEach(p=>{ if(!latestPingByOfficer[p.officer_id]) latestPingByOfficer[p.officer_id] = p; });
+  const now = Date.now();
+
+  (peers||[]).forEach(p=>{
+    const ping = latestPingByOfficer[p.id];
+    if(!ping) return;
+    const fresh = (now - new Date(ping.recorded_at).getTime()) < 5*60*1000;
+    const color = fresh ? successRgb : faintRgb;
+    L.circleMarker([ping.lat, ping.lng], {radius:7, color, fillColor:color, fillOpacity:0.9, weight:2})
+      .bindTooltip(p.callsign, {permanent:true, direction:"top", className:"map-tooltip", offset:[0,-6]})
+      .addTo(officerPeerLayer);
+    bounds.push([ping.lat, ping.lng]);
+  });
+
+  if(bounds.length === 1) officerMapInstance.setView(bounds[0], 14);
+  else if(bounds.length > 1) officerMapInstance.fitBounds(bounds, {padding:[30,30], maxZoom:16});
+}
+
+function getComputedColor(varExpr){
+  const el = document.createElement("div");
+  el.style.color = varExpr;
+  document.body.appendChild(el);
+  const resolved = getComputedStyle(el).color;
+  el.remove();
+  return resolved;
+}
+
+async function renderPatrolHistory(){
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Patrol History</h1>
+      <p class="sub">Your recent rounds and reports</p>
+      <div id="historyList" style="color:var(--muted); font-size:13px; text-align:center; padding:30px 0;">Loading…</div>
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+
+  const [{data: reports}, {data: sites}] = await Promise.all([
+    sb.from("patrol_reports").select("*").eq("officer_id", state.officer.id).order("ended_at", {ascending:false}).limit(30),
+    sb.from("sites").select("id,name"),
+  ]);
+  const siteById = {};
+  (sites||[]).forEach(s=>{ siteById[s.id] = s.name; });
+
+  const typeColor = {foot:"96,180,155", vehicle:"90,140,201", checkpoint:"201,168,106"};
+  const list = document.getElementById("historyList");
+  if(!list) return;
+
+  if(!reports || !reports.length){
+    list.innerHTML = `<div style="padding:20px 0;">No patrol reports yet</div>`;
+    return;
+  }
+
+  list.style.cssText = "";
+  list.innerHTML = reports.map(r=>{
+    const rgb = typeColor[r.patrol_type] || "141,139,130";
+    const tags = (r.activity_types||[]).map(a=>`<span style="display:inline-block; font-size:10px; font-weight:600; background:rgba(201,168,106,.14); color:var(--gold); border-radius:4px; padding:3px 8px; margin:4px 4px 0 0;">${a}</span>`).join("");
+    const mediaCount = (r.media_urls||[]).length;
+    return `<div class="card" style="border-left:3px solid rgb(${rgb});">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <h3 style="font-size:16px;">${siteById[r.site_id] || "Unknown site"}</h3>
+        <span style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; color:rgb(${rgb});">${r.patrol_type}</span>
+      </div>
+      <p>${new Date(r.ended_at).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"})}</p>
+      <div style="font-size:13px; color:var(--fg); margin-top:8px;">${r.areas_patrolled || "No area noted"}</div>
+      ${tags ? `<div style="margin-top:4px;">${tags}</div>` : ""}
+      ${r.details ? `<div style="font-size:13px; color:var(--muted); margin-top:8px; line-height:1.4;">${r.details}</div>` : ""}
+      ${mediaCount ? `<div style="font-size:11px; color:var(--muted); margin-top:8px;">${mediaCount} attachment${mediaCount===1?"":"s"}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+async function renderSwitchSite(){
+  const {data: sites} = await sb.from("sites").select("*").order("name");
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Switch Site</h1>
+      <p class="sub">Currently at ${state.site?.name || "—"}</p>
+      <label>New site</label>
+      <select id="newSiteSelect">
+        <option value="">Select site</option>
+        ${(sites||[]).filter(s=>s.id!==state.site?.id).map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}
+      </select>
+      <div class="err" id="switchErr"></div>
+      <button class="btn btn-primary" id="confirmSwitchBtn" style="margin-top:16px;" disabled>Confirm Switch</button>
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+  const sel = document.getElementById("newSiteSelect");
+  const btn = document.getElementById("confirmSwitchBtn");
+  sel.onchange = ()=>{ btn.disabled = !sel.value; };
+  btn.onclick = async ()=>{
+    btn.disabled = true; btn.textContent = "Switching…";
+    const {data, error} = await sb.rpc("officer_switch_site", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id, p_site_id: sel.value
+    });
+    if(error){ document.getElementById("switchErr").textContent = "Couldn't switch — try again."; btn.disabled=false; btn.textContent="Confirm Switch"; return; }
+    state.site = (sites||[]).find(s=>s.id===sel.value);
+    saveSession();
+    toast("Site switched", "success");
+    renderHome();
+  };
+}
+
+async function renderPatrol(){
+  const {data: checkpoints} = await sb.from("checkpoints").select("*").eq("site_id", state.site.id).order("seq");
+  let {data: activePatrol} = await sb.from("patrols").select("*")
+    .eq("site_id", state.site.id).eq("officer_id", state.officer.id).eq("status","active").maybeSingle();
+
+  if(!activePatrol){
+    const {data: created, error: createErr} = await sb.from("patrols").insert({
+      site_id: state.site.id, officer_id: state.officer.id, name:"Patrol", status:"active", started_at:new Date().toISOString()
+    }).select().single();
+    if(createErr || !created){
+      toast("Couldn't start patrol — try again.", "danger");
+      console.error("Patrol creation failed:", createErr);
+      return;
+    }
+    activePatrol = created;
+  }
+  state.patrol = activePatrol;
+  await setOfficerStatus("on_patrol");
+
+  const {data: scans} = await sb.from("checkpoint_scans").select("*").eq("patrol_id", state.patrol.id);
+  state.scans = scans || [];
+
+  function scanStatusFor(cpId){
+    const s = state.scans.find(s=>s.checkpoint_id===cpId);
+    if(s) return s.verified ? "done" : "unverified";
+    if(state.locallyMarked && state.locallyMarked.has(cpId)) return "queued";
+    return "pending";
+  }
+
+  const total = (checkpoints||[]).length;
+  const done = (checkpoints||[]).filter(cp=>scanStatusFor(cp.id)!=="pending").length;
+  const nextPending = (checkpoints||[]).find(cp=>scanStatusFor(cp.id)==="pending");
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>${state.site.name} — Checkpoints</h1>
+      <p class="sub">${total ? `${done} of ${total} checked` : "No checkpoints set up for this site."}</p>
+      <div id="qr-reader" style="display:none; margin-bottom:16px;"></div>
+      <button class="btn btn-primary" id="startScanBtn" ${!nextPending ? "disabled" : ""}>${icons.qr} Scan Next Checkpoint</button>
+      <div class="card" style="margin-top:18px;">
+        ${(checkpoints||[]).map(cp=>{
+          const st = scanStatusFor(cp.id);
+          const label = st==="pending" ? "Pending" : st==="done" ? "Verified" : st==="queued" ? "Saved — syncing" : "Too far";
+          return `<div class="checkpoint-row">
+            <span>${cp.seq}. ${cp.name}</span>
+            <span style="display:flex; align-items:center; gap:8px;">
+              ${st==="pending" ? `<span class="subtle-link" data-manual="${cp.id}" style="font-size:11px; color:var(--muted);">Can't scan?</span>` : ""}
+              <span class="cp-status ${st}">${label}</span>
+            </span>
+          </div>`;
+        }).join("")}
+      </div>
+      <button class="btn btn-secondary" id="allClearBtn" style="margin-top:14px;">Round Complete — All Clear</button>
+    </div>`;
+
+  document.getElementById("backBtn").onclick = async ()=>{
+    await stopActiveScanner();
+    renderHome();
+  };
+  document.getElementById("startScanBtn").onclick = ()=>startQrScan(checkpoints||[]);
+  document.querySelectorAll("[data-manual]").forEach(el=>{
+    el.onclick = ()=> renderManualCheckpoint(el.dataset.manual, checkpoints||[]);
+  });
+  document.getElementById("allClearBtn").onclick = ()=> confirmAllClear(checkpoints||[]);
+}
+
+async function confirmAllClear(checkpoints){
+  if(!confirm("Mark this round complete with nothing to report?")) return;
+  const btn = document.getElementById("allClearBtn");
+  if(btn){ btn.disabled = true; btn.textContent = "Saving…"; }
+
+  const completedAt = new Date().toISOString();
+  const completeResult = await callOrQueue("complete_patrol", {patrol_id: state.patrol.id, completed_at: completedAt});
+  if(completeResult.error){ toast("Couldn't complete the round — try again.", "danger"); if(btn){ btn.disabled=false; btn.textContent="Round Complete — All Clear"; } return; }
+  const result = await callOrQueue("patrol_report", {
+    p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
+    p_patrol_type: "foot", p_started_at: state.patrol.started_at,
+    p_areas_patrolled: `All ${checkpoints.length} checkpoint${checkpoints.length===1?"":"s"}`,
+    p_details: "Round completed — all clear, nothing to report.",
+    p_activity_types: ["Nothing to report"], p_media_urls: []
+  });
+  if(result.error){ toast("Couldn't save — try again.", "danger"); if(btn){ btn.disabled=false; btn.textContent="Round Complete — All Clear"; } return; }
+  vibrate(80);
+  toast(result.queued ? "Saved offline — will sync when back in range" : "Round marked complete", result.queued ? "danger" : "success");
+  renderHome();
+}
+
+async function renderManualCheckpoint(checkpointId, checkpoints){
+  const cp = checkpoints.find(c=>c.id===checkpointId);
+  if(!cp) return;
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>Mark Visited</h1>
+      <p class="sub">${cp.name} — no QR scan available</p>
+      <label>Reason</label>
+      <div class="chip-row" id="reasonRow">
+        ${["QR code missing","QR unreadable","Other"].map(r=>`<div class="chip" data-r="${r}">${r}</div>`).join("")}
+      </div>
+      <textarea id="reasonText" placeholder="Add a short note (required)" style="margin-top:12px;"></textarea>
+      <div class="err" id="manualErr"></div>
+      <button class="btn btn-primary" id="manualSubmitBtn" style="margin-top:16px;">Confirm — I'm At This Checkpoint</button>
+    </div>`;
+
+  document.getElementById("backBtn").onclick = ()=>renderPatrol();
+  document.querySelectorAll("#reasonRow .chip").forEach(c=>{
+    c.onclick = ()=>{
+      const t = document.getElementById("reasonText");
+      t.value = c.dataset.r;
+      t.focus();
+    };
+  });
+  document.getElementById("manualSubmitBtn").onclick = async ()=>{
+    const reason = document.getElementById("reasonText").value.trim();
+    if(!reason){ document.getElementById("manualErr").textContent = "A short reason is required."; return; }
+    const btn = document.getElementById("manualSubmitBtn");
+    btn.disabled = true; btn.textContent = "Saving…";
+    const loc = await getLocation();
+    const result = await callOrQueue("manual_checkpoint", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_patrol_id: state.patrol.id,
+      p_checkpoint_id: cp.id, p_lat: loc.lat, p_lng: loc.lng, p_reason: reason
+    });
+    if(result.error){
+      document.getElementById("manualErr").textContent = "Couldn't save — try again.";
+      btn.disabled = false; btn.textContent = "Confirm — I'm At This Checkpoint";
+      return;
+    }
+    if(result.queued){
+      state.locallyMarked = state.locallyMarked || new Set();
+      state.locallyMarked.add(cp.id);
+      vibrate(60);
+      toast(`${cp.name} saved offline — will verify once synced`, "danger");
+    } else {
+      vibrate(result.data.verified ? 80 : [40,60,40]);
+      toast(result.data.verified ? `${cp.name} marked ✓` : `${cp.name} marked, but you're too far`, result.data.verified ? "success" : "danger");
+    }
+    renderPatrol();
+  };
+}
+
+function startQrScan(checkpoints){
+  if(activeScanner) return; // already scanning — ignore a double-tap on the scan button
+  const reader = document.getElementById("qr-reader");
+  reader.style.display = "block";
+  const qr = new Html5Qrcode("qr-reader");
+  activeScanner = qr;
+  let handled = false;
+  let lastUnrecognizedAt = 0;
+
+  qr.start({facingMode:"environment"}, {fps:10, qrbox:220}, async (decodedText)=>{
+    if(handled) return;
+    const cp = checkpoints.find(c=>c.qr_token===decodedText.trim());
+    if(!cp){
+      const now = Date.now();
+      if(now - lastUnrecognizedAt > 2500){ toast("Unrecognized checkpoint code", "danger"); lastUnrecognizedAt = now; }
+      return;
+    }
+    handled = true;
+    await stopActiveScanner();
+    vibrate(60);
+
+    const loc = await getLocation();
+    const result = await callOrQueue("checkpoint_scan", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_patrol_id: state.patrol.id,
+      p_checkpoint_id: cp.id, p_lat: loc.lat, p_lng: loc.lng, p_photo_url: null
+    });
+    if(result.error){ vibrate([40,60,40]); toast("Scan failed — try again.", "danger"); }
+    else if(result.queued){
+      state.locallyMarked = state.locallyMarked || new Set();
+      state.locallyMarked.add(cp.id);
+      vibrate(60);
+      toast(`${cp.name} saved offline — will verify once synced`, "danger");
+    }
+    else if(result.data.verified){ vibrate(80); toast(`${cp.name} verified ✓`, "success"); }
+    else { vibrate([40,60,40]); toast(`${cp.name} scanned, but you're too far from the checkpoint`, "danger"); }
+    renderPatrol();
+  }, ()=>{}).then(()=>{
+    if(activeScanner !== qr){
+      // The screen was backgrounded/left while the camera was still warming up —
+      // stopActiveScanner() already ran against a null activeScanner and missed
+      // this instance. Kill it now instead of leaving an untracked stream live.
+      try{ qr.stop().then(()=>qr.clear()).catch(()=>{}); }catch(e){}
+      return;
+    }
+    scannerRunning = true;
+    showTorchToggle(qr);
+  }).catch(()=>{
+    if(activeScanner === qr) activeScanner = null;
+    toast("Couldn't access camera — check permissions.", "danger");
+    reader.style.display = "none";
+  });
+}
+
+function showTorchToggle(qr){
+  const existing = document.getElementById("torchBtn");
+  if(existing) existing.remove();
+  const btn = document.createElement("button");
+  btn.id = "torchBtn";
+  btn.className = "btn btn-secondary";
+  btn.style.marginTop = "10px";
+  btn.textContent = "Flashlight";
+  btn.onclick = async ()=>{
+    try{
+      const caps = qr.getRunningTrackCapabilities ? qr.getRunningTrackCapabilities() : {};
+      if(!caps || !caps.torch){ toast("Flashlight not supported on this device", "danger"); return; }
+      const isOn = btn.dataset.on === "1";
+      await qr.applyVideoConstraints({advanced:[{torch: !isOn}]});
+      btn.dataset.on = isOn ? "0" : "1";
+      btn.textContent = isOn ? "Flashlight" : "Flashlight: On";
+    }catch(e){
+      toast("Flashlight not supported on this device", "danger");
+    }
+  };
+  document.getElementById("qr-reader").insertAdjacentElement("afterend", btn);
+}
+
+const PATROL_ACTIVITY_TYPES = ["Nothing to report","Suspicious activity","Trespasser","Unlocked/broken door","Equipment issue","Lighting issue","Vehicle in lot","Other"];
+
+async function renderLogPatrol(){
+  let patrolType = "foot", areas = "", details = "", activityTypes = [], mediaFiles = [];
+  const startedAt = new Date().toISOString();
+
+  function draw(){
+    app.innerHTML = `
+      <div class="screen">
+        <div class="backbar" id="backBtn">‹ Home</div>
+        <h1>General Notes</h1>
+        <p class="sub">${state.site.name}</p>
+
+        <label>Patrol Type</label>
+        <div class="chip-row" id="typeRow">
+          ${["foot","vehicle","checkpoint"].map(t=>`<div class="chip ${patrolType===t?"active":""}" data-t="${t}">${t}</div>`).join("")}
+        </div>
+
+        <label>Area(s) Patrolled</label>
+        <input type="text" id="areasInput" placeholder="Loading dock, north perimeter…" value="${areas}" />
+
+        <label>Details</label>
+        <textarea id="detailsInput" placeholder="What did you observe?">${details}</textarea>
+
+        <label>Activity Types</label>
+        <div class="chip-row" id="activityRow">
+          ${PATROL_ACTIVITY_TYPES.map(a=>`<div class="chip ${activityTypes.includes(a)?"active":""}" data-a="${a}">${a}</div>`).join("")}
+        </div>
+
+        <label>Photos / Video</label>
+        <input type="file" id="mediaInput" accept="image/*,video/*" multiple />
+        ${mediaFiles.length ? `<div class="chip-row">${mediaFiles.map((f,i)=>`<div class="chip">${f.name.length>18?f.name.slice(0,15)+"…":f.name} <span data-removemedia="${i}" style="margin-left:6px; cursor:pointer;">✕</span></div>`).join("")}</div>` : ""}
+
+        <div class="err" id="patrolErr"></div>
+        <button class="btn btn-primary" id="patrolSubmitBtn" style="margin-top:18px;">Save Patrol Report</button>
+      </div>`;
+
+    document.getElementById("backBtn").onclick = renderHome;
+    document.querySelectorAll("#typeRow .chip").forEach(c=>c.onclick=()=>{patrolType=c.dataset.t; draw();});
+    document.querySelectorAll("#activityRow .chip").forEach(c=>c.onclick=()=>{
+      const a = c.dataset.a;
+      activityTypes = activityTypes.includes(a) ? activityTypes.filter(x=>x!==a) : [...activityTypes, a];
+      draw();
+    });
+    document.getElementById("areasInput").oninput = (e)=>{ areas = e.target.value; };
+    document.getElementById("detailsInput").oninput = (e)=>{ details = e.target.value; };
+    document.getElementById("mediaInput").onchange = (e)=>{
+      mediaFiles = [...mediaFiles, ...Array.from(e.target.files)];
+      draw();
+    };
+    document.querySelectorAll("[data-removemedia]").forEach(x=>{
+      x.onclick = (e)=>{ e.stopPropagation(); mediaFiles.splice(parseInt(x.dataset.removemedia),1); draw(); };
+    });
+    document.getElementById("patrolSubmitBtn").onclick = submit;
+  }
+
+  async function submit(){
+    const btn = document.getElementById("patrolSubmitBtn");
+    btn.disabled = true; btn.textContent = "Uploading…";
+
+    const mediaUrls = [];
+    let uploadFailCount = 0;
+    for(const file of mediaFiles){
+      const path = `patrols/${state.officer.id}/${Date.now()}-${file.name}`;
+      const {error: upErr} = await sb.storage.from(STORAGE_BUCKET).upload(path, file);
+      if(upErr){ uploadFailCount++; console.error("Media upload failed:", upErr); }
+      else mediaUrls.push(path);
+    }
+
+    btn.textContent = "Saving…";
+    const result = await callOrQueue("patrol_report", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
+      p_patrol_type: patrolType, p_started_at: startedAt, p_areas_patrolled: areas,
+      p_details: details, p_activity_types: activityTypes, p_media_urls: mediaUrls
+    });
+
+    if(result.error){
+      document.getElementById("patrolErr").textContent = "Couldn't save — try again.";
+      btn.disabled = false; btn.textContent = "Save Patrol Report";
+      return;
+    }
+    const msg = result.queued
+      ? "Saved offline — will sync when back in range" + (uploadFailCount ? `, ${uploadFailCount} file(s) also failed to upload` : "")
+      : (uploadFailCount ? `Saved — but ${uploadFailCount} file(s) failed to upload` : "Patrol report saved");
+    toast(msg, (result.queued || uploadFailCount) ? "danger" : "success");
+    renderHome();
+  }
+
+  draw();
+}
+
+let messagesPollId = null;
+
+async function renderEndShiftSummary(){
+  const clockInAt = state.shift.clock_in_at;
+  const site = state.site;
+  const nowIso = new Date().toISOString();
+  const durationMins = Math.floor((Date.now() - new Date(clockInAt).getTime())/60000);
+  const durationText = durationMins < 60 ? `${durationMins}m` : `${Math.floor(durationMins/60)}h ${durationMins%60}m`;
+
+  const [scansRes, incidentsRes, reportsRes, checkpointsRes] = await Promise.all([
+    sb.from("checkpoint_scans").select("verified").eq("officer_id", state.officer.id).gte("scanned_at", clockInAt).lte("scanned_at", nowIso),
+    sb.from("incidents").select("title,severity").eq("officer_id", state.officer.id).gte("occurred_at", clockInAt).lte("occurred_at", nowIso),
+    sb.from("patrol_reports").select("id").eq("officer_id", state.officer.id).gte("started_at", clockInAt).lte("ended_at", nowIso),
+    sb.from("checkpoints").select("id").eq("site_id", site?.id || ""),
+  ]);
+  const scans = scansRes.data || [];
+  const verified = scans.filter(s=>s.verified).length;
+  const incidents = incidentsRes.data || [];
+  const reportsCount = (reportsRes.data || []).length;
+  const totalCheckpoints = (checkpointsRes.data || []).length;
+
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Back</div>
+      <h1>End Shift</h1>
+      <p class="sub">${site?.name || "—"} · ${durationText} on duty</p>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border);">
+          <span style="color:var(--muted); font-size:13px;">Checkpoints</span>
+          <span style="font-size:13px;">${verified} of ${totalCheckpoints || scans.length} verified</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border);">
+          <span style="color:var(--muted); font-size:13px;">Patrol reports</span>
+          <span style="font-size:13px;">${reportsCount}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:8px 0;">
+          <span style="color:var(--muted); font-size:13px;">Incidents</span>
+          <span style="font-size:13px;">${incidents.length}</span>
+        </div>
+        ${incidents.length ? `
+          <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+            ${incidents.map(i=>`<div style="font-size:12px; color:var(--muted); padding:2px 0;">• ${i.title} (${i.severity})</div>`).join("")}
+          </div>
+        ` : ""}
+      </div>
+
+      <label>Final Note (optional)</label>
+      <textarea id="finalNote" placeholder="Anything Command should know before you go…"></textarea>
+
+      <button class="btn btn-danger" id="confirmEndShiftBtn" style="margin-top:18px;">${icons.logout}Confirm — End Shift</button>
+      <button class="btn btn-secondary" id="cancelEndShiftBtn">Cancel</button>
+    </div>`;
+
+  document.getElementById("backBtn").onclick = renderHome;
+  document.getElementById("cancelEndShiftBtn").onclick = renderHome;
+
+  document.getElementById("confirmEndShiftBtn").onclick = async ()=>{
+    const btn = document.getElementById("confirmEndShiftBtn");
+    btn.disabled = true; btn.textContent = "Ending shift…";
+    const finalNote = document.getElementById("finalNote").value.trim();
+
+    const loc = await getLocation();
+    const {error} = await sb.rpc("officer_clock_out", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_shift_id: state.shift.id,
+      p_lat: loc.lat, p_lng: loc.lng
+    });
+    if(error){ toast("Couldn't clock out — try again.", "danger"); btn.disabled=false; btn.textContent="Confirm — End Shift"; return; }
+
+    stopLocationPings();
+    state.shift = null; state.site = null;
+    saveSession();
+    vibrate(60);
+    toast("Clocked out", "success");
+    sendShiftReportEmail(clockInAt, site, finalNote); // fire-and-forget, doesn't block clock-out
+    renderHome();
+  };
+}
+
+async function renderMessages(){
+  if(messagesPollId){ clearInterval(messagesPollId); messagesPollId = null; }
+  localStorage.setItem("lp_last_seen_msg_"+state.officer.id, new Date().toISOString());
+
+  async function loadAndDraw(){
+    const {data: msgs} = await sb.from("messages").select("*")
+      .eq("officer_id", state.officer.id).order("created_at", {ascending:true});
+    const list = document.getElementById("msgList");
+    if(!list) return; // screen navigated away
+    list.innerHTML = (msgs||[]).map(m=>`
+      <div class="msg-row ${m.sender}">
+        <div class="msg-bubble ${m.sender}">${escapeHtmlLocal(m.body)}</div>
+      </div>
+    `).join("") || `<div class="empty" style="padding:20px 0; text-align:center; color:var(--muted); font-size:13px;">No messages yet</div>`;
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function escapeHtmlLocal(s){ return String(s).replace(/[<>&]/g, c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+
+  app.innerHTML = `
+    <div class="screen" style="padding-bottom:12px;">
+      <div class="backbar" id="backBtn">‹ Home</div>
+      <h1 style="margin-bottom:2px;">Command</h1>
+      <p class="sub">Message thread</p>
+      <div id="msgList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px 0;"></div>
+      <div class="chip-row" id="quickReplyRow" style="margin-top:10px;">
+        ${["On site","Starting round","All clear","En route","Standing by"].map(q=>`<div class="chip" data-quick="${q}">${q}</div>`).join("")}
+      </div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <input type="text" id="msgInput" placeholder="Type a message…" style="flex:1;" />
+        <button class="btn btn-primary" id="msgSendBtn" style="flex-shrink:0; width:auto; padding:0 18px;">Send</button>
+      </div>
+    </div>`;
+
+  document.getElementById("backBtn").onclick = ()=>{
+    if(messagesPollId){ clearInterval(messagesPollId); messagesPollId = null; }
+    renderHome();
+  };
+
+  async function sendMsg(body){
+    const result = await callOrQueue("message", {p_officer_id: state.officer.id, p_pin: state.pin, p_body: body});
+    if(result.error){ toast("Couldn't send — try again.", "danger"); return; }
+    vibrate(40);
+    if(result.queued){
+      // Show it in the thread immediately even though it hasn't synced yet —
+      // the data is safely queued either way, this is just so the chat
+      // doesn't look like it silently ate the message
+      const list = document.getElementById("msgList");
+      if(list){
+        const row = document.createElement("div");
+        row.className = "msg-row officer";
+        row.innerHTML = `<div class="msg-bubble officer" style="opacity:.6;">${escapeHtmlLocal(body)}<div style="font-size:10px; margin-top:3px; opacity:.8;">Sending when back in range…</div></div>`;
+        list.appendChild(row);
+        list.scrollTop = list.scrollHeight;
+      }
+      return;
+    }
+    await loadAndDraw();
+  }
+
+  document.getElementById("msgSendBtn").onclick = async ()=>{
+    const input = document.getElementById("msgInput");
+    const body = input.value.trim();
+    if(!body) return;
+    input.value = "";
+    await sendMsg(body);
+  };
+  document.getElementById("msgInput").onkeydown = (e)=>{
+    if(e.key === "Enter") document.getElementById("msgSendBtn").click();
+  };
+  document.querySelectorAll("[data-quick]").forEach(chip=>{
+    chip.onclick = async ()=>{
+      chip.style.pointerEvents = "none";
+      await sendMsg(chip.dataset.quick);
+      chip.style.pointerEvents = "";
+    };
+  });
+
+  await loadAndDraw();
+  messagesPollId = setInterval(loadAndDraw, 5000);
+}
+
+const INCIDENT_CATEGORIES = {
+  "Security": [
+    ["Suspicious Activity", "230,145,45"],
+    ["Trespassing / Loitering", "217,199,64"],
+    ["Theft / Burglary", "178,64,54"],
+    ["Disturbance", "201,116,46"],
+    ["Vandalism / Damage", "150,100,201"],
+    ["Fire / Smoke Alarm", "201,60,90"],
+    ["Police / Fire Response", "198,40,40"],
+  ],
+  "Vehicles": [
+    ["Vehicle Citation", "180,180,60"],
+    ["Vehicle Tow", "217,122,31"],
+    ["Unauthorized Vehicle", "201,150,46"],
+  ],
+  "Maintenance & Safety": [
+    ["Maintenance Issue", "150,100,201"],
+    ["Safety Hazard", "126,80,170"],
+    ["Gate / Door Issue", "60,180,155"],
+  ],
+  "General": [
+    ["Lost & Found", "120,120,115"],
+    ["General Observation", "141,139,130"],
+    ["After-Hours Check", "150,110,75"],
+  ],
+};
+
+function renderIncident(){
+  app.innerHTML = `
+    <div class="screen">
+      <div class="backbar" id="backBtn">‹ Home</div>
+      <h1>Report Incident</h1>
+      <p class="sub">${state.site.name} — select a category to continue</p>
+      ${Object.entries(INCIDENT_CATEGORIES).map(([group, items])=>`
+        <div style="font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; margin:14px 0 6px;">${group}</div>
+        <div class="chip-row">
+          ${items.map(([name, rgb])=>`
+            <div class="chip cat-chip" data-c="${name}" style="background:rgba(${rgb},.18); border:1.5px solid rgb(${rgb});">${name}</div>
+          `).join("")}
+        </div>
+      `).join("")}
+    </div>`;
+  document.getElementById("backBtn").onclick = renderHome;
+  document.querySelectorAll(".cat-chip").forEach(c=>c.onclick=()=>{
+    vibrate(30);
+    renderIncidentDetails(c.dataset.c);
+  });
+}
+
+function renderIncidentDetails(category){
+  let severity = "low", photoFile = null, photoPreview = null;
+
+  function draw(){
+    app.innerHTML = `
+      <div class="screen">
+        <div class="backbar" id="backBtn">‹ Category</div>
+        <h1>Report Incident</h1>
+        <p class="sub">${state.site.name}</p>
+
+        <label>Category</label>
+        <div class="chip cat-chip" id="selectedCatChip" style="display:inline-block; cursor:pointer;">${category} — change</div>
+
+        <label>Title</label>
+        <input type="text" id="title" placeholder="Brief summary" />
+
+        <label>Severity</label>
+        <div class="chip-row" id="sevRow">
+          ${["low","medium","high"].map(s=>`<div class="chip ${severity===s?"active":""}" data-s="${s}">${s}</div>`).join("")}
+        </div>
+
+        <label>Description</label>
+        <textarea id="desc" placeholder="What happened?"></textarea>
+
+        <label>Photo</label>
+        <input type="file" id="photoInput" accept="image/*" />
+        ${photoPreview ? `<img class="photo-preview" src="${photoPreview}" />` : ""}
+
+        <div class="err" id="incErr"></div>
+        <button class="btn btn-primary" id="submitBtn" style="margin-top:18px;">Submit Report</button>
+      </div>`;
+
+    document.getElementById("backBtn").onclick = renderIncident;
+    document.getElementById("selectedCatChip").onclick = renderIncident;
+    document.querySelectorAll("#sevRow .chip").forEach(c=>c.onclick=()=>{severity=c.dataset.s; draw();});
+    document.getElementById("photoInput").onchange = (e)=>{
+      if(photoPreview) URL.revokeObjectURL(photoPreview);
+      photoFile = e.target.files[0] || null;
+      photoPreview = photoFile ? URL.createObjectURL(photoFile) : null;
+      draw();
+    };
+    document.getElementById("submitBtn").onclick = submit;
+  }
+
+  async function submit(){
+    const title = document.getElementById("title").value.trim();
+    const desc = document.getElementById("desc").value.trim();
+    if(!title){ document.getElementById("incErr").textContent = "Title is required."; return; }
+
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true; btn.textContent = "Submitting…";
+
+    let photoUrls = [];
+    let photoUploadFailed = false;
+    if(photoFile){
+      const path = `incidents/${state.officer.id}/${Date.now()}-${photoFile.name}`;
+      const {error: upErr} = await sb.storage.from(STORAGE_BUCKET).upload(path, photoFile);
+      if(upErr){ photoUploadFailed = true; console.error("Photo upload failed:", upErr); }
+      else photoUrls = [path];
+    }
+
+    const loc = await getLocation();
+    const result = await callOrQueue("incident", {
+      p_officer_id: state.officer.id, p_pin: state.pin, p_site_id: state.site.id,
+      p_title: title, p_category: category, p_severity: severity, p_description: desc,
+      p_lat: loc.lat, p_lng: loc.lng, p_photo_urls: photoUrls
+    });
+
+    if(result.error){
+      document.getElementById("incErr").textContent = "Couldn't submit — try again.";
+      btn.disabled = false; btn.textContent = "Submit Report";
+      return;
+    }
+    const msg = result.queued
+      ? "Saved offline — will sync when back in range" + (photoUploadFailed ? ", photo also failed to upload" : "")
+      : (photoUploadFailed ? "Report submitted — but the photo failed to upload" : "Incident report submitted");
+    toast(msg, (result.queued || photoUploadFailed) ? "danger" : "success");
+    renderHome();
+  }
+
+  draw();
+}
+
+// =========================================================
+// Boot
+// =========================================================
+loadSession();
+if(state.officer && state.shift) startLocationPings();
+if(state.officer) renderHome(); else renderLogin();
+</script>
+</body>
+</html>

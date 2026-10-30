@@ -1,8 +1,8 @@
-name: Deploy to GitHub Pages
+name: Build, test and deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/lion-patrol-v2]
   workflow_dispatch:
 
 permissions:
@@ -15,22 +15,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: SQL migrations + RLS test (PGlite)
+        run: npm run test:sql
+      - name: Build
+        run: npm run build
+      - name: Bundle budget
+        run: npm run check:bundle
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps webkit chromium
+      - name: E2E (WebKit iPhone 13 + Chromium Pixel 7)
+        run: npm run test:e2e
+        env:
+          CI: '1'
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
+      - name: Rebuild production bundle
+        run: npm run build
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4

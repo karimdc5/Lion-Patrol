@@ -1,0 +1,53 @@
+:root {
+  --bg: #0A0F1C;
+  --surface: #111827;
+  --raised: #1A2236;
+  --raised-2: #222C44;
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+  --text: #F5F7FA;
+  --text-2: #9AA4B2;
+  --text-3: #6B7686;
+  --gold: #D4A537;
+  --gold-pressed: #B8891F;
+  --gold-soft: rgba(212, 165, 55, 0.14);
+  --success: #22C55E;
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --warning: #F59E0B;
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --danger: #EF4444;
+  --danger-pressed: #C93333;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --info: #3B82F6;
+  --info-soft: rgba(59, 130, 246, 0.14);
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fs-large: 34px; --lh-large: 41px;
+  --fs-title: 22px; --lh-title: 28px;
+  --fs-headline: 17px;
+  --fs-body: 17px; --lh-body: 22px;
+  --fs-sub: 15px; --lh-sub: 20px;
+  --fs-foot: 13px; --lh-foot: 18px;
+  --fs-cap: 11px;
+
+  --r-card: 16px;
+  --r-btn: 14px;
+  --r-chip: 999px;
+  --r-input: 12px;
+
+  --pad: 16px;
+  --tap: 48px;
+  --tap-primary: 56px;
+  --tabbar-h: 56px;
+  --topbar-h: 52px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur: 200ms;
+  --shadow-sheet: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
