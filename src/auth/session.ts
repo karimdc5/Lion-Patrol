@@ -5,7 +5,7 @@ import type { Backend, StoredSession } from '../data/backend/types';
 import { BackendError, isNetworkError } from '../data/backend/types';
 import { runBootstrap } from '../data/sync/bootstrap';
 import { startEngine, syncNow, kick } from '../data/sync/engine';
-import { bumpData } from '../data/repos/records';
+import { bumpData, overlayOwnEdits } from '../data/repos/records';
 import type { Member, Role } from '../data/types';
 import { uuidv7 } from '../lib/uuid';
 import * as vault from './vault';
@@ -108,7 +108,8 @@ export async function boot() {
       const id = identity.value;
       if (id) {
         const fresh = await (await db()).get('identity', id.userId);
-        if (fresh) identity.value = { ...fresh, email: fresh.email || id.email };
+        // A refresh that started before a local name edit must not undo it.
+        if (fresh) identity.value = { ...fresh, memberships: await overlayOwnEdits(fresh.memberships), email: fresh.email || id.email };
       }
       bumpData();
     },

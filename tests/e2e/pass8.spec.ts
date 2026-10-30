@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 // Pass 8 (items 23–26) + QA bugs a–c. Screens saved to SHOTS on the local iPhone 13 run only.
 const PHOTO = fileURLToPath(new URL('../fixtures/photo.jpg', import.meta.url));
 const SHOTS = process.env.LP_SHOTS8 ?? '/workspace/lion-patrol-shots/pass8';
-const wantShots = () => test.info().project.name === 'webkit-iphone13' && existsSync(SHOTS);
+const wantShots = () => existsSync(SHOTS); // only one project runs locally; the folder doesn't exist in CI
 type Server = { tables: Record<string, Array<Record<string, any>>> };
 const rows = async (page: Page, table: string) => ((await page.evaluate(() => JSON.parse(localStorage.getItem('lp-mock-server')!) as Server)).tables[table] ?? []);
 const MARKET = '0b5e0000-0000-7000-8000-00000000c001';

@@ -75,6 +75,9 @@ export async function putServerRows(table: string, rows: Row[], opts: { replaceO
   for (const row of rows) {
     const prev = await store.get([table, row.id]);
     if (prev?._pending) continue; // local edit wins until its op is done
+    // A read that started before a just-synced local edit must not undo it (2-minute window).
+    if (prev && prev._localRev > 0 && Date.now() - Date.parse(prev.updatedAt) < RECENT_LOCAL_MS
+        && typeof row.updated_at === 'string' && Date.parse(row.updated_at) < Date.parse(prev.updatedAt)) continue;
     const rec: CachedRecord = {
       table,
       id: row.id,
@@ -147,4 +150,14 @@ export function withLocalId(table: string, r: Record<string, unknown>): Row {
     case 'patrol_post_order_acks': return { ...r, id: `${r.member_id}:${r.site_id}` } as Row;
     default: return { ...r, id: JSON.stringify(r) } as Row;
   }
+}
+
+/** Keep a local edit of your own member row (e.g. a new display name) that is pending or newer than the server copy. */
+export async function overlayOwnEdits(ms: Row[]): Promise<Row[]> {
+  const d = await db();
+  return Promise.all(ms.map(async (m) => {
+    const rec = await d.get('records', ['patrol_members', m.id]);
+    const newer = rec && rec._localRev > 0 && Date.parse(rec.updatedAt) > Date.parse(String(m.updated_at ?? 0)) && Date.now() - Date.parse(rec.updatedAt) < 120_000;
+    return rec && (rec._pending || newer) ? { ...m, display_name: rec.data.display_name ?? m.display_name } : m;
+  }));
 }
