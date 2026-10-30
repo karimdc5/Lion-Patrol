@@ -1,18 +1,20 @@
 import { test, expect, type Page } from '@playwright/test';
 import { openApp, login, dismissEnroll, USERS, mutateServer } from './helpers';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 // Pass 7 (Karim feedback items 8–22). Key screens are also saved to SHOTS on the iPhone 13 run.
 const PHOTO = fileURLToPath(new URL('../fixtures/photo.jpg', import.meta.url));
-const SHOTS = '/workspace/lion-patrol-shots/pass7';
+const SHOTS = process.env.LP_SHOTS ?? '/workspace/lion-patrol-shots/pass7';
+/** Screenshots only on the local iPhone 13 run (the shots folder doesn't exist in CI). */
+const wantShots = () => test.info().project.name === 'webkit-iphone13' && existsSync(SHOTS.replace(/\/[^/]+$/, ''));
 type Server = { tables: Record<string, Array<Record<string, any>>> };
 const rows = async (page: Page, table: string) => ((await page.evaluate(() => JSON.parse(localStorage.getItem('lp-mock-server')!) as Server)).tables[table] ?? []);
 const MARKET = '0b5e0000-0000-7000-8000-00000000c001';
 
 async function shot(page: Page, name: string) {
-  if (test.info().project.name !== 'webkit-iphone13') return;
+  if (!wantShots()) return;
   mkdirSync(SHOTS, { recursive: true });
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${SHOTS}/${name}.png` });
@@ -79,7 +81,8 @@ test('item 22: People shows every member with last seen (live dot only when on d
   await expect(rowFor('Tasha Greene').locator('.seen-dot')).toHaveAttribute('data-live', '1');
   await expect(rowFor('Abdinasir Elmi').locator('.seen-dot')).toHaveAttribute('data-live', '0'); // on duty, last GPS 6 min ago
   await expect(rowFor('Abdinasir Elmi').getByTestId('last-seen')).toContainText(/Last seen \dm ago/);
-  await expect(rowFor('Marcus Reed').getByTestId('last-seen')).toContainText(/Last seen \d+[hd] ago/);
+  await expect(rowFor('Marcus Reed').getByTestId('last-seen')).toContainText(/Last seen (just now|\d+[smhd] ago)/); // off duty
+  await expect(rowFor('Marcus Reed').locator('.seen-dot')).toHaveAttribute('data-live', '0');
   await expect(rowFor('Dana Whitfield').getByTestId('last-seen')).toContainText('Never');
   await shot(page, 'people-last-seen');
 });
@@ -201,6 +204,12 @@ test('item 20: owner map shows site pins and on-duty guards only', async ({ page
 test('item 15: timesheets — weekly hours/OT and a Gusto CSV export', async ({ page }) => {
   await owner(page);
   await more(page, 'more-timesheets');
+  await expect(page.getByTestId('ts-week')).toBeVisible();
+  // Tasha's current shift started 3 h ago: early on a Monday that is still last week
+  if (!(await page.getByTestId('ts-row').filter({ hasText: 'Tasha Greene' }).isVisible().catch(() => false))) {
+    await page.waitForTimeout(800);
+    if (!(await page.getByTestId('ts-row').filter({ hasText: 'Tasha Greene' }).isVisible())) await page.getByTestId('ts-prev').click();
+  }
   await expect(page.getByTestId('ts-table')).toBeVisible();
   await expect(page.getByTestId('ts-row').filter({ hasText: 'Tasha Greene' })).toBeVisible();
   await shot(page, 'timesheets-weekly');
@@ -220,7 +229,7 @@ test('item 17: PDFs are dark-themed (DAR render saved as PNG)', async ({ page })
   const pdf = await page.evaluate(() => (window as unknown as { __lpLastPdf: { name: string; bytes: number[] } }).__lpLastPdf);
   const buf = Buffer.from(pdf.bytes);
   expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
-  if (test.info().project.name === 'webkit-iphone13') {
+  if (wantShots()) {
     mkdirSync(SHOTS, { recursive: true });
     writeFileSync(`${SHOTS}/dar-dark.pdf`, buf);
     try { execFileSync('pdftoppm', ['-png', '-r', '70', '-f', '1', '-l', '1', '-singlefile', `${SHOTS}/dar-dark.pdf`, `${SHOTS}/pdf-dark`]); } catch { /* renderer optional */ }
