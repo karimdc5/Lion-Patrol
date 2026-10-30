@@ -98,7 +98,11 @@ test('app admin without an org creates one (categories seeded)', async ({ page }
   await page.getByLabel('Email').fill('founder@example.com');
   await page.getByLabel('Password').fill('demo1234');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Set up your company' })).toBeVisible();
+  // never silently creates a company: the person chooses
+  await expect(page.getByTestId('setup-choice')).toBeVisible();
+  await page.getByTestId('choice-create').click();
+  await expect(page.getByRole('heading', { name: 'Create company' })).toBeVisible();
+  await page.getByLabel('Company name').fill('Founder Security');
   await page.getByLabel('Your name (as shown on reports)').fill('Founder Person');
   await page.getByRole('button', { name: 'Create organization' }).click();
   await dismissEnroll(page);

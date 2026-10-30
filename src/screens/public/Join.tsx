@@ -106,9 +106,13 @@ export function Signup() {
   };
   return (
     <Screen>
-      <TopBar title="Create account" large backTo="/login" sub="For owners setting up Lion Patrol. Guards: use your invite code instead." />
+      <TopBar title="Create account" large backTo="/login" sub="Joining a company? Use your invite code instead." />
       <div class="screen-body">
         <form class="stack" onSubmit={submit} noValidate style={{ maxWidth: 480 }}>
+          <div class="seg" data-testid="signup-choice">
+            <button type="button" onClick={() => navigate('/join')} data-testid="signup-join">I have an invite code</button>
+            <button type="button" class="active">Set up a new company</button>
+          </div>
           <Field label="Your full name"><input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} autoComplete="name" name="name" /></Field>
           <Field label="Email"><input class="input" type="email" inputMode="email" autoComplete="username" autoCapitalize="off" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} name="email" /></Field>
           <Field label="Create a password" hint="At least 8 characters."><input class="input" type="password" autoComplete="new-password" value={password} onInput={(e) => setPassword((e.target as HTMLInputElement).value)} name="password" /></Field>

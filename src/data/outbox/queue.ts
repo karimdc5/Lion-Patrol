@@ -16,6 +16,7 @@ export interface EnqueueInput {
   priority?: number;
   id?: string;
   noCoalesce?: boolean;
+  optional?: string[];
 }
 
 export interface LocalWrite {
@@ -90,6 +91,7 @@ export async function enqueue(input: EnqueueInput, writes: LocalWrite[] = [], bl
       rpc: input.rpc,
       payload: input.payload,
       match: input.match,
+      ...(input.optional ? { optional: input.optional } : {}),
       entityKey: input.entityKey,
       dependsOn: input.dependsOn ?? [],
       label: input.label,

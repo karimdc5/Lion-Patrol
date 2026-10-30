@@ -33,6 +33,7 @@ export function DarsList() {
                 </div>
                 <div class="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                   <PdfButton label="PDF" testid="dar-pdf" make={() => import('../../pdf').then((m) => m.darPdf(d.id))} />
+                  {d.time_entry_id ? <PdfButton label="Shift PDF" testid="shift-pdf" make={() => import('../../pdf').then((m) => m.endOfShiftPdf(String(d.time_entry_id), { preferSaved: true }))} /> : null}
                   {d.status === 'submitted' && <Button loading={busy === d.id} onClick={async () => { setBusy(d.id); await setDarStatus(d.id, 'reviewed'); setBusy(null); toast('Marked reviewed'); }}>Mark reviewed</Button>}
                   {(d.status === 'submitted' || d.status === 'reviewed') && <Button variant="outline" onClick={async () => { await setDarStatus(d.id, 'sent_to_client'); toast('Shared with client'); }} data-testid="dar-share">Share with client</Button>}
                 </div>

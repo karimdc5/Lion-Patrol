@@ -47,7 +47,34 @@ export function categoryFields(cat: Category | null | undefined): { sections: Se
   if (!cat) return { sections: new Set(), extra: [] };
   const cfg = cat.field_config ?? SEED.get(cat.name.toLowerCase()) ?? { sections: ALL, extra: [] };
   const req = cat.required_fields.map((r) => REQ_TO_SECTION[r]).filter((x): x is FieldGroup => !!x);
-  return { sections: new Set([...cfg.sections, ...req]), extra: cfg.extra ?? [] };
+  return { sections: new Set([...cfg.sections, ...req]), extra: guardExtras(cfg.extra) };
+}
+
+/** Client visibility is the owner's call in admin review, never a field on the guard's form (item 11). */
+const CLIENT_VISIBILITY_KEY = /^(client_notified|notify_client|client_visible|client_can_see|share_with_client)$/;
+function guardExtras(extra: ExtraField[] | undefined): ExtraField[] {
+  return (extra ?? []).filter((x) => !CLIENT_VISIBILITY_KEY.test(x.key));
+}
+
+const humanize = (k: string) => k.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+/**
+ * Category-specific answers (`incident.extra`) as label/value pairs for admin review, the client
+ * portal and PDFs. Labels come from the category's field_config (or the seed by name); unknown keys
+ * are humanized. Empty answers are skipped.
+ */
+export function extraDetails(incident: Record<string, unknown>, cat?: Pick<Category, 'name' | 'field_config'> | null): Array<[string, string]> {
+  const extra = (incident.extra && typeof incident.extra === 'object' ? incident.extra : {}) as Record<string, unknown>;
+  const cfg = (cat?.field_config ?? (incident.field_config as FieldConfig | null | undefined) ?? SEED.get(String(cat?.name ?? incident.category_name ?? '').toLowerCase())) as FieldConfig | null | undefined;
+  const fields = cfg?.extra ?? [];
+  const out: Array<[string, string]> = [];
+  const seen = new Set<string>();
+  for (const f of fields) {
+    seen.add(f.key);
+    const v = extra[f.key];
+    if (v != null && String(v).trim() && !CLIENT_VISIBILITY_KEY.test(f.key)) out.push([f.label, String(v)]);
+  }
+  for (const [k, v] of Object.entries(extra)) if (!seen.has(k) && v != null && String(v).trim() && !CLIENT_VISIBILITY_KEY.test(k)) out.push([humanize(k), String(v)]);
+  return out;
 }
 
 /** Returns field → message. Empty object means valid. */

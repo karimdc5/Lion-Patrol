@@ -11,10 +11,13 @@ export interface QrSheetInput {
   logoPng?: Uint8Array | null;
 }
 
+// Dark theme (item 17). The QR itself stays black-on-white inside its frame so phones can scan it.
+const BG = rgb(0.039, 0.059, 0.11);
 const GOLD = rgb(0.83, 0.647, 0.215);
-const INK = rgb(0.067, 0.094, 0.153);
-const GREY = rgb(0.42, 0.45, 0.5);
-const LIGHT = rgb(0.9, 0.91, 0.93);
+const INK = rgb(0.96, 0.97, 0.98);
+const GREY = rgb(0.6, 0.64, 0.7);
+const LIGHT = rgb(0.18, 0.22, 0.3);
+const SOFT = rgb(0.08, 0.11, 0.18);
 
 export const formatCode = (c: string) => (c.length === 8 ? `${c.slice(0, 4)}-${c.slice(4)}` : c);
 export const qrUrl = (base: string, code: string) => `${base.replace(/\/?$/, '/')}q/${code}`;
@@ -59,6 +62,7 @@ export async function buildQrSheet(input: QrSheetInput): Promise<Uint8Array> {
   input.checkpoints.forEach((cp, i) => {
     const page = doc.addPage([612, 792]);
     const W = 612, M = 54;
+    page.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: BG });
     // letterhead
     let tx = M;
     if (logo) {
@@ -90,7 +94,7 @@ export async function buildQrSheet(input: QrSheetInput): Promise<Uint8Array> {
 
     // instructions box
     const boxY = 102, boxH = 92;
-    page.drawRectangle({ x: M, y: boxY, width: W - 2 * M, height: boxH, color: rgb(0.97, 0.97, 0.98), borderColor: LIGHT, borderWidth: 1 });
+    page.drawRectangle({ x: M, y: boxY, width: W - 2 * M, height: boxH, color: SOFT, borderColor: LIGHT, borderWidth: 1 });
     page.drawText('HOW TO LOG THIS CHECKPOINT', { x: M + 14, y: boxY + boxH - 20, size: 8.5, font: bold, color: GOLD });
     const lines = [
       '1. Open Lion Patrol on your phone and make sure you are clocked in.',

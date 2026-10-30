@@ -171,7 +171,11 @@ export async function redeemInvite(code: string, displayName: string, phone?: st
   });
   if (!res.ok) throw new BackendError(res.error ?? 'invalid_invite', res.error === 'too_many_attempts'
     ? 'Too many attempts. Try again in an hour.'
-    : 'That invite code is invalid, expired or already used.');
+    : res.error === 'use_separate_account'
+      ? 'This is a client portal code. Your account already works for a security company, so sign up for the client portal with a different email to keep the two separate.'
+      : res.error === 'member_disabled'
+        ? 'Your access to this company is disabled. Ask the owner to restore it.'
+        : 'That invite code is invalid, expired or already used.');
   const s = await getBackend().auth.getSession();
   if (s) await finishLogin(s);
   if (res.org_id) await setOrg(res.org_id);

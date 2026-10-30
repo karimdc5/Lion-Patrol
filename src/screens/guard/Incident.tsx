@@ -39,15 +39,21 @@ export function ReportStart() {
   };
   return (
     <Screen tabbar>
-      <TopBar title="New incident" large right={<GuardRight />} sub="What happened?" />
+      <TopBar title="New entry" large right={<GuardRight />} sub="Start a patrol, or report what happened." />
       <div class="screen-body stack">
         <div style={{ position: 'relative' }}>
           <input class="input" placeholder="Search categories" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} style={{ paddingLeft: 42 }} aria-label="Search categories" data-testid="cat-search" />
           <span style={{ position: 'absolute', left: 14, top: 15, color: 'var(--text-3)' }}><Icon name="search" size={20} /></span>
         </div>
         {!q && recent.length > 0 && <div class="cap muted" style={{ padding: '4px 4px 0' }}>Recent first</div>}
-        {ordered.length ? (
+        {ordered.length || !q ? (
           <div class="grid-2" data-testid="category-grid">
+            {!q && (
+              <button class="cat-tile" onClick={() => navigate('/g/log/patrol')} data-testid="patrol-start-tile">
+                <span class="list-icon" style={{ background: 'var(--gold-soft)', color: 'var(--gold)', width: 40, height: 40, borderRadius: 12 }}><Icon name="shield" /></span>
+                <span class="cat-name">Patrol start</span>
+              </button>
+            )}
             {ordered.map((c) => (
               <button key={c.id} class="cat-tile" onClick={() => void start(c)} data-testid="category-tile">
                 <span class="list-icon" style={{ background: `${c.color}29`, color: c.color, width: 40, height: 40, borderRadius: 12 }}><Icon name={c.icon} /></span>

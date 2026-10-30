@@ -260,11 +260,23 @@ test('DAR: add log entries with a photo, clock out submits the DAR', async ({ pa
   await expect(page.getByText('Add a short shift note')).toBeVisible();
   await page.getByTestId('shift-note').fill('Quiet night, all secure at 05:45.');
   await page.getByTestId('clock-out-confirm').click();
+  await expect(page.getByText('Confirm your hours')).toBeVisible(); // timesheet confirmation is required
+  await expect(page.getByTestId('timesheet-hours')).toHaveText(/\dh \d\dm/);
+  await page.getByTestId('timesheet-ok').check();
+  await page.getByTestId('clock-out-confirm').click();
   await expect(page.getByTestId('duty-hero')).toContainText('Off duty');
+  // one end-of-shift PDF is built and handed to the share sheet
+  await expect(page.getByTestId('pdf-ready')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('pdf-ready')).toContainText(/Shift-.*\.pdf/);
   await expect.poll(async () => (await rows(page, 'patrol_dars')).find((d) => d.summary?.includes('Quiet night, all secure'))?.status, { timeout: 15_000 }).toBe('submitted');
   const dar = (await rows(page, 'patrol_dars')).find((d) => d.summary?.includes('Quiet night, all secure'))!;
   expect((await rows(page, 'patrol_dar_entries')).filter((e) => e.dar_id === dar.id)).toHaveLength(1);
-  expect((await rows(page, 'patrol_time_entries')).find((t) => t.id === dar.time_entry_id)!.clock_out_at).toBeTruthy();
+  const te = (await rows(page, 'patrol_time_entries')).find((t) => t.id === dar.time_entry_id)!;
+  expect(te.clock_out_at).toBeTruthy();
+  expect(te.confirmed_at).toBeTruthy();
+  expect(te.confirmed_minutes).toBeGreaterThanOrEqual(0);
+  // the PDF is saved to the shift for the owners
+  await expect.poll(async () => (await rows(page, 'patrol_attachments')).filter((a) => a.parent_type === 'shift' && a.parent_id === te.id && a.mime === 'application/pdf').length, { timeout: 15_000 }).toBe(1);
 });
 
 test('camera QR scan: injected fake camera stream is decoded and logged', async ({ page }) => {

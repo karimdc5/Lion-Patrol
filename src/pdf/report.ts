@@ -13,6 +13,18 @@ export interface IncidentPdfInput {
   otherMedia: string[];
   events: Array<{ at: string; actor: string; text: string }>;
   includeInternal: boolean;
+  /** Category-specific answers (label, value), e.g. "Items taken". */
+  extras?: Array<[string, string]>;
+}
+export interface ShiftPdfInput {
+  org: OrgInfo; site: SiteInfo; logoPng?: Uint8Array | null; tz?: string;
+  officer: string;
+  shift: { clock_in: string; clock_out?: string | null; in_gps?: string | null; out_gps?: string | null; note?: string | null; timesheet?: string | null };
+  timeline: Array<{ at: string; kind: string; text: string }>;
+  stats: { patrols: number; scans: number; entries: number; incidents: number; bolos: number };
+  incidents: Array<{ report_no?: string | null; title: string; at: string; severity: string; category?: string | null; description: string; extras: Array<[string, string]>; photos: PdfPhoto[] }>;
+  bolos: Array<{ title: string; at: string; description: string }>;
+  photos: PdfPhoto[];
 }
 export interface DarPdfInput {
   org: OrgInfo; site: SiteInfo; logoPng?: Uint8Array | null; tz?: string;
@@ -25,15 +37,17 @@ export interface DarPdfInput {
 }
 
 // ---------------------------------------------------------------- style
-const INK = rgb(0.067, 0.094, 0.153);
-const BODY = rgb(0.16, 0.19, 0.25);
-const GREY = rgb(0.42, 0.45, 0.5);
-const LIGHT = rgb(0.88, 0.89, 0.92);
-const SOFT = rgb(0.965, 0.968, 0.975);
+// Dark theme only (Karim's call, item 17): matches the app (#0A0F1C background, gold accents).
+export const BG = rgb(0.039, 0.059, 0.11);
+const INK = rgb(0.96, 0.97, 0.98);
+const BODY = rgb(0.82, 0.85, 0.89);
+const GREY = rgb(0.6, 0.64, 0.7);
+const LIGHT = rgb(0.18, 0.22, 0.3);
+const SOFT = rgb(0.08, 0.11, 0.18);
 const GOLD = rgb(0.83, 0.647, 0.215);
-const RED = rgb(0.75, 0.2, 0.2);
-const AMBER = rgb(0.8, 0.5, 0.05);
-const GREEN = rgb(0.13, 0.55, 0.3);
+const RED = rgb(0.95, 0.42, 0.42);
+const AMBER = rgb(0.97, 0.66, 0.22);
+const GREEN = rgb(0.3, 0.8, 0.48);
 const W = 612, H = 792, M = 48, BOTTOM = 74, CONTENT_W = W - 2 * M;
 
 const fmt = (iso: unknown, tz: string, withDate = true) => {
@@ -51,9 +65,14 @@ class Layout {
   pages: PDFPage[] = [];
   constructor(public doc: PDFDocument, public f: { reg: PDFFont; bold: PDFFont; ital: PDFFont }, public logo: PDFImage | null, public title: string, public ref: string, public org: OrgInfo) {}
 
-  first(subtitleRight: string) {
+  private addPage() {
     this.page = this.doc.addPage([W, H]);
+    this.page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: BG });
     this.pages.push(this.page);
+  }
+
+  first(subtitleRight: string) {
+    this.addPage();
     let y = H - M;
     let tx = M;
     if (this.logo) {
@@ -76,8 +95,7 @@ class Layout {
   }
 
   newPage() {
-    this.page = this.doc.addPage([W, H]);
-    this.pages.push(this.page);
+    this.addPage();
     let x = M;
     if (this.logo) {
       const h = 22, w = (this.logo.width / this.logo.height) * h;
@@ -239,6 +257,7 @@ export async function buildIncidentPdf(input: IncidentPdfInput): Promise<{ bytes
     ...(i.injury || i.injury_details ? [['Injury', String(i.injury_details ?? 'Yes')] as [string, string]] : []),
     ...(i.property_damage ? [['Property damage', i.damage_estimate_usd != null ? `Estimated $${Number(i.damage_estimate_usd).toFixed(2)}` : 'Yes'] as [string, string]] : []),
   ]);
+  if (input.extras?.length) { L.section(`${i.category_name ?? 'Category'} details`); L.grid(input.extras); }
   L.section('Narrative');
   for (const para of String(i.description ?? '').split(/\n{2,}/)) { L.paragraph(para); L.y -= 4; }
 
@@ -311,6 +330,55 @@ export async function buildDarPdf(input: DarPdfInput): Promise<{ bytes: Uint8Arr
   if (input.photos.length) { L.ensure(64 + 212); L.section(`Photos (${input.photos.length})`); await L.photos(input.photos); }
   L.signatures([`Officer: ${d.author_name}`, 'Supervisor']);
   L.footers(`Confidential — daily activity report for ${input.site.name} by ${input.org.name}. ${ref}.`);
+  const bytes = await doc.save();
+  return { bytes, pages: doc.getPageCount() };
+}
+
+// ---------------------------------------------------------------- end-of-shift report (item 12)
+export async function buildShiftPdf(input: ShiftPdfInput): Promise<{ bytes: Uint8Array; pages: number }> {
+  const tz = input.tz ?? 'America/Los_Angeles';
+  const day = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz }).format(new Date(input.shift.clock_in));
+  const ref = `${input.officer} · ${day}`;
+  const { doc, L, f } = await setup('END-OF-SHIFT REPORT', ref, input.org, input.logoPng);
+  doc.setTitle(`End-of-shift report ${day} - ${input.site.name} - ${input.officer}`);
+  L.first(`Generated ${fmt(new Date().toISOString(), tz)}`);
+  L.paragraph(input.site.name, { size: 17, font: f.bold, color: INK, lead: 22 });
+  L.paragraph(input.site.address ?? '', { size: 10.5, color: GREY, lead: 18 });
+  const mins = input.shift.clock_out ? Math.round((Date.parse(input.shift.clock_out) - Date.parse(input.shift.clock_in)) / 60000) : null;
+  L.section('Shift');
+  L.grid([
+    ['Officer', input.officer], ['Duration', mins == null ? 'On duty' : `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`],
+    ['Clock in', fmt(input.shift.clock_in, tz)], ['Clock out', fmt(input.shift.clock_out, tz)],
+    ['Clock-in GPS', input.shift.in_gps ?? 'Not recorded'], ['Clock-out GPS', input.shift.out_gps ?? 'Not recorded'],
+    ['Patrols', String(input.stats.patrols)], ['Checkpoint scans', String(input.stats.scans)],
+    ['Log entries', String(input.stats.entries)], ['Incidents', String(input.stats.incidents)],
+    ['BOLOs posted', String(input.stats.bolos)], ['Timesheet', input.shift.timesheet ?? 'Not confirmed'],
+  ]);
+  if (input.shift.note) { L.section('Shift note'); L.paragraph(input.shift.note); }
+  L.section('Shift timeline');
+  if (input.timeline.length) {
+    L.table(['Time', 'Type', 'Detail'], [70, 100, 346], input.timeline.map((e) => [fmt(e.at, tz, false), e.kind, e.text]));
+  } else L.paragraph('Nothing recorded.', { color: GREY });
+  if (input.incidents.length) {
+    L.section(`Incidents (${input.incidents.length})`);
+    for (const x of input.incidents) {
+      L.ensure(60);
+      L.paragraph(`${x.report_no ? `${x.report_no}  ·  ` : ''}${x.title}`, { size: 11.5, font: f.bold, color: INK, lead: 17 });
+      L.paragraph(`${x.category ?? 'Incident'}  ·  ${cap(x.severity)} severity  ·  ${fmt(x.at, tz)}`, { size: 9.5, color: GREY, lead: 15 });
+      if (x.extras.length) L.grid(x.extras);
+      L.paragraph(x.description || '—', { size: 10 });
+      L.y -= 6;
+      if (x.photos.length) await L.photos(x.photos);
+      L.y -= 6;
+    }
+  }
+  if (input.bolos.length) {
+    L.section('BOLOs posted');
+    L.table(['Time', 'BOLO', 'Details'], [70, 170, 276], input.bolos.map((b) => [fmt(b.at, tz, false), b.title, b.description]));
+  }
+  if (input.photos.length) { L.ensure(64 + 212); L.section(`Log photos (${input.photos.length})`); await L.photos(input.photos); }
+  L.signatures([`Officer: ${input.officer}`, 'Supervisor']);
+  L.footers(`Confidential — end-of-shift report for ${input.site.name} by ${input.org.name}.`);
   const bytes = await doc.save();
   return { bytes, pages: doc.getPageCount() };
 }

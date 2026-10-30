@@ -3,22 +3,32 @@ import { Screen, TopBar, List, Row, SectionLabel, Empty, SkeletonList, Button } 
 import { getBackend, currentOrgId, memberId, signOut, orgName } from '../../auth/session';
 import { useData } from '../../ui/useData';
 import { sitesFor } from '../../data/repos/queries';
-import { putServerRows, listRecords, getRecord } from '../../data/repos/records';
+import { putServerRows, listRecords, getRecord, scopeOf } from '../../data/repos/records';
+import type { SelectQuery } from '../../data/backend/types';
 import { fmtDateTime, fmtDate, fmtTime } from '../../lib/format';
 import type { Row as R } from '../../data/db';
 import { path, match, navigate } from '../../router';
 import { MoreScreen } from '../shared/More';
 import { PdfButton } from '../../ui/PdfButton';
 import { SyncScreen } from '../shared/Sync';
+import { BoloCard, type BoloView } from '../../ui/BoloCard';
+import { RemotePhotos, type RemotePhoto } from '../../ui/RemotePhotos';
+import { extraDetails, type FieldConfig } from '../../domain/incident';
 
 async function refreshClient() {
   const b = getBackend();
   const since = new Date(Date.now() - 30 * 864e5).toISOString();
-  await Promise.all([
-    b.select<R>('patrol_incidents', { order: ['occurred_at', 'desc'], limit: 100 }).then((r) => putServerRows('patrol_incidents', r)),
-    b.select<R>('patrol_dars', { order: ['report_date', 'desc'], limit: 60 }).then((r) => putServerRows('patrol_dars', r)),
-    b.select<R>('patrol_tour_runs', { gte: { started_at: since }, order: ['started_at', 'desc'], limit: 400 }).then((r) => putServerRows('patrol_tour_runs', r)),
-  ].map((p) => p.catch(() => undefined)));
+  const org = currentOrgId.value;
+  const jobs: Array<[string, SelectQuery]> = [
+    ['patrol_incidents', { eq: { org_id: org ?? '' }, order: ['occurred_at', 'desc'], limit: 100 }],
+    ['patrol_dars', { eq: { org_id: org ?? '' }, order: ['report_date', 'desc'], limit: 60 }],
+    ['patrol_tour_runs', { eq: { org_id: org ?? '' }, gte: { started_at: since }, order: ['started_at', 'desc'], limit: 400 }],
+  ];
+  await Promise.all(jobs.map(async ([t, q]) => {
+    const startedAt = Date.now();
+    const rows = await b.select<R>(t, q);
+    await putServerRows(t, rows, { scope: scopeOf(q, rows, startedAt) });
+  }).map((p) => p.catch(() => undefined)));
 }
 
 export default function ClientShell() {
@@ -40,6 +50,8 @@ function ClientHome({ ready }: { ready: boolean }) {
   const incidents = useData(() => listRecords<R>('patrol_incidents', org), [org]);
   const dars = useData(() => listRecords<R>('patrol_dars', org), [org]);
   const runs = useData(() => listRecords<R>('patrol_tour_runs', org), [org]);
+  // Client-visible BOLOs for the client's sites (clients can't read patrol_bolos directly).
+  const bolos = useData(() => getBackend().rpc<R[]>('patrol_client_bolos').catch(() => [] as R[]), [org]);
   const inc = (incidents.data ?? []).filter((i) => i.client_visible && i.status !== 'draft' && mySites.has(i.site_id as string)).sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)));
   const dar = (dars.data ?? []).filter((d) => d.client_visible && mySites.has(d.site_id as string)).sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)));
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (6 - i)); return d; });
@@ -57,6 +69,12 @@ function ClientHome({ ready }: { ready: boolean }) {
     <Screen>
       <TopBar title={sites.data && sites.data.length > 1 ? 'Your sites' : site?.name ?? 'Your site'} large sub={`Security reports from ${orgName.value || 'Lion Security Services'}`} right={<Button variant="ghost" onClick={() => void signOut()}>Sign out</Button>} />
       <div class="screen-body stack-lg" data-testid="client-home">
+        {(bolos.data ?? []).length > 0 && (
+          <div data-testid="client-bolos">
+            <SectionLabel>Be on the lookout</SectionLabel>
+            <div class="stack">{bolos.data!.map((b) => <BoloCard key={String(b.id)} b={b as unknown as BoloView}><RemotePhotos photos={(b.photos as RemotePhoto[] | undefined) ?? []} /></BoloCard>)}</div>
+          </div>
+        )}
         <div>
           <SectionLabel>Patrol proof · last 7 nights</SectionLabel>
           <div class="card">
@@ -91,6 +109,7 @@ function ClientHome({ ready }: { ready: boolean }) {
 
 function ClientIncident({ id }: { id: string }) {
   const i = useData(() => getRecord<R>('patrol_incidents', id), [id]);
+  const extras = useData(async () => (i.data ? extraDetails(i.data, i.data.category_id ? (await getRecord<R & { name: string; field_config?: FieldConfig | null }>('patrol_categories', String(i.data.category_id))) ?? null : null) : []), [i.data?.id]);
   if (!i.data) return <Screen><TopBar title="Report" backTo="/c" /><div class="screen-body"><Empty icon="file" title="Report not found" /></div></Screen>;
   const x = i.data;
   return (
@@ -104,6 +123,7 @@ function ClientIncident({ id }: { id: string }) {
           <div><span>Police</span>{x.police_called ? `${x.police_agency ?? 'Yes'}${x.police_case_no ? ` · ${x.police_case_no}` : ''}` : 'Not contacted'}</div>
           <div><span>Severity</span>{String(x.severity)}</div>
         </div>
+        {extras.data && extras.data.length > 0 && <div data-testid="client-extra"><SectionLabel>{String(x.category_name ?? 'Category')} details</SectionLabel><div class="card kv">{extras.data.map(([k, v]) => <div key={k}><span>{k}</span>{v}</div>)}</div></div>}
         <div><SectionLabel>Narrative</SectionLabel><div class="card" style={{ whiteSpace: 'pre-wrap', lineHeight: '24px' }}>{String(x.description)}</div></div>
         <PdfButton block variant="primary" label="Download PDF report" testid="client-incident-pdf" make={() => import('../../pdf').then((m) => m.incidentPdf(x.id, { includeInternal: false }))} />
       </div>
