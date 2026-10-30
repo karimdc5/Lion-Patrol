@@ -78,10 +78,19 @@ export async function runBootstrap(backend: Backend, userId: string, email = '')
     userId,
     email,
     isAppAdmin: !!b.is_app_admin,
-    memberships: b.memberships as unknown as Row[],
+    memberships: await withPendingEdits(b.memberships as unknown as Row[]),
     updatedAt: Date.now(),
   });
   await kvSet('bootstrapAt', Date.now());
   lastSyncAt.value = Date.now();
   return b;
+}
+
+/** Keep a not-yet-synced local edit of your own member row (e.g. a new display name) over the server copy. */
+async function withPendingEdits(ms: Row[]): Promise<Row[]> {
+  const d = await db();
+  return Promise.all(ms.map(async (m) => {
+    const rec = await d.get('records', ['patrol_members', m.id]);
+    return rec?._pending ? { ...m, display_name: rec.data.display_name ?? m.display_name } : m;
+  }));
 }

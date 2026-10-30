@@ -11,8 +11,7 @@ import { path, match, navigate } from '../../router';
 import { MoreScreen } from '../shared/More';
 import { PdfButton } from '../../ui/PdfButton';
 import { SyncScreen } from '../shared/Sync';
-import { BoloCard, type BoloView } from '../../ui/BoloCard';
-import { RemotePhotos, type RemotePhoto } from '../../ui/RemotePhotos';
+import { PortalView } from './PortalView';
 import { extraDetails, type FieldConfig } from '../../domain/incident';
 
 async function refreshClient() {
@@ -36,10 +35,11 @@ export default function ClientShell() {
   const [ready, setReady] = useState(false);
   useEffect(() => { void refreshClient().finally(() => setReady(true)); }, [currentOrgId.value]);
   let m: Record<string, string> | null;
-  if (p === '/c/more') return <MoreScreen base="/c" />;
-  if (p === '/c/more/sync') return <SyncScreen base="/c" />;
-  if ((m = match('/c/incidents/:id', p))) return <ClientIncident id={m.id!} />;
-  if ((m = match('/c/dars/:id', p))) return <ClientDar id={m.id!} />;
+  // Item 7: the whole client app uses the light, client-facing theme.
+  if (p === '/c/more') return <div class="client-theme"><MoreScreen base="/c" /></div>;
+  if (p === '/c/more/sync') return <div class="client-theme"><SyncScreen base="/c" /></div>;
+  if ((m = match('/c/incidents/:id', p))) return <div class="client-theme"><ClientIncident id={m.id!} /></div>;
+  if ((m = match('/c/dars/:id', p))) return <div class="client-theme"><ClientDar id={m.id!} /></div>;
   return <ClientHome ready={ready} />;
 }
 
@@ -50,62 +50,24 @@ function ClientHome({ ready }: { ready: boolean }) {
   const incidents = useData(() => listRecords<R>('patrol_incidents', org), [org]);
   const dars = useData(() => listRecords<R>('patrol_dars', org), [org]);
   const runs = useData(() => listRecords<R>('patrol_tour_runs', org), [org]);
+  const orgRow = useData(() => getRecord<R>('patrol_orgs', org ?? ''), [org]);
   // Client-visible BOLOs for the client's sites (clients can't read patrol_bolos directly).
-  const [bolosList, setBolos] = useState<R[]>([]);
+  const [bolos, setBolos] = useState<R[]>([]);
   useEffect(() => { void getBackend().rpc<R[] | null>('patrol_client_bolos').then((r) => setBolos(r ?? [])).catch(() => setBolos([])); }, [org]);
-  const bolos = { data: bolosList };
-  const inc = (incidents.data ?? []).filter((i) => i.client_visible && i.status !== 'draft' && mySites.has(i.site_id as string)).sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)));
-  const dar = (dars.data ?? []).filter((d) => d.client_visible && mySites.has(d.site_id as string)).sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)));
-  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (6 - i)); return d; });
+  const inc = (incidents.data ?? []).filter((i) => i.client_visible && i.status !== 'draft' && mySites.has(i.site_id as string));
+  const dar = (dars.data ?? []).filter((d) => d.client_visible && mySites.has(d.site_id as string));
   const myRuns = (runs.data ?? []).filter((r) => mySites.has(r.site_id as string));
-  const perDay = days.map((d) => {
-    const end = d.getTime() + 864e5;
-    // overnight shifts: count runs started from noon the previous day
-    const rs = myRuns.filter((r) => { const t = Date.parse(r.started_at as string); return t >= d.getTime() - 12 * 3600e3 && t < end - 12 * 3600e3; });
-    const exp = rs.reduce((n, r) => n + Number(r.expected_count ?? 0), 0);
-    const got = rs.reduce((n, r) => n + Math.min(Number(r.scanned_count ?? 0), Number(r.expected_count ?? 0)), 0);
-    return { d, runs: rs.length, pct: exp ? Math.round((got / exp) * 100) : null };
-  });
-  const site = sites.data?.[0];
+  const list = sites.data ?? [];
+  const site = list[0];
+  if (!ready && !inc.length && !list.length) return <div class="client-theme cp"><div class="cp-inner"><SkeletonList rows={3} /></div></div>;
   return (
-    <Screen>
-      <TopBar title={sites.data && sites.data.length > 1 ? 'Your sites' : site?.name ?? 'Your site'} large sub={`Security reports from ${orgName.value || 'Lion Security Services'}`} right={<Button variant="ghost" onClick={() => void signOut()}>Sign out</Button>} />
-      <div class="screen-body stack-lg" data-testid="client-home">
-        {(bolos.data ?? []).length > 0 && (
-          <div data-testid="client-bolos">
-            <SectionLabel>Be on the lookout</SectionLabel>
-            <div class="stack">{bolos.data!.map((b) => <BoloCard key={String(b.id)} b={b as unknown as BoloView}><RemotePhotos photos={(b.photos as RemotePhoto[] | undefined) ?? []} /></BoloCard>)}</div>
-          </div>
-        )}
-        <div>
-          <SectionLabel>Patrol proof · last 7 nights</SectionLabel>
-          <div class="card">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, alignItems: 'end', height: 120 }} aria-label="Patrol completion by day">
-              {perDay.map((x) => (
-                <div key={x.d.toISOString()} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }}>
-                  <span class="foot tnum" style={{ color: x.pct == null ? 'var(--text-3)' : 'var(--text)' }}>{x.pct == null ? '—' : `${x.pct}%`}</span>
-                  <span style={{ width: '70%', borderRadius: 6, height: `${Math.max(4, (x.pct ?? 0) * 0.7)}px`, background: x.pct == null ? 'var(--raised-2)' : x.pct < 80 ? 'var(--warning)' : 'var(--success)' }} />
-                  <span class="foot muted">{x.d.toLocaleDateString('en-US', { weekday: 'narrow' })}</span>
-                </div>
-              ))}
-            </div>
-            <p class="foot muted" style={{ marginTop: 10 }}>{myRuns.length} patrol tours logged with timestamped QR checkpoint scans.</p>
-          </div>
-        </div>
-        <div>
-          <SectionLabel>Incident reports</SectionLabel>
-          {!ready && !inc.length ? <SkeletonList rows={2} /> : inc.length ? (
-            <List>{inc.map((i) => <Row key={i.id} testid="client-incident" icon="file" title={String(i.title || i.category_name)} sub={`${i.report_no ?? ''} · ${fmtDateTime(i.occurred_at as string)}`} chevron href={`/c/incidents/${i.id}`} />)}</List>
-          ) : <Empty icon="file" title="No reports shared yet" body="Incident reports appear here once Lion Security Services shares them with you." />}
-        </div>
-        <div>
-          <SectionLabel>Daily activity reports</SectionLabel>
-          {dar.length ? (
-            <List>{dar.map((d) => <Row key={d.id} testid="client-dar" icon="activity" title={`Daily report · ${fmtDate(String(d.report_date) + 'T12:00:00Z')}`} sub={`${d.author_name} · ${d.report_no ?? ''}`} chevron href={`/c/dars/${d.id}`} />)}</List>
-          ) : <Empty icon="activity" title="No daily reports shared yet" />}
-        </div>
-      </div>
-    </Screen>
+    <PortalView kind="client" openIncident={(id) => navigate(`/c/incidents/${id}`)} openDar={(id) => navigate(`/c/dars/${id}`)}
+      incidentPdf={(id) => () => import('../../pdf').then((m) => m.incidentPdf(id, { includeInternal: false }))}
+      darPdf={(id) => () => import('../../pdf').then((m) => m.darPdf(id))}
+      headerRight={<span class="row" style={{ gap: 4 }}><Button variant="ghost" icon="more" aria-label="More" onClick={() => navigate('/c/more')} /><Button variant="ghost" onClick={() => void signOut()}>Sign out</Button></span>}
+      m={{ orgName: orgName.value || String(orgRow.data?.name ?? 'Lion Security Services'), orgPhone: (orgRow.data?.phone as string) ?? null, orgEmail: (orgRow.data?.email as string) ?? null,
+        siteName: list.length > 1 ? list.map((s) => s.name).join(' · ') : site?.name ?? 'Your site', siteAddress: list.length === 1 ? [site?.address, site?.city].filter(Boolean).join(', ') : undefined,
+        incidents: inc, dars: dar, runs: myRuns, bolos }} />
   );
 }
 
