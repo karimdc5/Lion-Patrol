@@ -137,11 +137,13 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       }
       case 'patrol_attachments': {
         if (mine) return true;
-        const parentTable = ({ incident: 'patrol_incidents', dar_entry: 'patrol_dar_entries', scan: 'patrol_scans', alert: 'patrol_alerts', site: 'patrol_sites', bolo: 'patrol_bolos' } as Record<string, string>)[r.parent_type];
+        const parentTable = ({ incident: 'patrol_incidents', dar_entry: 'patrol_dar_entries', scan: 'patrol_scans', alert: 'patrol_alerts', site: 'patrol_sites', bolo: 'patrol_bolos', shift: 'patrol_time_entries' } as Record<string, string>)[r.parent_type];
         const parent = parentTable ? (s.tables[parentTable] ?? []).find((p) => p.id === r.parent_id) : undefined;
+        if (r.parent_type === 'shift') return !!parent && c.staffOrgs.includes(parent.org_id);
         return !!parent && visible(s, c, parentTable!, parent);
       }
       case 'patrol_bolos': return staff || c.workable.includes(r.site_id);
+      case 'patrol_owner_alerts': return c.adminOrgs.includes(r.org_id);
       case 'patrol_invites': return c.adminOrgs.includes(r.org_id);
       case 'patrol_share_links': case 'patrol_portal_links': return staff;
       default: return false;
@@ -161,6 +163,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       if (op === 'insert') return r.created_by === c.memberIn(r.org_id) && c.workerOrgs.includes(r.org_id) && c.workable.includes(r.site_id);
       return c.staffOrgs.includes(r.org_id) || c.memberIds.includes(r.created_by);
     }
+    if (table === 'patrol_owner_alerts') return op === 'update' && c.adminOrgs.includes(r.org_id);
     if (ADMIN_TABLES.has(table)) return c.adminOrgs.includes(r.org_id ?? r.id);
     if (STAFF_TABLES.has(table)) return c.staffOrgs.includes(r.org_id);
     if (table === 'patrol_members' && op === 'update') return c.adminOrgs.includes(r.org_id) || r.user_id === c.userId;
@@ -182,6 +185,14 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       }
       if (table === 'patrol_alerts') t.member_name = memberName(t.member_id);
       if (table === 'patrol_attachments') t.upload_status = 'pending';
+      if (table === 'patrol_time_entries') {
+        const m = (s.tables.patrol_members ?? []).find((x) => x.id === t.member_id);
+        const site = (s.tables.patrol_sites ?? []).find((x) => x.id === t.site_id);
+        if (m?.role === 'guard' && site?.lat != null && site.lng != null) {
+          if (t.clock_in_lat == null) throw new BackendError('23514', 'clock_in_gps_required', 400);
+          if (haversine(t.clock_in_lat, t.clock_in_lng, site.lat, site.lng) > site.geofence_m + Math.min(t.clock_in_accuracy_m ?? 0, 100)) throw new BackendError('23514', 'outside_geofence', 400);
+        }
+      }
       if (table === 'patrol_bolos') { t.status = 'active'; t.resolved_at = null; t.visible_to_client ??= false; }
     } else {
       if (table === 'patrol_bolos') {
@@ -228,6 +239,12 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       if (existing && (!existing.last_ping_at || existing.last_ping_at < row.recorded_at)) {
         Object.assign(existing, { lat: row.lat, lng: row.lng, accuracy_m: row.accuracy_m, last_ping_at: row.recorded_at, updated_at: nowIso() });
       }
+    }
+    if ((table === 'patrol_scans' || table === 'patrol_dar_entries') && row.lat != null) {
+      const te = table === 'patrol_scans' ? row.time_entry_id : (s.tables.patrol_dars ?? []).find((d) => d.id === row.dar_id)?.time_entry_id;
+      const at = table === 'patrol_scans' ? row.scanned_at : row.occurred_at;
+      const existing = st.find((x) => x.member_id === row.member_id && x.on_duty && x.time_entry_id === te);
+      if (existing && (!existing.last_ping_at || existing.last_ping_at < at)) Object.assign(existing, { lat: row.lat, lng: row.lng, last_ping_at: at, updated_at: nowIso() });
     }
     if (table === 'patrol_scans' && row.tour_run_id && !(row.flags ?? []).includes('duplicate')) {
       const run = (s.tables.patrol_tour_runs ?? []).find((x) => x.id === row.tour_run_id);
@@ -377,7 +394,11 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       if (!inv || inv.revoked_at || Date.parse(inv.expires_at) < Date.now() || inv.uses >= inv.max_uses || (inv.email && inv.email !== email)) {
         return { ok: false, error: 'invalid_invite' };
       }
+      // Client codes never attach to an account that already works for a company (separate identities).
+      if (inv.role === 'client' && (s.tables.patrol_members ?? []).some((x) => x.user_id === c.userId && x.role !== 'client')) return { ok: false, error: 'use_separate_account' };
       let m = (s.tables.patrol_members ?? []).find((x) => x.org_id === inv.org_id && x.user_id === c.userId);
+      if (m && m.status !== 'active') return { ok: false, error: 'member_disabled' };
+      // Existing members: name/role/phone are never touched.
       if (!m) {
         m = { id: uuidv7(), org_id: inv.org_id, user_id: c.userId, role: inv.role, status: 'active', display_name: a.p_display_name || inv.display_name || email.split('@')[0], email, phone: a.p_phone ?? null, created_at: nowIso(), updated_at: nowIso() };
         (s.tables.patrol_members ??= []).push(m);
@@ -450,7 +471,8 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         expires_at: l.expires_at,
         org: { name: o.name, phone: o.phone, email: o.email, license_no: o.license_no },
         site: { id: site.id, name: site.name, address: site.address, city: site.city, state: site.state },
-        incidents: (s.tables.patrol_incidents ?? []).filter((i) => i.site_id === l.site_id && i.client_visible && i.status !== 'draft').sort((x, y) => y.occurred_at.localeCompare(x.occurred_at)).map(strip),
+        incidents: (s.tables.patrol_incidents ?? []).filter((i) => i.site_id === l.site_id && i.client_visible && i.status !== 'draft').sort((x, y) => y.occurred_at.localeCompare(x.occurred_at))
+          .map((i) => ({ ...strip(i), field_config: (s.tables.patrol_categories ?? []).find((x) => x.id === i.category_id)?.field_config ?? null })),
         dars: (s.tables.patrol_dars ?? []).filter((d) => d.site_id === l.site_id && d.client_visible).sort((x, y) => String(y.report_date).localeCompare(String(x.report_date))).map((d) => ({
           id: d.id, report_no: d.report_no, report_date: d.report_date, author_name: d.author_name, summary: d.summary, status: d.status,
           entries: (s.tables.patrol_dar_entries ?? []).filter((e) => e.dar_id === d.id && !e.deleted_at).sort((x, y) => x.occurred_at.localeCompare(y.occurred_at)).map((e) => ({ occurred_at: e.occurred_at, category_name: e.category_name, body: e.body })),
@@ -458,7 +480,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         })),
         bolos: (s.tables.patrol_bolos ?? []).filter((b) => b.site_id === l.site_id && b.visible_to_client && b.status === 'active' && (!b.expires_at || Date.parse(b.expires_at) > Date.now()))
           .sort((x, y) => y.created_at.localeCompare(x.created_at))
-          .map((b) => ({ id: b.id, title: b.title, description: b.description, person_desc: b.person_desc, vehicle_desc: b.vehicle_desc, expires_at: b.expires_at, created_at: b.created_at })),
+          .map((b) => ({ id: b.id, title: b.title, description: b.description, person_desc: b.person_desc, vehicle_desc: b.vehicle_desc, expires_at: b.expires_at, created_at: b.created_at, photos: bolosPhotos(s, b.id) })),
         runs: (s.tables.patrol_tour_runs ?? []).filter((r) => r.site_id === l.site_id && Date.parse(r.started_at) > Date.now() - 14 * 864e5).map((r) => ({ started_at: r.started_at, expected_count: r.expected_count, scanned_count: r.scanned_count, completed_at: r.completed_at })),
       };
     },
@@ -487,6 +509,53 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const row = (s.tables[a.p_table] ?? []).find((x) => x.id === a.p_id);
       if (row) row.notified_at ??= nowIso();
       return null;
+    },
+    patrol_check_owner_alerts(s, c, a) {
+      if (!c.workerOrgs.includes(a.p_org)) return { created: 0 };
+      const alerts = (s.tables.patrol_owner_alerts ??= []);
+      const now = Date.now();
+      let created = 0;
+      const add = (key: string, row: Record<string, unknown>) => { if (alerts.some((x) => x.org_id === a.p_org && x.dedupe_key === key)) return; alerts.push({ ...row, id: uuidv7(), org_id: a.p_org, dedupe_key: key, acknowledged_at: null, created_at: nowIso(), updated_at: nowIso() }); created++; };
+      const st = (s.tables.patrol_org_settings ?? []).find((x) => x.org_id === a.p_org);
+      const name = (id: string) => (s.tables.patrol_members ?? []).find((m) => m.id === id)?.display_name ?? 'Guard';
+      const siteOf = (id: string) => (s.tables.patrol_sites ?? []).find((x) => x.id === id);
+      for (const r of (s.tables.patrol_tour_runs ?? []).filter((x) => x.org_id === a.p_org && !x.completed_at && x.expected_count > 0 && (x.scanned_count ?? 0) < x.expected_count && Date.parse(x.started_at) > now - 2 * 864e5)) {
+        const site = siteOf(r.site_id);
+        const max = site?.tour_max_duration_min ?? st?.tour_max_duration_min ?? 30;
+        if (Date.parse(r.started_at) + max * 60e3 < now) add(`missed:${r.id}`, { kind: 'missed_checkpoint', site_id: r.site_id, member_id: r.member_id, tour_run_id: r.id, time_entry_id: r.time_entry_id, title: `Missed checkpoints at ${site?.name ?? 'site'}`, body: `${name(r.member_id)} scanned ${r.scanned_count ?? 0} of ${r.expected_count} checkpoints.` });
+      }
+      for (const sh of (s.tables.patrol_shifts ?? []).filter((x) => x.org_id === a.p_org && x.member_id && !x.cancelled_at && Date.parse(x.starts_at) + 10 * 60e3 < now && Date.parse(x.ends_at) > now)) {
+        const came = (s.tables.patrol_time_entries ?? []).some((t) => t.member_id === sh.member_id && Date.parse(t.clock_in_at) > Date.parse(sh.starts_at) - 2 * 3600e3 && Date.parse(t.clock_in_at) < Date.parse(sh.ends_at));
+        if (!came) add(`noshow:${sh.id}`, { kind: 'no_show', site_id: sh.site_id, member_id: sh.member_id, shift_id: sh.id, title: `No-show at ${siteOf(sh.site_id)?.name ?? 'site'}`, body: `${name(sh.member_id)} has not clocked in for the shift that started ${new Date(sh.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.` });
+      }
+      return { created };
+    },
+    patrol_report_geofence_block(s, c, a) {
+      const site = (s.tables.patrol_sites ?? []).find((x) => x.id === a.p_site);
+      if (!site || !c.workable.includes(site.id)) return null;
+      const mid = c.memberIn(site.org_id);
+      const d = a.p_lat == null || site.lat == null ? null : Math.round(haversine(a.p_lat, a.p_lng, site.lat, site.lng));
+      const key = `geofence:${mid}:${new Date().toISOString().slice(0, 16)}`;
+      const alerts = (s.tables.patrol_owner_alerts ??= []);
+      if (!alerts.some((x) => x.dedupe_key === key)) alerts.push({ id: uuidv7(), org_id: site.org_id, kind: 'geofence', dedupe_key: key, site_id: site.id, member_id: mid, title: `Clock-in blocked outside ${site.name}`, body: `${c.members.find((m) => m.id === mid)?.display_name ?? 'A guard'} tried to clock in ${d != null ? `${d} m from the site` : 'without a GPS fix'}.`, lat: a.p_lat ?? null, lng: a.p_lng ?? null, acknowledged_at: null, created_at: nowIso(), updated_at: nowIso() });
+      return null;
+    },
+    patrol_add_shift_by_names(s, c, a) {
+      if (!c.staffOrgs.includes(a.p_org)) throw new BackendError('42501', 'not_staff', 403);
+      const q = String(a.p_site).trim().toLowerCase();
+      const sites = (s.tables.patrol_sites ?? []).filter((x) => x.org_id === a.p_org && x.active !== false && (String(x.code ?? '').toLowerCase() === q || x.name.toLowerCase() === q || x.name.toLowerCase().includes(q)));
+      if (sites.length !== 1) throw new BackendError('22023', `site_not_unique: ${sites.length} matches`, 400);
+      const g = String(a.p_guard ?? '').trim().toLowerCase();
+      const ms = g && !['open', 'unassigned'].includes(g) ? (s.tables.patrol_members ?? []).filter((m) => m.org_id === a.p_org && m.status === 'active' && m.role !== 'client' && (m.display_name.toLowerCase() === g || String(m.email).toLowerCase() === g || m.display_name.toLowerCase().startsWith(g))) : [];
+      if (g && !['open', 'unassigned'].includes(g) && ms.length !== 1) throw new BackendError('22023', `guard_not_unique: ${ms.length} matches`, 400);
+      const row = { id: uuidv7(), org_id: a.p_org, site_id: sites[0]!.id, member_id: ms[0]?.id ?? null, starts_at: a.p_starts_at, ends_at: a.p_ends_at, notes: a.p_notes ?? null, cancelled_at: null, created_by: c.memberIn(a.p_org), created_at: nowIso(), updated_at: nowIso() };
+      (s.tables.patrol_shifts ??= []).push(row);
+      return { shift_id: row.id, site_id: row.site_id, member_id: row.member_id, starts_at: row.starts_at, ends_at: row.ends_at };
+    },
+    patrol_client_bolos(s, c) {
+      return (s.tables.patrol_bolos ?? []).filter((b) => c.clientSites.includes(b.site_id) && b.visible_to_client && b.status === 'active' && (!b.expires_at || Date.parse(b.expires_at) > Date.now()))
+        .sort((x, y) => y.created_at.localeCompare(x.created_at))
+        .map((b) => ({ id: b.id, site_id: b.site_id, title: b.title, description: b.description, person_desc: b.person_desc, vehicle_desc: b.vehicle_desc, expires_at: b.expires_at, created_at: b.created_at, photos: bolosPhotos(s, b.id) }));
     },
     patrol_storage_usage(s, c, a) {
       if (!c.staffOrgs.includes(a.p_org)) return null;
@@ -618,6 +687,17 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       },
     },
   };
+}
+
+function bolosPhotos(s: MockState, boloId: string) {
+  return (s.tables.patrol_attachments ?? []).filter((x) => x.parent_type === 'bolo' && x.parent_id === boloId && x.kind === 'image' && x.upload_status === 'uploaded')
+    .map((x) => ({ path: x.storage_path, thumb: x.thumb_path }));
+}
+
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const r = (d: number) => (d * Math.PI) / 180;
+  const a = Math.sin(r(lat2 - lat1) / 2) ** 2 + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(r(lng2 - lng1) / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(a));
 }
 
 export function defaultSettings(orgId: string, emails: string[]): R {

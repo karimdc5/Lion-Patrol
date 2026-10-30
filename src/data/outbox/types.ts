@@ -12,6 +12,8 @@ export interface OutboxOp {
   rpc?: string;
   payload: unknown;        // row | rows | rpc args | {attachmentId, path, mime}
   match?: Record<string, string>; // for 'update'
+  /** Payload columns added by a newer migration: dropped and retried if the server doesn't have them yet. */
+  optional?: string[];
   entityKey: string;       // e.g. patrol_incidents:<id>
   dependsOn: string[];
   label: string;           // human label for the Sync screen

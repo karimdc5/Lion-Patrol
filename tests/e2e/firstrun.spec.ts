@@ -13,8 +13,10 @@ test('owner first run: create org → default categories → site → checkpoint
   await page.getByLabel('Email').fill('karim@realco.test');
   await page.getByLabel('Password').fill('demo1234');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Set up your company' })).toBeVisible();
-  await expect(page.getByLabel('Company name')).toHaveValue('Lion Security Services');
+  await expect(page.getByTestId('setup-choice')).toBeVisible();
+  await page.getByTestId('choice-create').click();
+  await expect(page.getByLabel('Company name')).toHaveValue('');
+  await page.getByLabel('Company name').fill('Lion Security Services');
   await page.getByLabel('Your name (as shown on reports)').fill('Karim');
   await page.getByRole('button', { name: 'Create organization' }).click();
   await dismissEnroll(page);

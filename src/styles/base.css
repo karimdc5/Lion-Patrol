@@ -441,3 +441,9 @@ textarea.input { height: auto; min-height: 112px; padding: 12px 14px; resize: ve
   .large-title { font-size: 28px; line-height: 34px; }
   .screen-body, .topbar-large { max-width: 760px; margin-left: auto; margin-right: auto; width: 100%; }
 }
+
+/* last seen (People) */
+.seen-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-3); flex: none; display: inline-block; }
+.seen-dot.live { background: var(--success); animation: seen-pulse 1.8s ease-out infinite; }
+@keyframes seen-pulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); } 70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+@media (prefers-reduced-motion: reduce) { .seen-dot.live { animation: none; } }

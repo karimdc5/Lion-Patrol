@@ -20,6 +20,7 @@ import { getRecord, listRecords, listByParent, putServerRows } from '../data/rep
 import { db, type Row } from '../data/db';
 import { getBackend } from '../auth/session';
 import type { OrgInfo, PdfPhoto } from './report';
+import { extraDetails, type FieldConfig } from '../domain/incident';
 
 const TZ = 'America/Los_Angeles';
 const timeLabel = (iso: unknown) => (iso ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ }).format(new Date(String(iso))) : '');
@@ -75,8 +76,10 @@ export async function incidentPdf(id: string, opts: { includeInternal: boolean }
     .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
     .map((e) => ({ at: String(e.created_at), actor: String(e.actor_name ?? ''), text: e.kind === 'status' ? `Status > ${STATUS_LABEL[String(e.to_status)] ?? e.to_status}` : `${e.kind === 'note' ? 'Internal note' : 'Addendum'}: ${e.body ?? ''}` }));
   if (inc.submitted_at) events.unshift({ at: String(inc.submitted_at), actor: String(inc.author_name ?? ''), text: 'Submitted' });
+  const cat = inc.category_id ? await getRecord<Row & { name: string; field_config?: FieldConfig | null }>('patrol_categories', String(inc.category_id)) : undefined;
   const { buildIncidentPdf } = await import('./report');
   const r = await buildIncidentPdf({
+    extras: extraDetails(inc, cat ?? null),
     org: await orgInfo(String(inc.org_id)), site: await siteInfo(String(inc.site_id)), logoPng: await logo(),
     incident: opts.includeInternal ? inc : { ...inc, review_notes: null }, includeInternal: opts.includeInternal,
     photos: await photoBytes(atts), otherMedia: atts.filter((a) => a.kind !== 'image').map(mediaLabel), events,
@@ -122,6 +125,94 @@ export async function darPdf(id: string) {
     tours, incidents, photos: await photoBytes(photoAtts),
   });
   return { ...r, filename: `DAR-${String(dar.report_no ?? dar.report_date).replace(/[^A-Za-z0-9-]+/g, '-')}.pdf` };
+}
+
+// ---------------------------------------------------------------- end-of-shift PDF (item 12)
+const gps = (lat: unknown, lng: unknown, acc?: unknown) => (lat != null && lng != null ? `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}${acc != null ? ` (±${Math.round(Number(acc))} m)` : ''}` : null);
+
+/** The shift's saved PDF (bytes), if the guard's device uploaded one. */
+async function savedShiftPdf(teId: string): Promise<Uint8Array | null> {
+  let atts = (await listByParent<Row>('patrol_attachments', teId)).filter((a) => a.parent_type === 'shift' && a.kind === 'document');
+  if (!atts.length) {
+    try { const rows = await getBackend().select<Row>('patrol_attachments', { eq: { parent_id: teId } }); await putServerRows('patrol_attachments', rows); atts = rows.filter((a) => a.parent_type === 'shift'); } catch { /* offline */ }
+  }
+  const a = atts.sort((x, y) => String(y.created_at ?? y.client_created_at).localeCompare(String(x.created_at ?? x.client_created_at)))[0];
+  if (!a) return null;
+  const blob = await (await db()).get('blobs', a.id);
+  if (blob) return new Uint8Array(blob.bytes);
+  try {
+    const url = (await getBackend().storage.signedUrls([String(a.storage_path)], 600))[String(a.storage_path)];
+    if (!url || url.startsWith('data:,')) return null;
+    const r = await fetch(url);
+    return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+  } catch { return null; }
+}
+
+/**
+ * One PDF for a guard's shift: clock in/out + GPS, patrol starts/ends, checkpoint scans, log
+ * entries, incidents (with photos and category details) and BOLOs posted. `save` stores it on the
+ * shift (patrol_attachments parent 'shift') so owners can open it later; `preferSaved` returns the
+ * stored copy when there is one.
+ */
+export async function endOfShiftPdf(teId: string, opts: { save?: boolean; preferSaved?: boolean } = {}) {
+  const te = await getRecord<Row>('patrol_time_entries', teId);
+  if (!te) throw new Error('Shift not found on this device.');
+  const filename = `Shift-${String(te.clock_in_at).slice(0, 10)}-${teId.slice(-6)}.pdf`;
+  if (opts.preferSaved) {
+    const saved = await savedShiftPdf(teId);
+    if (saved) {
+      let pages = 1;
+      try { const { PDFDocument } = await import('pdf-lib'); pages = (await PDFDocument.load(saved)).getPageCount(); } catch { /* keep 1 */ }
+      return { bytes: saved, pages, filename };
+    }
+  }
+  const org = String(te.org_id);
+  const start = Date.parse(String(te.clock_in_at));
+  const end = te.clock_out_at ? Date.parse(String(te.clock_out_at)) : Date.now();
+  const inShift = (iso: unknown) => { const t = Date.parse(String(iso)); return t >= start - 60e3 && t <= end + 60e3; };
+  const [members, dars, entriesAll, scansAll, runsAll, cps, incAll, bolosAll] = await Promise.all([
+    listRecords<Row>('patrol_members', org), listRecords<Row>('patrol_dars', org), listRecords<Row>('patrol_dar_entries', org), listRecords<Row>('patrol_scans', org),
+    listRecords<Row>('patrol_tour_runs', org), listRecords<Row>('patrol_checkpoints', org), listRecords<Row>('patrol_incidents', org), listRecords<Row>('patrol_bolos', org),
+  ]);
+  const dar = dars.find((d) => d.time_entry_id === teId);
+  const entries = entriesAll.filter((e) => !e.deleted_at && (dar ? e.dar_id === dar.id : e.member_id === te.member_id && inShift(e.occurred_at)));
+  const scans = scansAll.filter((x) => x.time_entry_id === teId);
+  const runs = runsAll.filter((r) => r.time_entry_id === teId);
+  const incidents = incAll.filter((i) => i.status !== 'draft' && i.member_id === te.member_id && (i.time_entry_id ? i.time_entry_id === teId : inShift(i.occurred_at)));
+  const bolos = bolosAll.filter((b) => b.created_by === te.member_id && b.site_id === te.site_id && inShift(b.created_at));
+  const officer = String(members.find((m) => m.id === te.member_id)?.display_name ?? dar?.author_name ?? 'Officer');
+  const cats = await listRecords<Row & { name: string; field_config?: FieldConfig | null }>('patrol_categories', org);
+  const timeline = [
+    { at: String(te.clock_in_at), kind: 'Clock in', text: gps(te.clock_in_lat, te.clock_in_lng, te.clock_in_accuracy_m) ?? 'No GPS' },
+    ...entries.map((e) => ({ at: String(e.occurred_at), kind: /^Patrol (started|ended)/.test(String(e.body)) ? 'Patrol' : String(e.category_name ?? 'Log'), text: String(e.body) })),
+    ...scans.map((x) => ({ at: String(x.scanned_at), kind: 'Checkpoint', text: `${cps.find((c) => c.id === x.checkpoint_id)?.name ?? 'Checkpoint'}${(x.flags as string[] ?? []).length ? ` (${(x.flags as string[]).join(', ').replace(/_/g, ' ')})` : ''}` })),
+    ...incidents.map((i) => ({ at: String(i.occurred_at), kind: 'Incident', text: `${i.report_no ? `${i.report_no} · ` : ''}${i.title || i.category_name || 'Incident'}` })),
+    ...bolos.map((b) => ({ at: String(b.created_at), kind: 'BOLO', text: String(b.title) })),
+    ...(te.clock_out_at ? [{ at: String(te.clock_out_at), kind: 'Clock out', text: gps(te.clock_out_lat, te.clock_out_lng, te.clock_out_accuracy_m) ?? 'No GPS' }] : []),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const incOut = [];
+  for (const i of incidents) {
+    if (!(await listByParent<Row>('patrol_attachments', i.id)).length) { try { await putServerRows('patrol_attachments', await getBackend().select<Row>('patrol_attachments', { eq: { parent_id: i.id } })); } catch { /* offline */ } }
+    incOut.push({ report_no: (i.report_no as string) ?? null, title: String(i.title || i.category_name || 'Incident'), at: String(i.occurred_at), severity: String(i.severity), category: (i.category_name as string) ?? null,
+      description: String(i.description ?? ''), extras: extraDetails(i, cats.find((c) => c.id === i.category_id) ?? null), photos: await photoBytes(await listByParent<Row>('patrol_attachments', i.id)) });
+  }
+  const logAtts: Row[] = [];
+  for (const e of entries) logAtts.push(...(await listByParent<Row>('patrol_attachments', e.id)));
+  const confirmed = te.confirmed_at ? `Confirmed by officer${te.confirmed_minutes != null ? ` (${Math.floor(Number(te.confirmed_minutes) / 60)}h ${String(Number(te.confirmed_minutes) % 60).padStart(2, '0')}m)` : ''}` : te.timesheet_note ? `Flagged: ${te.timesheet_note}` : null;
+  const { buildShiftPdf } = await import('./report');
+  const r = await buildShiftPdf({
+    org: await orgInfo(org), site: await siteInfo(String(te.site_id)), logoPng: await logo(), officer,
+    shift: { clock_in: String(te.clock_in_at), clock_out: (te.clock_out_at as string) ?? null, in_gps: gps(te.clock_in_lat, te.clock_in_lng, te.clock_in_accuracy_m), out_gps: gps(te.clock_out_lat, te.clock_out_lng, te.clock_out_accuracy_m), note: (te.shift_note as string) ?? null, timesheet: confirmed },
+    timeline, stats: { patrols: Math.max(runs.length, entries.filter((e) => /^Patrol started/.test(String(e.body))).length), scans: scans.length, entries: entries.length, incidents: incidents.length, bolos: bolos.length },
+    incidents: incOut, bolos: bolos.map((b) => ({ title: String(b.title), at: String(b.created_at), description: [b.description, b.person_desc && `Person: ${b.person_desc}`, b.vehicle_desc && `Vehicle: ${b.vehicle_desc}`].filter(Boolean).join(' · ') })),
+    photos: await photoBytes(logAtts),
+  });
+  if (opts.save) {
+    const { addAttachment } = await import('../data/guard');
+    const bytes = r.bytes.slice().buffer as ArrayBuffer;
+    await addAttachment('shift', teId, { kind: 'document', mime: 'application/pdf', ext: 'pdf', bytes, thumb: null, name: filename }).catch(() => undefined);
+  }
+  return { ...r, filename };
 }
 
 export { buildFromPortal } from './portal';

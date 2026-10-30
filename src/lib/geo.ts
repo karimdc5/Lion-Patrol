@@ -40,3 +40,11 @@ export function stopWatch() {
   watchId = null;
 }
 export function isWatching() { return watchId != null; }
+
+/** Item 18 geofence: inside when within the site radius plus the fix accuracy (capped at 100 m). Sites without a pin always pass. */
+export function geofenceCheck(site: { lat: number | null; lng: number | null; geofence_m: number }, fix: { lat: number; lng: number; accuracy: number } | null): { ok: boolean; distance: number | null } {
+  if (site.lat == null || site.lng == null) return { ok: true, distance: null };
+  if (!fix) return { ok: false, distance: null };
+  const d = distanceM(fix, { lat: site.lat, lng: site.lng });
+  return { ok: d <= site.geofence_m + Math.min(fix.accuracy || 0, 100), distance: d };
+}

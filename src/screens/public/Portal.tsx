@@ -6,6 +6,8 @@ import { getBackend, phase } from '../../auth/session';
 import { fmtDateTime, fmtDate } from '../../lib/format';
 import type { Row } from '../../data/db';
 import { BoloCard, type BoloView } from '../../ui/BoloCard';
+import { RemotePhotos, type RemotePhoto } from '../../ui/RemotePhotos';
+import { extraDetails } from '../../domain/incident';
 
 interface PortalData { org: Row; site: Row; incidents: Row[]; dars: Row[]; bolos?: Row[]; runs: Row[]; expires_at: string | null }
 
@@ -45,7 +47,7 @@ export default function PortalPage({ token }: { token: string }) {
         {(data.bolos ?? []).length > 0 && (
           <div data-testid="portal-bolos">
             <SectionLabel>Be on the lookout</SectionLabel>
-            <div class="stack">{data.bolos!.map((b) => <BoloCard key={String(b.id)} b={b as unknown as BoloView} />)}</div>
+            <div class="stack">{data.bolos!.map((b) => <BoloCard key={String(b.id)} b={b as unknown as BoloView}><RemotePhotos photos={(b.photos as RemotePhoto[] | undefined) ?? []} /></BoloCard>)}</div>
           </div>
         )}
         <div>
@@ -74,7 +76,10 @@ export default function PortalPage({ token }: { token: string }) {
                     <span class="grow" style={{ minWidth: 0 }}><b style={{ display: 'block' }}>{String(i.title || i.category_name)}</b><span class="foot muted">{String(i.report_no ?? '')} · {fmtDateTime(i.occurred_at as string)}</span></span>
                     <Icon name={open === i.id ? 'chevron-down' : 'chevron-right'} class="chev" />
                   </button>
-                  {open === i.id && <div class="sub" style={{ whiteSpace: 'pre-wrap', color: '#DCE1E8' }}>{String(i.description)}</div>}
+                  {open === i.id && <>
+                    {extraDetails(i).length > 0 && <div class="card kv" data-testid="portal-extra">{extraDetails(i).map(([k, v]) => <div key={k}><span>{k}</span>{v}</div>)}</div>}
+                    <div class="sub" style={{ whiteSpace: 'pre-wrap', color: '#DCE1E8' }}>{String(i.description)}</div>
+                  </>}
                   <PdfButton label="Download PDF" testid="portal-incident-pdf" make={make('incident', i.id)} />
                 </div>
               ))}

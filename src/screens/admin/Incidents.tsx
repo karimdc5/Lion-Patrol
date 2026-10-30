@@ -9,6 +9,7 @@ import { fmtDateTime, relTime } from '../../lib/format';
 import { db, type Row as R } from '../../data/db';
 import { labelFor } from '../../data/guard';
 import { PdfButton } from '../../ui/PdfButton';
+import { extraDetails, type FieldConfig } from '../../domain/incident';
 
 const STATUS: Record<string, [string, string]> = {
   submitted: ['New', 'pill-warning'], reviewed: ['Reviewed', 'pill-info'], sent_to_client: ['Sent to client', 'pill-success'], closed: ['Closed', 'pill-muted'], draft: ['Draft', 'pill-muted'],
@@ -101,6 +102,7 @@ export function IncidentReview({ id }: { id: string }) {
           {i.property_damage ? <div><span>Damage est.</span>${String(i.damage_estimate_usd ?? '—')}</div> : null}
           {i.injury ? <div><span>Injury</span>{String(i.injury_details ?? 'Yes')}</div> : null}
         </div>
+        <ExtraDetails i={i} />
         <div><SectionLabel>What happened</SectionLabel><div class="card" style={{ whiteSpace: 'pre-wrap', lineHeight: '24px' }}>{String(i.description)}</div></div>
         {people.length > 0 && <div><SectionLabel>People</SectionLabel><List>{people.map((p, k) => <Row key={k} icon="user" title={p.name || 'Unknown'} sub={[p.role, p.description, p.phone].filter(Boolean).join(' · ')} />)}</List></div>}
         {vehicles.length > 0 && <div><SectionLabel>Vehicles</SectionLabel><List>{vehicles.map((v, k) => <Row key={k} icon="car" title={`${v.plate || 'No plate'} ${v.state ?? ''}`} sub={[v.color, v.make, v.model].filter(Boolean).join(' ')} />)}</List></div>}
@@ -135,5 +137,17 @@ export function IncidentReview({ id }: { id: string }) {
         {i.review_notes ? <div><SectionLabel>Internal notes</SectionLabel><div class="card foot" style={{ whiteSpace: 'pre-wrap' }}>{String(i.review_notes)}</div></div> : null}
       </div>
     </Screen>
+  );
+}
+
+/** Category-specific answers (incident.extra) with the category's labels. */
+function ExtraDetails({ i }: { i: R }) {
+  const cat = useData(async () => (i.category_id ? getRecord<R & { name: string; field_config?: FieldConfig | null }>('patrol_categories', String(i.category_id)) : undefined), [i.category_id]);
+  const rows = extraDetails(i, cat.data ?? null);
+  if (!rows.length) return null;
+  return (
+    <div data-testid="extra-details"><SectionLabel>{String(i.category_name ?? 'Category')} details</SectionLabel>
+      <div class="card kv">{rows.map(([k, v]) => <div key={k}><span>{k}</span>{v}</div>)}</div>
+    </div>
   );
 }

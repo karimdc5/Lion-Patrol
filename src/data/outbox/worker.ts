@@ -182,7 +182,14 @@ async function execute(op: OutboxOp, backend: Backend) {
       return backend.upsert(op.table!, rows as object[]);
     }
     case 'update':
-      return backend.update(op.table!, op.payload as object, op.match ?? {});
+      try {
+        return await backend.update(op.table!, op.payload as object, op.match ?? {});
+      } catch (e) {
+        // PGRST204 = column not in the schema cache (migration not applied yet): send the core patch.
+        if (!(e instanceof BackendError && e.code === 'PGRST204' && op.optional?.length)) throw e;
+        const core = Object.fromEntries(Object.entries(op.payload as object).filter(([k]) => !op.optional!.includes(k)));
+        return backend.update(op.table!, core, op.match ?? {});
+      }
     case 'email': {
       const { deliverEmail } = await import('../../notify/emailjs');
       const demo = localStorage.getItem('lp-mode') === 'demo' || (backend.kind === 'memory' && !__E2E__);

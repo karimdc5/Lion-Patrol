@@ -1,6 +1,6 @@
 import { enqueue } from './outbox/queue';
 import { kick } from './sync/engine';
-import { putServerRows, bumpData, listRecords } from './repos/records';
+import { putServerRows, bumpData, listRecords, scopeOf } from './repos/records';
 import { db, type Row } from './db';
 import { uuidv7 } from '../lib/uuid';
 import { identity, currentOrgId, getBackend } from '../auth/session';
@@ -180,9 +180,11 @@ export function refreshDashboard(): Promise<void> {
     ];
     await Promise.all(jobs.map(async ([t, q]) => {
       try {
+        const startedAt = Date.now();
         const rows = await b.select<Row>(t, q);
         const withId = t === 'patrol_member_status' ? rows.map((r) => ({ ...r, id: String(r.member_id) })) : rows;
-        await putServerRows(t, withId);
+        // Reconcile: rows in this window that the server no longer returns were deleted or moved.
+        await putServerRows(t, withId, { scope: scopeOf(q ?? {}, withId, startedAt) });
       } catch { /* offline or RLS: keep cache */ }
     }));
   })().finally(() => { refreshing = null; });

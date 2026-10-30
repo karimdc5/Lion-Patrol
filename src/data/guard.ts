@@ -81,9 +81,9 @@ export async function openDar(): Promise<(Row & { status: string }) | null> {
   return dars.find((d) => d.time_entry_id === te.id) ?? null;
 }
 
-export async function clockIn(siteId: string, shiftId: string | null, gpsAcceptedAt: string): Promise<TimeEntry> {
+export async function clockIn(siteId: string, shiftId: string | null, gpsAcceptedAt: string, knownFix?: Fix | null): Promise<TimeEntry> {
   const { userId, orgId, memberId: mid, name } = ctx();
-  const fix = await getFix(8000);
+  const fix = knownFix !== undefined ? knownFix : await getFix(8000);
   const at = nowIso();
   const te: TimeEntry & Row = {
     id: uuidv7(), org_id: orgId, site_id: siteId, member_id: mid, shift_id: shiftId, clock_in_at: at,
@@ -104,14 +104,18 @@ export async function clockIn(siteId: string, shiftId: string | null, gpsAccepte
   return te;
 }
 
-export async function clockOut(note: string, summary: string): Promise<void> {
+export interface TimesheetConfirm { confirmed: boolean; note?: string }
+/** Clock out + the guard's timesheet confirmation (item 15) in one update (guards can't edit a closed entry). */
+export async function clockOut(note: string, summary: string, sheet?: TimesheetConfirm): Promise<string | null> {
   const { userId, orgId } = ctx();
   const te = onShift.value;
-  if (!te) return;
+  if (!te) return null;
   const fix = await getFix(6000);
   const at = nowIso();
-  const patch = { clock_out_at: at, clock_out_lat: fix?.lat ?? null, clock_out_lng: fix?.lng ?? null, clock_out_accuracy_m: fix?.accuracy ?? null, shift_note: note.trim() || null };
-  await enqueue({ userId, orgId, kind: 'update', table: 'patrol_time_entries', payload: patch, match: { id: te.id }, entityKey: `patrol_time_entries:${te.id}`, label: 'Clock out' },
+  const minutes = Math.max(0, Math.round((Date.parse(at) - Date.parse(te.clock_in_at)) / 60000));
+  const confirm = sheet ? { confirmed_at: sheet.confirmed ? at : null, confirmed_minutes: sheet.confirmed ? minutes : null, timesheet_note: sheet.note?.trim() || null } : {};
+  const patch = { clock_out_at: at, clock_out_lat: fix?.lat ?? null, clock_out_lng: fix?.lng ?? null, clock_out_accuracy_m: fix?.accuracy ?? null, shift_note: note.trim() || null, ...confirm };
+  await enqueue({ userId, orgId, kind: 'update', table: 'patrol_time_entries', payload: patch, match: { id: te.id }, entityKey: `patrol_time_entries:${te.id}`, label: 'Clock out', optional: ['confirmed_at', 'confirmed_minutes', 'timesheet_note'] },
     [{ table: 'patrol_time_entries', row: { id: te.id, ...patch }, orgId }]);
   const dar = await openDar();
   if (dar) {
@@ -122,6 +126,15 @@ export async function clockOut(note: string, summary: string): Promise<void> {
   stopWatch();
   onShift.value = null;
   bumpData(); void kick();
+  return te.id;
+}
+
+/** Tell owners a guard was blocked from clocking in outside the geofence (best effort, online only). */
+export async function reportGeofenceBlock(siteId: string, fix: Fix | null) {
+  try {
+    const { getBackend } = await import('../auth/session');
+    await getBackend().rpc('patrol_report_geofence_block', { p_site: siteId, p_lat: fix?.lat ?? null, p_lng: fix?.lng ?? null, p_accuracy: fix?.accuracy ?? null });
+  } catch { /* offline or not migrated: the block itself still happened */ }
 }
 
 // ---------------------------------------------------------------- location pings (on shift, foreground only)
@@ -180,6 +193,24 @@ export async function startPatrol(): Promise<void> {
   await addDarEntry('Patrol started', null, undefined, PATROL_LOG);
 }
 
+/**
+ * "Patrol start" from the + list (item 10): a short Log entry (title/notes, time, GPS, photos) in
+ * the daily log — never an incident — that also opens the checkpoint round. Returns the entry id.
+ */
+export async function logPatrolStart(f: { title: string; notes: string; occurredAt: string; fix: Fix | null }, photos: Prepared[]): Promise<string> {
+  const te = onShift.value;
+  if (!te) throw new Error('Clock in to start a patrol.');
+  if (!(await openRun(te.site_id))) {
+    const expected = (await listRecords<Checkpoint>('patrol_checkpoints', te.org_id)).filter((c) => c.active && c.site_id === te.site_id).length;
+    await beginRun(te, expected);
+  }
+  const title = f.title.trim() || 'Patrol started';
+  const body = f.notes.trim() ? `${title} — ${f.notes.trim()}` : title;
+  const id = await addDarEntry(body, null, undefined, PATROL_LOG, { occurredAt: f.occurredAt, fix: f.fix });
+  for (const p of photos) await addAttachment('dar_entry', id, p);
+  return id;
+}
+
 /** One tap: closes the open round and logs patrol end (time + GPS) to the daily log. */
 export async function endPatrol(): Promise<void> {
   const { userId, orgId } = ctx();
@@ -228,6 +259,10 @@ export async function scanCheckpoint(raw: string, method: 'qr' | 'manual', note?
   const d = await db();
   const rec = await d.get('records', ['patrol_tour_runs', run!.id]);
   if (rec) await d.put('records', { ...rec, data: { ...rec.data, ...runRow } });
+  // Every checkpoint scanned: the server closes the round; log "Patrol ended" like the End button does.
+  if (runRow.completed_at && !run!.completed_at) {
+    await addDarEntry(`Patrol ended · all ${siteCps.length} checkpoints scanned`, null, undefined, PATROL_LOG, { occurredAt: scan.scanned_at, fix }).catch(() => undefined);
+  }
   bumpData(); void kick();
   return { checkpoint: cp, flags, done: distinct.size, total: siteCps.length, scanId: scan.id };
 }
@@ -238,13 +273,14 @@ export async function updateScanNote(scanId: string, note: string) {
 }
 
 // ---------------------------------------------------------------- DAR
-export async function addDarEntry(body: string, categoryId: string | null, _ref?: string, categoryName?: string): Promise<string> {
+export interface DarEntryOpts { occurredAt?: string; fix?: Fix | null }
+export async function addDarEntry(body: string, categoryId: string | null, _ref?: string, categoryName?: string, opts: DarEntryOpts = {}): Promise<string> {
   const { userId, orgId, memberId: mid } = ctx();
   const dar = await openDar();
   if (!dar) throw new Error('Clock in to add log entries.');
   const cat = categoryId ? await getRecord<Row & { name: string }>('patrol_categories', categoryId) : null;
-  const fix = await getFix(3000);
-  const e = { id: uuidv7(), org_id: orgId, site_id: dar.site_id as string, member_id: mid, dar_id: dar.id, occurred_at: nowIso(), category_id: categoryId, category_name: cat?.name ?? categoryName ?? null, body: body.trim(),
+  const fix = opts.fix !== undefined ? opts.fix : await getFix(3000);
+  const e = { id: uuidv7(), org_id: orgId, site_id: dar.site_id as string, member_id: mid, dar_id: dar.id, occurred_at: opts.occurredAt ?? nowIso(), category_id: categoryId, category_name: cat?.name ?? categoryName ?? null, body: body.trim(),
     lat: fix?.lat ?? null, lng: fix?.lng ?? null, accuracy_m: fix ? Math.round(fix.accuracy) : null, client_rev: clientRev(), client_created_at: nowIso(), device_id: deviceId() };
   const op = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_dar_entries', payload: e, entityKey: `patrol_dar_entries:${e.id}`, dependsOn: await parentDep('patrol_dars', dar.id), label: categoryName ? body : 'Log entry' },
     [{ table: 'patrol_dar_entries', row: e, orgId, parentId: dar.id }]);
@@ -343,7 +379,7 @@ export async function setBoloStatus(b: Bolo, status: 'active' | 'resolved' | 'ar
 }
 
 // ---------------------------------------------------------------- attachments
-export type ParentType = 'incident' | 'dar_entry' | 'scan' | 'alert' | 'bolo';
+export type ParentType = 'incident' | 'dar_entry' | 'scan' | 'alert' | 'bolo' | 'site' | 'shift';
 export interface AttachmentRow extends Row { parent_type: ParentType; parent_id: string; kind: string; mime: string; size_bytes: number; storage_path: string; thumb_path: string | null; upload_status: string; duration_s: number | null; caption: string | null; client_created_at?: string }
 
 export async function listAttachments(parentId: string): Promise<AttachmentRow[]> {
@@ -361,7 +397,7 @@ export async function addAttachment(parentType: ParentType, parentId: string, pr
     width: prepared.width ?? null, height: prepared.height ?? null, duration_s: prepared.durationS ?? null, caption: null, upload_status: 'pending',
     client_created_at: nowIso(), device_id: deviceId(),
   } as AttachmentRow;
-  const parentTable = { incident: 'patrol_incidents', dar_entry: 'patrol_dar_entries', scan: 'patrol_scans', alert: 'patrol_alerts', bolo: 'patrol_bolos' }[parentType];
+  const parentTable = { incident: 'patrol_incidents', dar_entry: 'patrol_dar_entries', scan: 'patrol_scans', alert: 'patrol_alerts', bolo: 'patrol_bolos', site: 'patrol_sites', shift: 'patrol_time_entries' }[parentType];
   const deps = parentOp ? [parentOp] : await parentDep(parentTable, parentId);
   const blob = { id, mime: prepared.mime, bytes: prepared.bytes, thumb: prepared.thumb, size: prepared.bytes.byteLength, state: 'local' as const, uploadedAt: null, createdAt: Date.now() };
   const { upload_status: _u, ...payload } = row;
@@ -438,14 +474,20 @@ export async function refreshGuardHistory(force = false) {
   if (!mid || !orgId || (!force && Date.now() - lastGuardRefresh < 60_000)) return;
   lastGuardRefresh = Date.now();
   const { getBackend } = await import('../auth/session');
-  const { putServerRows } = await import('./repos/records');
+  const { putServerRows, scopeOf } = await import('./repos/records');
   const b = getBackend();
   const since = new Date(Date.now() - 30 * 864e5).toISOString();
-  await Promise.all([
-    b.select<Row>('patrol_incidents', { eq: { member_id: mid }, gte: { occurred_at: since }, order: ['occurred_at', 'desc'], limit: 50 }).then((r) => putServerRows('patrol_incidents', r)),
-    b.select<Row>('patrol_dars', { eq: { member_id: mid }, gte: { report_date: since.slice(0, 10) }, order: ['report_date', 'desc'], limit: 30 }).then((r) => putServerRows('patrol_dars', r)),
-    b.select<Row>('patrol_time_entries', { eq: { member_id: mid }, gte: { clock_in_at: since }, order: ['clock_in_at', 'desc'], limit: 30 }).then((r) => putServerRows('patrol_time_entries', r)),
-    b.select<Row>('patrol_tour_runs', { eq: { member_id: mid }, gte: { started_at: since }, limit: 200 }).then((r) => putServerRows('patrol_tour_runs', r)),
-    b.select<Row>('patrol_scans', { eq: { member_id: mid }, gte: { scanned_at: since }, limit: 800 }).then((r) => putServerRows('patrol_scans', r)),
-  ].map((p) => p.catch(() => undefined)));
+  const jobs: Array<[string, import('./backend/types').SelectQuery]> = [
+    ['patrol_incidents', { eq: { member_id: mid }, gte: { occurred_at: since }, order: ['occurred_at', 'desc'], limit: 50 }],
+    ['patrol_dars', { eq: { member_id: mid }, gte: { report_date: since.slice(0, 10) }, order: ['report_date', 'desc'], limit: 30 }],
+    ['patrol_time_entries', { eq: { member_id: mid }, gte: { clock_in_at: since }, order: ['clock_in_at', 'desc'], limit: 30 }],
+    ['patrol_tour_runs', { eq: { member_id: mid }, gte: { started_at: since }, limit: 200 }],
+    ['patrol_scans', { eq: { member_id: mid }, gte: { scanned_at: since }, limit: 800 }],
+    ['patrol_dar_entries', { eq: { member_id: mid }, gte: { occurred_at: since }, order: ['occurred_at', 'desc'], limit: 500 }],
+  ];
+  await Promise.all(jobs.map(async ([t, q]) => {
+    const startedAt = Date.now();
+    const rows = await b.select<Row>(t, q);
+    await putServerRows(t, rows, { scope: scopeOf(q, rows, startedAt) });
+  }).map((p) => p.catch(() => undefined)));
 }

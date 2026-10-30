@@ -5,9 +5,10 @@ import { useData } from '../../ui/useData';
 import { currentOrgId, isAdmin, role as myRole, memberId as myMemberId } from '../../auth/session';
 import { membersFor, sitesFor } from '../../data/repos/queries';
 import { listRecords, getRecord } from '../../data/repos/records';
-import { createInvite, listInvites, fetchInvites, revokeInvite, updateMember, setSiteAccess } from '../../data/admin';
+import { createInvite, listInvites, fetchInvites, revokeInvite, updateMember, setSiteAccess, refreshDashboard } from '../../data/admin';
+import { syncNow } from '../../data/sync/engine';
 import { useEffect } from 'preact/hooks';
-import { roleLabel, relTime, fmtDate } from '../../lib/format';
+import { roleLabel, relTime, fmtDate, lastSeen } from '../../lib/format';
 import { PUBLIC_URL } from '../../config';
 import type { Member, SiteAccess } from '../../data/types';
 import { isNetworkError } from '../../data/backend/types';
@@ -18,7 +19,12 @@ export function PeopleList() {
   const org = currentOrgId.value;
   const members = useData(() => membersFor(org), [org]);
   const status = useData(() => listRecords<{ member_id: string; on_duty: boolean; last_ping_at: string | null }>('patrol_member_status', org), [org]);
-  useEffect(() => { void fetchInvites(); }, [org]);
+  const owner = isAdmin.value;
+  // re-render every 30 s so "Last seen" and the live dot stay current
+  const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30_000); return () => clearInterval(t); }, []);
+  // members + live status straight from the server (new sign-ups / moved members show up)
+  useEffect(() => { void fetchInvites(); void syncNow({ bootstrap: true }); void refreshDashboard(); }, [org]);
   const invites = useData(() => listInvites(), [org]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const open = (invites.data ?? []).filter((i) => !i.revoked_at && Number(i.uses) < Number(i.max_uses) && Date.parse(i.expires_at as string) > Date.now());
@@ -35,8 +41,10 @@ export function PeopleList() {
               <List>
                 {list.map((m) => {
                   const st = status.data?.find((s) => s.member_id === m.id);
+                  const seen = owner && m.role !== 'client' ? lastSeen(st) : null;
                   return <Row key={m.id} testid="member-row" title={<span class="row" style={{ gap: 10 }}><Avatar name={m.display_name} gold={st?.on_duty} />{m.display_name}</span>}
-                    sub={`${roleLabel(m.role)}${m.status === 'disabled' ? ' · disabled' : st?.on_duty ? ' · on duty' : ''}`}
+                    sub={seen ? <span class="row" style={{ gap: 6 }} data-testid="last-seen"><span class={`seen-dot${seen.live ? ' live' : ''}`} data-live={seen.live ? '1' : '0'} aria-hidden="true" />{`${roleLabel(m.role)} · ${m.status === 'disabled' ? 'disabled' : seen.label}`}</span>
+                      : `${roleLabel(m.role)}${m.status === 'disabled' ? ' · disabled' : st?.on_duty ? ' · on duty' : ''}`}
                     right={m.status === 'disabled' ? <span class="pill pill-muted">Disabled</span> : st?.on_duty ? <span class="pill pill-success">On duty</span> : undefined} chevron href={`/a/people/${m.id}`} />;
                 })}
               </List>

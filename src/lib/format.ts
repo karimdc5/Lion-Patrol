@@ -56,3 +56,18 @@ export function siteLocalDate(iso: string, tz = TZ): string {
 export function roleLabel(role: string): string {
   return ({ owner: 'Owner', admin: 'Admin', supervisor: 'Supervisor', guard: 'Guard', client: 'Client' } as Record<string, string>)[role] ?? role;
 }
+
+/** "Last seen" for People: live = on duty with a GPS point in the last 5 minutes. */
+export const LIVE_WINDOW_MS = 5 * 60 * 1000;
+export function lastSeen(st: { on_duty?: boolean | null; last_ping_at?: string | null } | null | undefined, now = Date.now()): { live: boolean; label: string } {
+  const at = st?.last_ping_at ? Date.parse(st.last_ping_at) : NaN;
+  if (Number.isNaN(at)) return { live: false, label: 'Never' };
+  if (st?.on_duty && now - at <= LIVE_WINDOW_MS) return { live: true, label: 'Active now' };
+  return { live: false, label: `Last seen ${relTime(at, now)}` };
+}
+
+/** 472 → "7h 52m". */
+export function fmtHours(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}

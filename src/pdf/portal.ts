@@ -12,7 +12,8 @@ export async function buildFromPortal(kind: 'incident' | 'dar', portal: { org: R
   const { buildIncidentPdf, buildDarPdf } = await import('./report');
   if (kind === 'incident') {
     const inc = portal.incidents.find((i) => i.id === id)!;
-    const r = await buildIncidentPdf({ org, site, logoPng: await logo(), incident: inc, includeInternal: false, photos: [], otherMedia: [], events: inc.submitted_at ? [{ at: String(inc.submitted_at), actor: String(inc.author_name ?? ''), text: 'Submitted' }] : [] });
+    const { extraDetails } = await import('../domain/incident');
+    const r = await buildIncidentPdf({ org, site, logoPng: await logo(), incident: inc, includeInternal: false, extras: extraDetails(inc), photos: [], otherMedia: [], events: inc.submitted_at ? [{ at: String(inc.submitted_at), actor: String(inc.author_name ?? ''), text: 'Submitted' }] : [] });
     return { ...r, filename: `${String(inc.report_no ?? 'Incident')}.pdf` };
   }
   const d = portal.dars.find((x) => x.id === id)!;

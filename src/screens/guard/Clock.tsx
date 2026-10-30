@@ -2,13 +2,14 @@ import { useEffect, useState } from 'preact/hooks';
 import { Screen, TopBar, Button, Sheet, Empty, SkeletonList, toast, Field } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
-import { currentOrgId, memberId, isStaff } from '../../auth/session';
+import { currentOrgId, memberId, isStaff, role } from '../../auth/session';
 import { sitesFor, shiftsFor } from '../../data/repos/queries';
-import { hasConsent, acceptConsent, clockIn, clockOut, onShift, openDar } from '../../data/guard';
+import { hasConsent, acceptConsent, clockIn, clockOut, onShift, openDar, reportGeofenceBlock } from '../../data/guard';
+import { showPdf } from '../../ui/PdfReady';
 import { listByParent } from '../../data/repos/records';
-import { getFix, distanceM, type Fix } from '../../lib/geo';
+import { getFix, distanceM, geofenceCheck, type Fix } from '../../lib/geo';
 import { navigate } from '../../router';
-import { fmtTime } from '../../lib/format';
+import { fmtTime, fmtHours } from '../../lib/format';
 
 export function GpsNotice({ open, onAccept, onDecline }: { open: boolean; onAccept: () => void; onDecline: () => void }) {
   return (
@@ -49,8 +50,22 @@ export function ClockScreen() {
   const doClockIn = async (acceptedAt: string) => {
     if (!selected) return;
     setBusy(true);
+    setBlocked(null);
     try {
-      await clockIn(selected, myShift?.site_id === selected ? myShift.id : null, acceptedAt);
+      // Item 18: guards can only clock in at the site (owners/supervisors are exempt).
+      const here = await getFix(8000);
+      const site = sites.data?.find((s) => s.id === selected);
+      if (role.value === 'guard' && site) {
+        const g = geofenceCheck(site, here);
+        if (!g.ok) {
+          setBlocked(g.distance == null
+            ? 'Turn on location for Lion Patrol. You can only clock in when your phone shows you’re at the site.'
+            : `You’re ${g.distance < 1000 ? `${Math.round(g.distance)} m` : `${(g.distance / 1609).toFixed(1)} mi`} from ${site.name}. Clock in when you’re at the site (within ${site.geofence_m} m).`);
+          void reportGeofenceBlock(site.id, here);
+          return;
+        }
+      }
+      await clockIn(selected, myShift?.site_id === selected ? myShift.id : null, acceptedAt, here);
       toast('Clocked in. Stay safe.');
       navigate('/g', { replace: true });
     } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
@@ -59,6 +74,7 @@ export function ClockScreen() {
     if (!(await hasConsent('gps_notice'))) { setNotice(true); return; }
     await doClockIn(new Date().toISOString());
   };
+  const [blocked, setBlocked] = useState<string | null>(null);
 
   return (
     <Screen>
@@ -85,6 +101,7 @@ export function ClockScreen() {
         )}
       </div>
       <div class="sticky-bar">
+        {blocked && <div class="form-error" role="alert" data-testid="geofence-blocked" style={{ marginBottom: 10 }}>{blocked}</div>}
         <Button variant="primary" size="lg" block disabled={!selected} loading={busy} onClick={() => void start()} data-testid="clock-in-btn">Clock in</Button>
       </div>
       <GpsNotice open={notice} onDecline={() => { setNotice(false); toast('Location notice is required to clock in.', 'info'); }}
@@ -95,16 +112,30 @@ export function ClockScreen() {
 
 export function ClockOutSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [note, setNote] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [wrong, setWrong] = useState(false);
+  const [sheetNote, setSheetNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const dar = useData(() => openDar(), [open]);
   const entries = useData(async () => (dar.data ? listByParent('patrol_dar_entries', dar.data.id) : []), [dar.data?.id]);
+  const te = onShift.value;
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (!open) return; setNow(Date.now()); const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, [open]);
+  const minutes = te ? Math.max(0, Math.round((now - Date.parse(te.clock_in_at)) / 60000)) : 0;
   return (
     <Sheet open={open} onClose={onClose} title="Clock out" testid="clock-out-sheet"
       footer={<Button variant="primary" size="lg" block loading={busy} data-testid="clock-out-confirm" onClick={async () => {
         if (note.trim().length < 3) { setErr('Add a short shift note for the next guard and the owners.'); return; }
+        if (!confirmed && !(wrong && sheetNote.trim().length >= 3)) { setErr('Confirm your hours, or tell the owner what’s wrong with them.'); return; }
         setBusy(true);
-        try { await clockOut(note, note); toast('Clocked out. Daily report submitted.'); onClose(); setNote(''); navigate('/g', { replace: true }); }
+        try {
+          const teId = await clockOut(note, note, { confirmed, note: wrong ? sheetNote : '' });
+          toast('Clocked out. Daily report submitted.'); onClose(); setNote(''); setConfirmed(false); setWrong(false); setSheetNote('');
+          navigate('/g', { replace: true });
+          // Item 12: one end-of-shift PDF, saved to the shift for the owners, handed to the share sheet.
+          if (teId) void import('../../pdf').then((m) => m.endOfShiftPdf(teId, { save: true })).then((r) => showPdf(r.bytes, r.filename, r.pages)).catch((e) => toast(`Shift PDF: ${(e as Error).message}`, 'error', 4000));
+        }
         finally { setBusy(false); }
       }}>Clock out and submit DAR</Button>}>
       <div class="stack">
@@ -113,6 +144,18 @@ export function ClockOutSheet({ open, onClose }: { open: boolean; onClose: () =>
           <textarea class="input" rows={4} value={note} onInput={(e) => { setNote((e.target as HTMLTextAreaElement).value); setErr(null); }}
             placeholder="Quiet night. All doors secured at 05:40. Light out by the east lot." data-testid="shift-note" />
         </Field>
+        {te && (
+          <div class="card stack" data-testid="timesheet-confirm">
+            <div class="row-between"><span class="headline">Timesheet</span><span class="pill pill-gold tnum" data-testid="timesheet-hours">{fmtHours(minutes)}</span></div>
+            <div class="foot muted">{fmtTime(te.clock_in_at)} – now ({fmtTime(new Date(now).toISOString())})</div>
+            <label class="row" style={{ gap: 10 }}>
+              <input type="checkbox" checked={confirmed} onChange={(e) => { setConfirmed((e.target as HTMLInputElement).checked); if ((e.target as HTMLInputElement).checked) setWrong(false); setErr(null); }} data-testid="timesheet-ok" style={{ width: 22, height: 22 }} />
+              <span>I confirm these hours are correct</span>
+            </label>
+            <button class="link-btn" style={{ alignSelf: 'flex-start', minHeight: 0 }} onClick={() => { setWrong(!wrong); setConfirmed(false); }} data-testid="timesheet-wrong">Hours look wrong?</button>
+            {wrong && <textarea class="input" rows={2} value={sheetNote} placeholder="e.g. Forgot to clock in, started at 9:00 PM." onInput={(e) => { setSheetNote((e.target as HTMLTextAreaElement).value); setErr(null); }} data-testid="timesheet-note" />}
+          </div>
+        )}
       </div>
     </Sheet>
   );

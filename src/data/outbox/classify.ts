@@ -28,6 +28,9 @@ export function humanize(msg: string): string {
     dar_not_open: 'This shift log was already closed.',
     checkpoint_site_mismatch: 'That checkpoint belongs to a different site.',
     attachment_not_allowed: 'You can’t attach files to this record.',
+    outside_geofence: 'Clock-in rejected: you were outside the site’s geofence.',
+    clock_in_gps_required: 'Clock-in rejected: location is required at this site.',
+    site_has_time_records: 'This site has time records (kept 3 years). Mark it inactive instead of deleting it.',
   };
   for (const k of Object.keys(map)) if (msg.includes(k)) return map[k]!;
   return msg;
