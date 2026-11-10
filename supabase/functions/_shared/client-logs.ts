@@ -191,3 +191,51 @@ export function renderReportHtml(r: MergedReport): string {
   const rows = r.lines.map((l) => `<tr><td style="padding:4px 8px;white-space:nowrap;vertical-align:top">${escapeHtml(fmtTimePT(l.at))}</td><td style="padding:4px 8px"><b>${escapeHtml(l.title)}</b><br>${escapeHtml(l.text).replace(/\n/g, '<br>')}${l.photos.length ? `<br><i>${l.photos.length} photo${l.photos.length > 1 ? 's' : ''} on file</i>` : ''}</td></tr>`).join('');
   return `<div style="font-family:Arial,sans-serif;font-size:14px"><h2 style="margin:0">${escapeHtml(r.siteName)}</h2><p>Night of ${escapeHtml(r.nightLabel)} · all times Pacific</p>${r.note ? `<p><i>${escapeHtml(r.note)}</i></p>` : ''}<table>${rows || '<tr><td>No activity recorded.</td></tr>'}</table><p>— ${escapeHtml(r.orgName || 'Lion Security Services')}</p></div>`;
 }
+
+// ------------------------------------------------------------------ mail (pure: config, message, provider request)
+export const MAIL_FROM_ADDRESS = 'contact@lionofseattle.com';
+export type MailProvider = 'resend' | 'postmark';
+export interface MailConfig {
+  configured: boolean; missing: string[]; provider: MailProvider | null; mode: 'live' | 'dry_run';
+  from: string; apiKey: string | null; testTo: string | null;
+}
+
+/**
+ * Reads only secret NAMES documented in docs/PASS9-backend-setup.md. Missing provider/key → not configured
+ * (rows are marked "not_configured", never "sent"). Anything but CLIENT_MAIL_MODE=live is a dry run.
+ */
+export function mailConfig(env: Record<string, string | undefined>): MailConfig {
+  const provider = (env.CLIENT_MAIL_PROVIDER ?? '').trim().toLowerCase();
+  const apiKey = (env.CLIENT_MAIL_API_KEY ?? '').trim() || null;
+  const missing: string[] = [];
+  if (provider !== 'resend' && provider !== 'postmark') missing.push('CLIENT_MAIL_PROVIDER');
+  if (!apiKey) missing.push('CLIENT_MAIL_API_KEY');
+  const name = (env.CLIENT_MAIL_FROM_NAME ?? '').replace(/[<>"\r\n]/g, '').trim() || 'Lion Security Services';
+  const testTo = (env.CLIENT_MAIL_TEST_TO ?? '').trim().toLowerCase() || null;
+  return { configured: !missing.length, missing, provider: missing.includes('CLIENT_MAIL_PROVIDER') ? null : (provider as MailProvider), mode: env.CLIENT_MAIL_MODE === 'live' ? 'live' : 'dry_run',
+    from: `${name} <${MAIL_FROM_ADDRESS}>`, apiKey, testTo };
+}
+
+export interface OutboxRow { id: string; kind: string; subject: string; body_text: string; recipients: string[]; ref_id?: string | null }
+export interface MailMessage { to: string[]; subject: string; text: string; html: string }
+
+/** Final message for one outbox row. Client logs are rendered from the merged report; other kinds use the queued text. */
+export function buildMessage(row: OutboxRow, merged: MergedReport | null, cfg: Pick<MailConfig, 'testTo'>): MailMessage | null {
+  const to = cfg.testTo ? [cfg.testTo] : [...new Set(row.recipients.map((x) => x.trim().toLowerCase()).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))];
+  if (!to.length) return null;
+  if (row.kind === 'client_log' && merged) {
+    const { subject, text } = renderReportText(merged);
+    return { to, subject: row.subject || subject, text, html: renderReportHtml(merged) };
+  }
+  return { to, subject: row.subject, text: row.body_text, html: `<div style="font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap">${escapeHtml(row.body_text)}</div>` };
+}
+
+/** HTTP request for the provider (the function does the fetch; tests only inspect this). */
+export function providerRequest(cfg: MailConfig, msg: MailMessage): { url: string; init: { method: 'POST'; headers: Record<string, string>; body: string } } {
+  if (cfg.provider === 'postmark') {
+    return { url: 'https://api.postmarkapp.com/email', init: { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Postmark-Server-Token': cfg.apiKey ?? '' },
+      body: JSON.stringify({ From: cfg.from, To: msg.to.join(','), Subject: msg.subject, TextBody: msg.text, HtmlBody: msg.html, MessageStream: 'outbound' }) } };
+  }
+  return { url: 'https://api.resend.com/emails', init: { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey ?? ''}` },
+    body: JSON.stringify({ from: cfg.from, to: msg.to, subject: msg.subject, text: msg.text, html: msg.html }) } };
+}
