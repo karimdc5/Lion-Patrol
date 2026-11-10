@@ -254,7 +254,7 @@ export function IncidentEditor({ id }: { id: string }) {
             {form.police_called && (
               <>
                 <div class="grid-2">
-                  <Field label="Agency"><input class="input" value={form.police_agency} placeholder="Kent PD" onInput={(e) => update({ police_agency: (e.target as HTMLInputElement).value })} /></Field>
+                  <Field label="Agency"><input class="input" value={form.police_agency} placeholder="e.g. Kent PD" onInput={(e) => update({ police_agency: (e.target as HTMLInputElement).value })} /></Field>
                   <Field label="Case / report #" error={E('police_case_no')}><input class="input" value={form.police_case_no} onInput={(e) => update({ police_case_no: (e.target as HTMLInputElement).value })} data-testid="police-case" /></Field>
                 </div>
                 <Field label="Officer name / badge"><input class="input" value={form.officer_name} onInput={(e) => update({ officer_name: (e.target as HTMLInputElement).value })} /></Field>
@@ -279,7 +279,7 @@ export function IncidentEditor({ id }: { id: string }) {
           <div class={`cap ${req.has('property_damage') ? 'req' : ''}`}>Property damage</div>
           <div class="subform">
             <div class="row-between"><span>Property was damaged or stolen</span><Toggle label="Property damaged" checked={form.property_damage} onChange={(v) => update({ property_damage: v })} /></div>
-            {form.property_damage && <Field label="Estimated value (USD)" error={E('property_damage')}><input class="input" inputMode="decimal" value={form.damage_estimate_usd} placeholder="250" onInput={(e) => update({ damage_estimate_usd: (e.target as HTMLInputElement).value })} /></Field>}
+            {form.property_damage && <Field label="Estimated value (USD)" error={E('property_damage')}><input class="input" inputMode="decimal" value={form.damage_estimate_usd} placeholder="e.g. 250" onInput={(e) => update({ damage_estimate_usd: (e.target as HTMLInputElement).value })} /></Field>}
           </div>
           {!form.property_damage && E('property_damage') && <div class="field-error">{E('property_damage')}</div>}
         </div>}

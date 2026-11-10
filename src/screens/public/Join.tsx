@@ -58,7 +58,7 @@ export function Join() {
             <input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} autoComplete="name" placeholder="First and last name" name="name" />
           </Field>
           <Field label="Mobile phone (optional)">
-            <input class="input" type="tel" inputMode="tel" value={phone} onInput={(e) => setPhone((e.target as HTMLInputElement).value)} autoComplete="tel" placeholder="(253) 555-0100" name="phone" />
+            <input class="input" type="tel" inputMode="tel" value={phone} onInput={(e) => setPhone((e.target as HTMLInputElement).value)} autoComplete="tel" placeholder="e.g. (206) 555-0100" name="phone" />
           </Field>
           {!signedIn && (
             <>

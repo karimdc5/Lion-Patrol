@@ -55,3 +55,21 @@ describe('pass 9 A2/A3: timesheets + invoices', () => {
     expect(invoiceState({ status: 'sent', due_date: '2026-11-30' }, '2026-11-10')).toBe('unpaid');
   });
 });
+
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+describe('pass 9 A9: placeholders never look like real values', () => {
+  const files = (dir: string): string[] => readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? files(p) : p.endsWith('.tsx') ? [p] : []; });
+  it('any placeholder with digits or a real-looking id is an obvious example ("e.g. …") or a format', () => {
+    const bad: string[] = [];
+    for (const f of files('src')) {
+      for (const m of readFileSync(f, 'utf8').matchAll(/placeholder="([^"]*)"/g)) {
+        const v = m[1]!;
+        if (/\d/.test(v) && !/^e\.g\./i.test(v) && !/character/.test(v)) bad.push(`${f}: ${v}`);
+        if (/WA-SG-\d/.test(v)) bad.push(`${f}: ${v}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+});

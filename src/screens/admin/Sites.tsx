@@ -84,9 +84,9 @@ export function SiteEditor({ id }: { id: string }) {
         )}
         {tab === 'details' && (
           <div class="stack">
-            <Field label="Site name" error={err}><input class="input" value={site.name} disabled={!admin} onInput={(e) => { up({ name: (e.target as HTMLInputElement).value }); setErr(null); }} placeholder="Kent Station Market" data-testid="site-name" /></Field>
+            <Field label="Site name" error={err}><input class="input" value={site.name} disabled={!admin} onInput={(e) => { up({ name: (e.target as HTMLInputElement).value }); setErr(null); }} placeholder="e.g. Kent Station Market" data-testid="site-name" /></Field>
             <div class="grid-2">
-              <Field label="Short code" hint="Used in report numbers"><input class="input input-code" value={site.code ?? ''} disabled={!admin} maxLength={6} onInput={(e) => up({ code: (e.target as HTMLInputElement).value.toUpperCase() })} placeholder="KSM" data-testid="site-code" /></Field>
+              <Field label="Short code" hint="Used in report numbers"><input class="input input-code" value={site.code ?? ''} disabled={!admin} maxLength={6} onInput={(e) => up({ code: (e.target as HTMLInputElement).value.toUpperCase() })} placeholder="e.g. KSM" data-testid="site-code" /></Field>
               <Field label="Type"><select class="input" value={site.kind} disabled={!admin} onChange={(e) => up({ kind: (e.target as HTMLSelectElement).value as Site['kind'] })}><option value="retail">Retail store</option><option value="apartment">Apartments</option><option value="other">Other</option></select></Field>
             </div>
             <Field label="Street address"><input class="input" value={site.address ?? ''} disabled={!admin} onInput={(e) => up({ address: (e.target as HTMLInputElement).value })} autoComplete="street-address" /></Field>
@@ -213,8 +213,8 @@ function CheckpointSheet({ cp, onClose, disabled }: { cp: Checkpoint | null; onC
         await saveCheckpoint(c); toast('Checkpoint saved'); onClose();
       }}>Save checkpoint</Button>}>
       <div class="stack">
-        <Field label="Name" error={err}><input class="input" value={c.name} disabled={disabled} onInput={(e) => setC({ ...c, name: (e.target as HTMLInputElement).value })} placeholder="Loading dock door" data-testid="cp-name" /></Field>
-        <Field label="Instructions for guards (optional)"><textarea class="input" rows={2} value={c.instructions ?? ''} disabled={disabled} onInput={(e) => setC({ ...c, instructions: (e.target as HTMLTextAreaElement).value })} placeholder="Check roll-up door is down and padlocked." /></Field>
+        <Field label="Name" error={err}><input class="input" value={c.name} disabled={disabled} onInput={(e) => setC({ ...c, name: (e.target as HTMLInputElement).value })} placeholder="e.g. Loading dock door" data-testid="cp-name" /></Field>
+        <Field label="Instructions for guards (optional)"><textarea class="input" rows={2} value={c.instructions ?? ''} disabled={disabled} onInput={(e) => setC({ ...c, instructions: (e.target as HTMLTextAreaElement).value })} placeholder="e.g. check the roll-up door is padlocked" /></Field>
         <div class="grid-2">
           <Field label="Code"><input class="input input-code" value={`${c.code.slice(0, 4)}-${c.code.slice(4)}`} disabled /></Field>
           <Field label="Radius (m)"><input class="input" inputMode="numeric" value={String(c.radius_m)} disabled={disabled} onInput={(e) => setC({ ...c, radius_m: Number((e.target as HTMLInputElement).value) || 40 })} /></Field>

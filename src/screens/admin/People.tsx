@@ -103,7 +103,7 @@ function InviteSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
           <div class="field"><span class="field-label">{role === 'client' ? 'Client’s site(s) — required' : 'Sites (recommended for guards)'}</span>
             <div class="chip-row">{(sites.data ?? []).map((s) => <button key={s.id} class={`chip ${chosen.includes(s.id) ? 'active' : ''}`} onClick={() => setChosen(chosen.includes(s.id) ? chosen.filter((x) => x !== s.id) : [...chosen, s.id])} data-testid="invite-site">{s.name}</button>)}</div>
           </div>
-          <Field label="Name (optional)"><input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="Jordan Ellis" /></Field>
+          <Field label="Name (optional)"><input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="e.g. first and last name" /></Field>
           <Field label="Lock to email (optional)" hint="Only this email can redeem the code."><input class="input" type="email" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} autoCapitalize="off" /></Field>
           {err && <div class="form-error">{err}</div>}
           <Button variant="primary" size="lg" block loading={busy} data-testid="invite-create" onClick={async () => {

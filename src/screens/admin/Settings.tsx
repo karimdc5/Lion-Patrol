@@ -34,7 +34,7 @@ function EmailSettings() {
       {admin && (
         <Field label="Add owner/admin email" error={err}>
           <div class="row">
-            <input class="input grow" type="email" value={addr} autoCapitalize="off" placeholder="owner@lionsecurity.com" onInput={(e) => { setAddr((e.target as HTMLInputElement).value); setErr(null); }} data-testid="recipient-input" />
+            <input class="input grow" type="email" value={addr} autoCapitalize="off" placeholder="e.g. owner@yourcompany.com" onInput={(e) => { setAddr((e.target as HTMLInputElement).value); setErr(null); }} data-testid="recipient-input" />
             <Button data-testid="recipient-add" onClick={() => {
               const e = addr.trim().toLowerCase();
               if (!/.+@.+\..+/.test(e)) { setErr('Enter a valid email address.'); return; }

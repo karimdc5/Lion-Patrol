@@ -25,9 +25,10 @@ export function GuardCardEditor({ member }: { member: Member }) {
     <div class="card stack" data-testid="guard-card-editor">
       <div class="row-between"><b>WA guard card</b>{card && <span class={`pill pill-${st.tone}`} data-testid="guard-card-status">{st.label}</span>}</div>
       <div class="grid-2">
-        <Field label="Card number"><input class="input input-code" value={no ?? card?.card_no ?? ''} placeholder="WA-SG-1234567" onInput={(e) => setNo((e.target as HTMLInputElement).value)} data-testid="guard-card-no" /></Field>
+        <Field label="Card number"><input class="input input-code" value={no ?? card?.card_no ?? ''} placeholder="e.g. WA-SG-______" onInput={(e) => setNo((e.target as HTMLInputElement).value)} data-testid="guard-card-no" /></Field>
         <Field label="Expires"><input class="input" type="date" value={exp ?? card?.expires_on ?? ''} onInput={(e) => setExp((e.target as HTMLInputElement).value)} data-testid="guard-card-exp" /></Field>
       </div>
+      {!(card?.card_no) && <div class="foot muted" data-testid="guard-card-none">No card number on file.</div>}
       {card?.source === 'onboarding' && <div class="foot muted">Imported from the onboarding app.</div>}
       <div class="foot faint">Owners and admins only — never shown to guards or clients. You’re alerted 30 days before it expires.</div>
       <Button disabled={!dirty} data-testid="guard-card-save" onClick={async () => {

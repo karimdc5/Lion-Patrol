@@ -120,7 +120,7 @@ export function ScanScreen() {
       <Sheet open={manual} onClose={() => setManual(false)} title="Enter checkpoint code" testid="manual-sheet"
         footer={<Button variant="primary" size="lg" block onClick={() => void submit(code, 'manual')} disabled={code.replace(/[^A-Za-z0-9]/g, '').length < 4} data-testid="manual-submit">Log checkpoint</Button>}>
         <Field label="Code printed under the QR" error={err}>
-          <input class="input input-code" value={code} autoCapitalize="characters" spellcheck={false} autoComplete="off" placeholder="7K4Q-9XW2" data-testid="manual-code"
+          <input class="input input-code" value={code} autoCapitalize="characters" spellcheck={false} autoComplete="off" placeholder="8-character code" data-testid="manual-code"
             onInput={(e) => { setCode((e.target as HTMLInputElement).value.toUpperCase()); setErr(null); }}
             onKeyDown={(e) => { if (e.key === 'Enter') void submit(code, 'manual'); }} />
         </Field>
@@ -134,7 +134,7 @@ export function ScanScreen() {
             <div class="muted sub tnum">{result.done} of {result.total} checkpoints · {new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
             {result.flags.length > 0 && <div class="chip-row" style={{ justifyContent: 'center' }}><FlagPills flags={result.flags} /></div>}
             <div style={{ textAlign: 'left' }} class="stack">
-              <Field label="Note (optional)"><input class="input" value={note} onInput={(e) => setNote((e.target as HTMLInputElement).value)} placeholder="Door secure, lights on" /></Field>
+              <Field label="Note (optional)"><input class="input" value={note} onInput={(e) => setNote((e.target as HTMLInputElement).value)} placeholder="e.g. door secure, lights on" /></Field>
               <AttachmentTray parentType="scan" parentId={result.scanId} label="Checkpoint photos" />
             </div>
             <div class="grid-2">
