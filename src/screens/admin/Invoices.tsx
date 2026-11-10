@@ -9,6 +9,9 @@ import { fetchBilling, listInvoices, listSiteBilling, orgBilling, saveInvoice, s
 import { buildInvoiceLines, invoiceNumber, invoiceDates, invoiceTotal, invoiceHours, monthLabel, usd, missingBillingField, invoiceState, pacificDate, type InvoiceTimeRow, type InvoiceLine, type LeftOut } from '../../domain/invoice';
 import { PdfButton } from '../../ui/PdfButton';
 import { navigate } from '../../router';
+import { listClientEmails, sendInvoiceEmail, isNotInstalled, INVOICE_SEND_ERRORS, type ClientEmail } from '../../data/clientLogs';
+import { kickMessage } from './ClientLogs';
+import { fmtDateTime } from '../../lib/format';
 import type { Site } from '../../data/types';
 import type { Row as R } from '../../data/db';
 import type { SelectQuery } from '../../data/backend/types';
@@ -138,10 +141,11 @@ function PaymentSheet({ open, onClose }: { open: boolean; onClose: () => void })
   useEffect(() => { if (open) void orgBilling(org).then(setB); }, [open, org]);
   return (
     <Sheet open={open} onClose={onClose} title="Payment details" testid="inv-payment-sheet"
-      footer={<Button variant="primary" size="lg" block data-testid="inv-payment-save" onClick={async () => { if (b) { await saveOrgBilling(b); toast('Payment details saved'); onClose(); } }}>Save</Button>}>
+      footer={<Button variant="primary" size="lg" block data-testid="inv-payment-save" onClick={async () => { if (b) { if (b.pay_url && !/^https:\/\//.test(b.pay_url.trim())) { toast('The pay link must start with https://', 'error'); return; } await saveOrgBilling(b); toast('Payment details saved'); onClose(); } }}>Save</Button>}>
       {b && (
         <div class="stack">
           <Field label="Payment line"><input class="input" value={b.payment_note} onInput={(e) => setB({ ...b, payment_note: (e.target as HTMLInputElement).value })} data-testid="inv-pay-note" /></Field>
+          <Field label="Online pay link (optional)" hint="Must start with https://. Shown on sent invoices in the client portal and invoice emails. Leave blank if you don't take online payments — clients are told it isn't set up." error={b.pay_url && !/^https:\/\//.test(b.pay_url) ? 'Must start with https://' : null}><input class="input" type="url" value={b.pay_url ?? ''} onInput={(e) => setB({ ...b, pay_url: (e.target as HTMLInputElement).value })} placeholder="e.g. https://pay.example.com/lion" data-testid="inv-pay-url" /></Field>
           <Field label="Payment details (printed on invoices)" hint="e.g. account name and the routing/account numbers you share with clients. Stored only in your org settings."><textarea class="input" rows={3} value={b.payment_details} onInput={(e) => setB({ ...b, payment_details: (e.target as HTMLTextAreaElement).value })} data-testid="inv-pay-details" /></Field>
           <div class="grid-2">
             <Field label="Terms (days)"><input class="input" inputMode="numeric" value={String(b.terms_days)} onInput={(e) => setB({ ...b, terms_days: Math.max(0, Math.min(120, Number((e.target as HTMLInputElement).value) || 0)) })} /></Field>
@@ -197,12 +201,41 @@ export function InvoiceEditor({ id }: { id: string }) {
         <PdfButton block label="Download PDF" testid="inv-pdf" make={() => import('../../pdf').then((m) => m.invoicePdf(inv))} />
         <div class="card stack">
           <div class="headline">Status</div>
-          <div class="foot muted">Lion Patrol never emails invoices. Send the PDF yourself, then mark it here.</div>
+          <InvoiceEmail inv={inv} />
           <div class="row-between"><span>Sent to client</span><Toggle label="Sent to client" checked={inv.status === 'sent' || inv.status === 'paid'} onChange={(v) => void persist({ status: v ? 'sent' : 'draft', sent_at: v ? new Date().toISOString() : null, paid_at: null }, v ? 'Marked sent' : 'Back to draft')} /></div>
           <div class="row-between"><span>Paid</span><Toggle label="Paid" checked={inv.status === 'paid'} onChange={(v) => void persist({ status: v ? 'paid' : 'sent', paid_at: v ? new Date().toISOString() : null }, v ? 'Marked paid' : 'Marked unpaid')} /></div>
         </div>
       </div>
       {draft && <div class="sticky-bar"><Button variant="primary" size="lg" block onClick={() => void persist()} data-testid="inv-save">Save draft</Button></div>}
     </Screen>
+  );
+}
+
+const EMAIL_STATUS: Record<string, string> = {
+  queued: 'Queued', sending: 'Sending…', sent: 'Emailed', not_configured: 'Not sent — email sending not configured', failed: 'Send failed',
+  dry_run: 'Dry run — not emailed', no_recipients: 'Not sent — no client email', cancelled: 'Cancelled',
+};
+
+/** Pass 9 A12: invoice "Send to client" queues a server-side email; the state shown is what the server recorded. */
+function InvoiceEmail({ inv }: { inv: Invoice }) {
+  const [tick, setTick] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const emails = useData(async () => {
+    try { return (await listClientEmails(inv.org_id)).filter((e: ClientEmail) => e.kind === 'invoice' && e.ref_id === inv.id); }
+    catch (e) { return isNotInstalled(e) ? null : []; }
+  }, [inv.id, tick]);
+  const last = emails.data?.[0];
+  if (emails.data === null) return <div class="foot muted" data-testid="inv-email-not-installed">Emailing invoices needs the server update (pass 9 migration). Until then, send the PDF yourself, then mark it here.</div>;
+  return (
+    <div class="stack" style={{ gap: 6 }}>
+      <div class="foot muted">Send to client emails this invoice from contact@lionofseattle.com through the server (needs 'Invoice sent' on under Sites → Client email). Or send the PDF yourself and mark it below.</div>
+      {last && <div class="foot" data-testid="inv-email-status">{EMAIL_STATUS[last.status] ?? last.status} · {fmtDateTime(last.sent_at ?? last.created_at)}{last.error && last.status !== 'sent' ? ` — ${last.error}` : ''}</div>}
+      <Button icon="mail" loading={busy} disabled={inv.status === 'void' || !(inv.total > 0)} data-testid="inv-send-client" onClick={async () => {
+        setBusy(true);
+        try { const k = kickMessage(await sendInvoiceEmail(inv.id)); toast(k.text, k.kind, 4000); }
+        catch (e) { const m = (e as Error).message; toast(INVOICE_SEND_ERRORS[m] ?? m, 'error', 5000); }
+        finally { setBusy(false); setTick((t) => t + 1); }
+      }}>{last ? 'Send to client again' : 'Send to client'}</Button>
+    </div>
   );
 }

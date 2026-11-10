@@ -45,7 +45,10 @@ function EmailSettings() {
           </div>
         </Field>
       )}
-      <div class="row-between"><span>Client email notifications<div class="foot muted">Not available in this version.</div></span><Toggle label="Client notifications" checked={false} onChange={() => toast('Client emails are disabled in this version.', 'info')} /></div>
+      <div data-testid="client-email-settings-note"><span>Client email notifications</span>
+        <div class="foot muted">Set per site under Sites → Client email: who receives them, the nightly report (held for your OK by default, or auto-send) and incident sent / missed patrol / daily report / invoice emails. They are sent by the server from contact@lionofseattle.com — only after email sending is set up on the server. Until then nothing is emailed to clients and Client logs shows “Email sending not configured”.</div>
+        {isAdmin.value && <Button variant="ghost" onClick={() => navigate('/a/client-logs')}>Open Client logs</Button>}
+      </div>
     </div>
   );
 }

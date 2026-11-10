@@ -22,13 +22,13 @@ async function pull(table: string, extra: SelectQuery = {}) {
   } catch { /* offline or migration not applied yet: keep cache */ }
 }
 /** Upsert keyed by a natural key: the payload never carries the local-only `id`. */
-async function save(table: string, row: Row, label: string) {
+async function save(table: string, row: Row, label: string, optional?: string[]) {
   const { userId, orgId } = ctx();
   const keepId = table === 'patrol_invoices';
   const { id: _local, updated_at: _u, created_at: _c, _pending: _p, ...payload } = row as Row & { updated_at?: string; created_at?: string; _pending?: boolean };
   const body = keepId ? { id: row.id, ...payload } : payload;
   const { _pending: _lp, ...local } = row as Row & { _pending?: boolean };
-  await enqueue({ userId, orgId, kind: 'upsert', table, payload: body, entityKey: `${table}:${row.id}`, label }, [{ table, row: local as Row, orgId }]);
+  await enqueue({ userId, orgId, kind: 'upsert', table, payload: body, entityKey: `${table}:${row.id}`, label, ...(optional ? { optional } : {}) }, [{ table, row: local as Row, orgId }]);
   bumpData(); void kick();
 }
 
@@ -64,7 +64,7 @@ export async function onboardingCards(): Promise<OnboardingCard[]> {
 
 // ---------------------------------------------------------------- 26: billing + invoices
 export interface SiteBilling extends Row { site_id: string; org_id: string; hourly_rate: number | null; client_name: string | null; client_email: string | null; billing_address: string | null }
-export interface OrgBilling extends Row { org_id: string; payment_note: string; payment_details: string; terms_days: number; invoice_prefix: string }
+export interface OrgBilling extends Row { org_id: string; payment_note: string; payment_details: string; terms_days: number; invoice_prefix: string; pay_url?: string | null }
 export interface InvoiceLine { date: string; guard: string; hours: number; rate: number; description?: string }
 export interface Invoice extends Row { org_id: string; site_id: string; period_month: string; invoice_no: string; status: 'draft' | 'sent' | 'paid' | 'void'; issue_date: string; due_date: string; client_name: string | null; bill_to: string | null; rate: number | null; lines: InvoiceLine[]; notes: string | null; total: number; sent_at: string | null; paid_at: string | null }
 
@@ -78,7 +78,8 @@ export async function orgBilling(org: string | null): Promise<OrgBilling> {
 export async function saveSiteBilling(b: Omit<SiteBilling, 'id'>) {
   await save('patrol_site_billing', { ...b, id: b.site_id, hourly_rate: b.hourly_rate == null || Number.isNaN(Number(b.hourly_rate)) ? null : Number(b.hourly_rate) } as Row, 'Site billing');
 }
-export async function saveOrgBilling(b: OrgBilling) { await save('patrol_org_billing', { ...b, id: b.org_id } as Row, 'Payment details'); }
+// pay_url (pass 9 migration 200) is optional: dropped by the outbox until the server has the column.
+export async function saveOrgBilling(b: OrgBilling) { await save('patrol_org_billing', { ...b, id: b.org_id, pay_url: String(b.pay_url ?? '').trim() || null } as Row, 'Payment details', ['pay_url']); }
 export const listInvoices = async (org: string | null) => (await listRecords<Invoice>('patrol_invoices', org)).sort((a, b) => b.period_month.localeCompare(a.period_month) || a.invoice_no.localeCompare(b.invoice_no));
 export async function saveInvoice(inv: Invoice) {
   const total = Math.round(inv.lines.reduce((n, l) => n + l.hours * l.rate, 0) * 100) / 100;
