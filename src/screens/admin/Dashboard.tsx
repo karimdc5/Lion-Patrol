@@ -9,6 +9,7 @@ import { relTime, fmtTime } from '../../lib/format';
 import { gpsLine } from '../../lib/geo';
 import { navigate } from '../../router';
 import type { Row as R } from '../../data/db';
+import { listClientReports } from '../../data/clientLogs';
 
 export function AlertBanner({ alerts, members, sites }: { alerts: R[]; members: { id: string; display_name: string }[]; sites: { id: string; name: string }[] }) {
   const live = alerts.filter((a) => a.status === 'open' || a.status === 'acknowledged').sort((a, b) => String(b.triggered_at).localeCompare(String(a.triggered_at)));
@@ -41,6 +42,18 @@ export function AlertBanner({ alerts, members, sites }: { alerts: R[]; members: 
   );
 }
 
+/** Pass 9 Client logs: nightly client reports held for the owner's OK. Hidden until the server migration exists. */
+function WaitingForOk() {
+  const org = currentOrgId.value;
+  const n = useData(async () => (org ? (await listClientReports(org).catch(() => null))?.filter((r) => r.status === 'ready').length ?? null : null), [org]);
+  if (n.data == null) return null;
+  return (
+    <List>
+      <Row icon="mail" title={n.data ? `${n.data} client report${n.data === 1 ? '' : 's'} waiting for your OK` : 'Client logs: nothing waiting for your OK'} sub="Nightly combined reports — preview and send" chevron onClick={() => navigate('/a/client-logs')} testid="waiting-for-ok" />
+    </List>
+  );
+}
+
 export function Dashboard() {
   const org = currentOrgId.value;
   const d = useData(() => loadOps(org), [org]);
@@ -55,6 +68,7 @@ export function Dashboard() {
       <div class="screen-body stack-lg">
         {data && <AlertBanner alerts={data.alerts} members={data.members} sites={data.sites} />}
         {isAdmin.value && <OwnerAlerts />}
+        {isAdmin.value && <WaitingForOk />}
         {data && <GettingStarted d={data} />}
         <div class="grid-3">
           <Stat label="On duty" value={String(onDuty.length)} testid="stat-onduty" />

@@ -2,6 +2,7 @@ import { durableStorage } from '../../auth/storage-adapter';
 import { uuidv7 } from '../../lib/uuid';
 import seedCategories from '../../domain/categories.seed.json';
 import { clientProofRpcs, siteProof } from './memoryClient';
+import { clientLogRpcs, onTimeEntryWrite, onIncidentSent, onDarShared } from './memoryClientLogs';
 import { BackendError, type AuthApi, type AuthEvent, type Backend, type SelectQuery, type StoredSession } from './types';
 
 /**
@@ -150,6 +151,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       case 'patrol_invites': case 'patrol_audit_log': return c.adminOrgs.includes(r.org_id);
       case 'patrol_share_links': case 'patrol_portal_links': return staff;
       case 'patrol_client_requests': return staff;
+      case 'patrol_client_reports': case 'patrol_client_emails': case 'patrol_site_client_email': return c.adminOrgs.includes(r.org_id);
       default: return false;
     }
   }
@@ -168,7 +170,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       return c.staffOrgs.includes(r.org_id) || c.memberIds.includes(r.created_by);
     }
     if (table === 'patrol_owner_alerts') return op === 'update' && c.adminOrgs.includes(r.org_id);
-    if (['patrol_guard_cards', 'patrol_site_billing', 'patrol_org_billing', 'patrol_invoices', 'patrol_site_codes'].includes(table)) return c.adminOrgs.includes(r.org_id);
+    if (['patrol_guard_cards', 'patrol_site_billing', 'patrol_org_billing', 'patrol_invoices', 'patrol_site_codes', 'patrol_site_client_email'].includes(table)) return c.adminOrgs.includes(r.org_id);
     if (table === 'patrol_post_order_acks') return op === 'insert' && r.member_id === c.memberIn(r.org_id) && c.workable.includes(r.site_id);
     if (ADMIN_TABLES.has(table)) return c.adminOrgs.includes(r.org_id ?? r.id);
     if (STAFF_TABLES.has(table)) return c.staffOrgs.includes(r.org_id);
@@ -246,6 +248,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         : { member_id: row.member_id, org_id: row.org_id, on_duty: true, time_entry_id: row.id, site_id: row.site_id, lat: row.clock_in_lat, lng: row.clock_in_lng, last_ping_at: row.clock_in_lat != null ? row.clock_in_at : existing?.last_ping_at ?? null, on_duty_since: row.clock_in_at };
       const next = { ...(existing ?? {}), ...status, id: row.member_id, updated_at: nowIso() } as R;
       if (existing) Object.assign(existing, next); else st.push(next);
+      onTimeEntryWrite(s, row);
     }
     if (table === 'patrol_location_pings') {
       const existing = st.find((x) => x.member_id === row.member_id && x.time_entry_id === row.time_entry_id);
@@ -341,6 +344,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
 
   const rpcs: Record<string, (s: MockState, c: Ctx, a: Record<string, any>) => unknown> = {
     ...clientProofRpcs,
+    ...clientLogRpcs,
     patrol_bootstrap(s, c) {
       const vis = (t: string) => (s.tables[t] ?? []).filter((r) => visible(s, c, t, r));
       const now = Date.now();
@@ -428,11 +432,13 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
     patrol_set_incident_status(s, c, a) {
       const inc = (s.tables.patrol_incidents ?? []).find((x) => x.id === a.p_id);
       if (!inc || !c.staffOrgs.includes(inc.org_id) || inc.status === 'draft') throw new BackendError('42501', 'not_found', 403);
+      const wasSent = inc.status === 'sent_to_client';
       inc.status = a.p_status;
       if (a.p_severity) inc.severity = a.p_severity;
       if (['reviewed', 'sent_to_client', 'closed'].includes(a.p_status)) { inc.reviewed_by ??= c.memberIn(inc.org_id); inc.reviewed_at ??= nowIso(); }
       if (a.p_status === 'sent_to_client') { inc.client_visible = true; inc.sent_to_client_at ??= nowIso(); }
       inc.updated_at = nowIso();
+      if (a.p_status === 'sent_to_client' && !wasSent) onIncidentSent(s, inc);
       (s.tables.patrol_incident_events ??= []).push({ id: uuidv7(), org_id: inc.org_id, incident_id: inc.id, actor_id: c.memberIn(inc.org_id), actor_name: c.members.find((m) => m.org_id === inc.org_id)?.display_name ?? '', kind: 'status', to_status: a.p_status, body: a.p_note ?? null, created_at: nowIso() });
       return inc;
     },
@@ -455,14 +461,18 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const d = (s.tables.patrol_dars ?? []).find((x) => x.id === a.p_id);
       if (!d || !c.staffOrgs.includes(d.org_id) || d.status === 'open') throw new BackendError('42501', 'not_found', 403);
       d.status = a.p_status; d.reviewed_at ??= nowIso();
+      const wasVisible = !!d.client_visible;
       if (a.p_status === 'sent_to_client') { d.client_visible = true; d.sent_to_client_at ??= nowIso(); }
       d.updated_at = nowIso();
+      if (d.client_visible && !wasVisible) onDarShared(s, d);
       return d;
     },
     patrol_set_dar_client_visible(s, c, a) {
       const d = (s.tables.patrol_dars ?? []).find((x) => x.id === a.p_id);
       if (!d || !c.staffOrgs.includes(d.org_id) || d.status === 'open') throw new BackendError('42501', 'not_found', 403);
+      const wasVisible = !!d.client_visible;
       d.client_visible = !!a.p_visible; if (a.p_visible) d.sent_to_client_at ??= nowIso(); d.updated_at = nowIso();
+      if (d.client_visible && !wasVisible) onDarShared(s, d);
       rpcs.patrol_log_audit!(s, c, { p_org: d.org_id, p_kind: a.p_visible ? 'dar_shared' : 'dar_unshared', p_entity_table: 'patrol_dars', p_entity_id: d.id, p_site: d.site_id, p_detail: d.report_no ?? d.report_date });
       return null;
     },
@@ -731,6 +741,11 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       save(s);
       return out as T;
     },
+    // Demo/test mode has no edge functions: report "not deployed" honestly (never a fake send).
+    async invoke() {
+      await net('rpc', 'invoke', 'write');
+      throw new BackendError('404', 'function_not_deployed', 404);
+    },
     storage: {
       async upload(path, bytes, mime) {
         await net('upload', path, 'upload');
@@ -756,7 +771,7 @@ function memId(table: string, r: R | Record<string, any>): string {
     case 'patrol_post_order_acks': return `${r.member_id}:${r.site_id}`;
     case 'patrol_org_settings': case 'patrol_org_billing': return String(r.org_id);
     case 'patrol_guard_cards': return String(r.member_id);
-    case 'patrol_site_codes': case 'patrol_site_billing': return String(r.site_id);
+    case 'patrol_site_codes': case 'patrol_site_billing': case 'patrol_site_client_email': return String(r.site_id);
     default: return uuidv7();
   }
 }

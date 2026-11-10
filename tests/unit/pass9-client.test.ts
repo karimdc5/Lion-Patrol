@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { siteProof, clientProofRpcs } from '../../src/data/backend/memoryClient';
+import { evaluateNight, clientLogRpcs, reportItems } from '../../src/data/backend/memoryClientLogs';
+import { nightOf, nightStart, mergeNightReport } from '../../supabase/functions/_shared/client-logs';
 
 // Pass 9 chunk 2 (A7/C1): the memory/demo mirror of patrol_site_proof.
 const ORG = 'org-1';
@@ -71,5 +73,41 @@ describe('pass 9 A7/C1: client patrol proof', () => {
     expect(siteProof(s, SITE)!.requests[0]!.body).toBe('Please check the rear gate');
     expect(() => clientProofRpcs.patrol_client_request!(s, ctx, { p_site: 'other', p_body: 'hello' })).toThrow();
     expect(clientProofRpcs.patrol_client_site_proof!(s, ctx, { p_site: 'other' })).toBeNull();
+  });
+});
+
+describe('pass 9 Client logs: memory mirror (hold for OK by default)', () => {
+  const admin = { memberIds: ['m-owner'], clientSites: [], staffOrgs: [ORG], adminOrgs: [ORG], members: [], memberIn: () => 'm-owner' };
+  it('one report per night, ready only after the LAST guard clocks out, owner ping only (no client email)', () => {
+    const night = nightOf(Date.now());
+    const st = nightStart(night);
+    const at = (min: number) => new Date(Date.parse(st) + min * 60e3).toISOString();
+    const s = state({ patrol_time_entries: [
+      { id: 'a', org_id: ORG, site_id: SITE, member_id: 'm-guard', clock_in_at: at(1), clock_out_at: at(3) },
+      { id: 'b', org_id: ORG, site_id: SITE, member_id: 'm-2', clock_in_at: at(2), clock_out_at: null },
+    ] });
+    expect(evaluateNight(s, SITE, night)).toBe('waiting');
+    s.tables.patrol_time_entries![1]!.clock_out_at = at(4);
+    expect(evaluateNight(s, SITE, night)).toBe('ready');
+    expect(s.tables.patrol_client_reports).toHaveLength(1);
+    expect(s.tables.patrol_client_emails!.map((e) => e.kind)).toEqual(['owner_ping']);
+    const r = s.tables.patrol_client_reports![0]!;
+    const email = clientLogRpcs.patrol_client_report_send!(s, admin, { p_id: r.id }) as string;
+    expect(r.status).toBe('queued');
+    clientLogRpcs.patrol_client_email_unavailable!(s, admin, { p_id: email, p_reason: 'Email function not deployed' });
+    expect(r.status).toBe('not_configured');
+    expect(s.tables.patrol_client_emails!.some((e) => e.status === 'sent')).toBe(false);
+    const merged = mergeNightReport(reportItems(s, r.id)!);
+    expect(merged.counts.officers).toBe(2);
+    expect(JSON.stringify(merged)).not.toContain('Secret Guardname');
+  });
+  it('auto-send sites queue the client email instead of holding', () => {
+    const night = nightOf(Date.now());
+    const s = state({
+      patrol_site_client_email: [{ id: SITE, site_id: SITE, org_id: ORG, recipients: ['c@example.com'], auto_send_logs: true }],
+      patrol_time_entries: [{ id: 'a', org_id: ORG, site_id: SITE, member_id: 'm-guard', clock_in_at: new Date(Date.parse(nightStart(night)) + 60e3).toISOString(), clock_out_at: new Date(Date.parse(nightStart(night)) + 120e3).toISOString() }],
+    });
+    expect(evaluateNight(s, SITE, night)).toBe('queued');
+    expect(s.tables.patrol_client_emails!.map((e) => e.kind)).toEqual(['client_log']);
   });
 });

@@ -23,6 +23,7 @@ import { SiteThumb, SiteHeaderPhoto, siteCover } from '../../ui/SitePhoto';
 import { siteCodes, saveSiteCodes, listAcks } from '../../data/postOrders';
 import { MaskedCodes } from '../../ui/MaskedCodes';
 import { fetchBilling, siteBilling, saveSiteBilling } from '../../data/owner';
+import { listSiteClientEmail, saveSiteClientEmail, defaultSiteClientEmail, isNotInstalled, type SiteClientEmail } from '../../data/clientLogs';
 
 const MapView = lazyScreen(() => import('../../ui/MapView'), () => <div class="map-box skel" />);
 
@@ -49,7 +50,7 @@ export function SitesList() {
   );
 }
 
-type Tab = 'details' | 'orders' | 'checkpoints' | 'contacts' | 'access' | 'bolos' | 'portal';
+type Tab = 'details' | 'orders' | 'checkpoints' | 'contacts' | 'access' | 'bolos' | 'portal' | 'email';
 
 export function SiteEditor({ id }: { id: string }) {
   const isNew = id === 'new';
@@ -77,7 +78,7 @@ export function SiteEditor({ id }: { id: string }) {
         {!isNew && <SiteHeaderPhoto siteId={site.id} />}
         {!isNew && (
           <div class="tabs" role="tablist">
-            {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People'], ['bolos', 'BOLOs'], ['portal', 'Client portal']] as Array<[Tab, string]>).map(([k, l]) => (
+            {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People'], ['bolos', 'BOLOs'], ['portal', 'Client portal'], ...(admin ? [['email', 'Client email']] : [])] as Array<[Tab, string]>).map(([k, l]) => (
               <button key={k} class={tab === k ? 'active' : ''} onClick={() => setTab(k)} data-testid={`site-tab-${k}`}>{l}</button>
             ))}
           </div>
@@ -122,6 +123,7 @@ export function SiteEditor({ id }: { id: string }) {
         {tab === 'access' && <AccessTab site={site} disabled={!admin} />}
         {tab === 'bolos' && <BolosTab site={site} />}
         {tab === 'portal' && <PortalTab site={site} />}
+        {tab === 'email' && admin && <ClientEmailTab site={site} />}
       </div>
       {admin && (dirty || isNew) && (tab === 'details' || tab === 'orders' || tab === 'contacts') && (
         <div class="sticky-bar"><Button variant="primary" size="lg" block onClick={() => void save()} disabled={!dirty && !isNew} data-testid="site-save">{isNew ? 'Create site' : 'Save changes'}</Button></div>
@@ -311,7 +313,7 @@ function PortalTab({ site }: { site: Site }) {
   const active = (links.data ?? []).filter((l) => !l.revoked_at && (!l.expires_at || Date.parse(String(l.expires_at)) > Date.now()));
   return (
     <div class="stack">
-      <p class="foot muted">A read-only page for this site’s client: shared incident reports, daily reports and patrol proof, with PDF downloads. No login needed. Internal notes are never included. Copy or share it yourself; Lion Patrol never sends it.</p>
+      <p class="foot muted">A private page for this site’s client: shared incident and daily reports (readable in the page and as PDFs), live guard status, patrol proof, sent invoices and a request thread. No login needed. Guard names, pay, schedules and internal notes are never included. Copy or share the link yourself; Lion Patrol never sends it. Revoke a link below at any time.</p>
       {fresh ? (
         <div class="card stack" data-testid="portal-link-ready">
           <b>Link ready</b>
@@ -347,6 +349,51 @@ function PortalTab({ site }: { site: Site }) {
 }
 
 export { sitesFor };
+
+/** Pass 9 A12 + Client logs: per-site client email recipients, hold-for-OK vs auto-send, per-type toggles (owners/admins). */
+function ClientEmailTab({ site }: { site: Site }) {
+  const [row, setRow] = useState<SiteClientEmail | null>(null);
+  const [text, setText] = useState('');
+  const [state, setState] = useState<'loading' | 'ok' | 'not_installed' | 'error'>('loading');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void listSiteClientEmail(site.org_id).then((rows) => {
+      const r = rows.find((x) => x.site_id === site.id) ?? defaultSiteClientEmail(site.id, site.org_id);
+      setRow(r); setText((r.recipients ?? []).join('\n')); setState('ok');
+    }).catch((e) => setState(isNotInstalled(e) ? 'not_installed' : 'error'));
+  }, [site.id]);
+  if (state === 'loading') return <SkeletonList rows={2} />;
+  if (state === 'not_installed') return <div class="card" data-testid="client-email-not-installed"><b>Needs the server update</b><p class="foot muted">Client email settings need migration 20261110000200_patrol_client_proof.sql on the server. Until then Lion Patrol does not email clients.</p></div>;
+  if (state === 'error' || !row) return <p class="muted">Could not load client email settings. Check your connection.</p>;
+  const set = (p: Partial<SiteClientEmail>) => setRow({ ...row, ...p });
+  const toggles: Array<[keyof SiteClientEmail, string, string]> = [
+    ['notify_incident', 'Incident sent to client', 'When you mark an incident “Sent to client”.'],
+    ['notify_missed_patrol', 'Missed patrol', 'When the server detects a missed or late patrol round (no guard names).'],
+    ['notify_dar', 'Daily report shared', 'When a daily activity report is shared with the client.'],
+    ['notify_invoice', 'Invoice sent', 'Lets you press “Send to client” on an invoice.'],
+  ];
+  return (
+    <div class="stack" data-testid="client-email-tab">
+      <p class="foot muted">Emails are sent by the server from contact@lionofseattle.com once email sending is set up. Until then nothing is emailed and Client logs shows “Email sending not configured”.</p>
+      <Field label="Client email addresses" hint="One per line, up to 10."><textarea class="input" rows={3} value={text} onInput={(e) => setText(e.currentTarget.value)} placeholder="e.g. manager@client-company.com" data-testid="client-email-recipients" /></Field>
+      <SectionLabel>Nightly report (Client logs)</SectionLabel>
+      <div class="card row-between">
+        <span>{row.auto_send_logs ? 'Auto-send' : 'Hold for my OK'}<div class="foot muted">{row.auto_send_logs ? 'Sent when the last guard of the night clocks out (or at 8:00 AM PT).' : 'Default for the first week: you preview and press Send in Client logs.'}</div></span>
+        <Toggle label="Auto-send nightly report" checked={row.auto_send_logs} onChange={(v) => set({ auto_send_logs: v })} />
+      </div>
+      <SectionLabel>Other client emails</SectionLabel>
+      {toggles.map(([k, l, sub]) => (
+        <div class="card row-between" key={k}><span>{l}<div class="foot muted">{sub}</div></span><Toggle label={l} checked={!!row[k]} onChange={(v) => set({ [k]: v } as Partial<SiteClientEmail>)} /></div>
+      ))}
+      <Button variant="primary" block loading={busy} data-testid="client-email-save" onClick={async () => {
+        setBusy(true);
+        try { await saveSiteClientEmail({ ...row, recipients: text.split(/[\s,;]+/).filter(Boolean) }); toast('Client email settings saved'); }
+        catch (e) { toast(isNetworkError(e) ? 'Saving needs an internet connection.' : (e as Error).message, 'error'); }
+        finally { setBusy(false); }
+      }}>Save client email settings</Button>
+    </div>
+  );
+}
 
 function SitePhotoField({ siteId, admin }: { siteId: string; admin: boolean }) {
   const cover = useData(() => siteCover(siteId), [siteId]);
@@ -429,7 +476,7 @@ function SiteBillingField({ siteId }: { siteId: string }) {
         <Field label="Client (bill to)"><input class="input" value={v.client} onInput={(e) => setF({ ...v, client: (e.target as HTMLInputElement).value })} data-testid="site-bill-client" /></Field>
       </div>
       <Field label="Billing address"><input class="input" value={v.address} onInput={(e) => setF({ ...v, address: (e.target as HTMLInputElement).value })} /></Field>
-      <Field label="Accounts-payable email (reference only)" hint="Lion Patrol never emails clients."><input class="input" type="email" value={v.email} onInput={(e) => setF({ ...v, email: (e.target as HTMLInputElement).value })} /></Field>
+      <Field label="Accounts-payable email" hint="Invoice emails also go here when 'Invoice sent' is on under Client email (server email must be set up)."><input class="input" type="email" value={v.email} onInput={(e) => setF({ ...v, email: (e.target as HTMLInputElement).value })} /></Field>
       <Button disabled={!f} data-testid="site-billing-save" onClick={async () => {
         const rate = v.rate.trim() === '' ? null : Number(v.rate.replace(/[$,]/g, ''));
         if (rate != null && (Number.isNaN(rate) || rate < 0)) { toast('Enter the rate as a number, e.g. 38.00', 'error'); return; }

@@ -42,6 +42,7 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
               {isAdmin.value && <Row icon="clock" title="Timesheets" sub="Weekly hours, overtime, Gusto export" chevron href="/a/timesheets" testid="more-timesheets" />}
               {isAdmin.value && <Row icon="key" title="Guard cards" sub="WA licenses, expiry reminders, onboarding import" chevron href="/a/guard-cards" testid="more-guard-cards" />}
               {isAdmin.value && <Row icon="file" title="Invoices" sub="Monthly client invoices from clocked hours" chevron href="/a/invoices" testid="more-invoices" />}
+              {isAdmin.value && <Row icon="mail" title="Client logs" sub="Nightly combined client reports — preview, OK, send" chevron href="/a/client-logs" testid="more-client-logs" />}
               <Row icon="settings" title="Settings & categories" chevron href="/a/settings" testid="more-settings" />
             </List>
           </>

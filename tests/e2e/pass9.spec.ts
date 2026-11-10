@@ -106,3 +106,53 @@ test('A10: Delete draft asks in-app and removes the draft', async ({ page }) => 
   await expect(page.getByTestId('continue-draft')).toHaveCount(0);
   await expect.poll(async () => (await rows(page, 'patrol_incidents')).filter((i) => i.status === 'draft' && i.description === 'TEST draft to delete').length).toBe(0);
 });
+
+// ------------------------------------------------------------------ pass 9 chunk 2 (client proof + Client logs)
+test('C1/A7: portal shows honest live status, patrol proof and a request thread that lands as an owner task', async ({ page, context }) => {
+  await owner(page);
+  await page.getByRole('link', { name: 'Sites' }).click();
+  await page.getByTestId('site-admin-row').filter({ hasText: 'Kent Station Market' }).click();
+  await page.getByTestId('site-tab-portal').click();
+  await page.getByTestId('portal-create').click();
+  const url = (await page.getByTestId('portal-url').textContent())!.trim();
+  const portal = await context.newPage();
+  await portal.goto(url);
+  await expect(portal.getByTestId('portal-live')).toBeVisible();
+  await expect(portal.getByTestId('portal-on-site')).not.toContainText('Yes'); // nobody GPS-verified on shift
+  await expect(portal.getByTestId('cp-proof')).toBeVisible();
+  await expect(portal.getByTestId('portal-expiry')).toContainText('can revoke it');
+  // full title on expand: the card tap still toggles
+  const inc = portal.getByTestId('portal-incident').first();
+  await inc.getByRole('button').first().click();
+  await expect(inc.getByTestId('portal-incident-detail')).toBeVisible();
+  await expect(inc.getByTestId('portal-incident-title')).not.toHaveClass(/ellipsis/);
+  await portal.getByTestId('cp-request-body').fill('Please check the rear gate tonight');
+  await portal.getByTestId('cp-request-send').click();
+  await expect(portal.getByTestId('cp-request').filter({ hasText: 'Please check the rear gate tonight' })).toBeVisible();
+  expect((await rows(page, 'patrol_owner_alerts')).filter((a) => a.kind === 'client_request')).toHaveLength(1);
+  expect(await portal.content()).not.toMatch(/hourly_rate|pay_rate/);
+});
+
+test('Client logs: hold for OK by default; Send now shows the honest "email not configured" state (no email sent)', async ({ page }) => {
+  await owner(page);
+  await page.getByRole('link', { name: 'Sites' }).click();
+  await page.getByTestId('site-admin-row').filter({ hasText: 'Kent Station Market' }).click();
+  await page.getByTestId('site-tab-email').click();
+  await expect(page.getByTestId('client-email-tab')).toContainText('Hold for my OK');
+  await page.getByTestId('client-email-recipients').fill('manager@example.com');
+  await page.getByTestId('client-email-save').click();
+  await expect.poll(async () => (await rows(page, 'patrol_site_client_email')).find((r) => r.site_id === MARKET)?.recipients).toEqual(['manager@example.com']);
+  await mutateServer(page, `(s.tables.patrol_client_reports ??= []).push({ id: 'cr-1', org_id: s.tables.patrol_sites.find((x) => x.id === '${MARKET}').org_id, site_id: '${MARKET}', night: '2026-11-08', status: 'ready', ready_reason: 'last_clock_out', note: null, send_count: 0, last_email_id: null, last_error: null, sent_at: null, created_at: new Date().toISOString() });`);
+  await page.goto(page.url().replace(/\/a\/.*$/, '/a'));
+  await expect(page.getByTestId('waiting-for-ok')).toContainText('1 client report waiting for your OK');
+  await page.getByTestId('waiting-for-ok').click();
+  const row = page.getByTestId('client-log-row').first();
+  await expect(row.getByTestId('client-log-status')).toHaveText('Ready for your OK');
+  await row.getByTestId('client-log-preview').click();
+  await expect(page.getByTestId('client-log-preview-body')).toContainText('Exactly what the client receives');
+  await page.keyboard.press('Escape');
+  await row.getByTestId('client-log-send').click();
+  await expect(row.getByTestId('client-log-status')).toHaveText('Not sent — email not configured');
+  await expect(page.getByTestId('email-not-configured')).toContainText('Email sending not configured');
+  expect((await rows(page, 'patrol_client_emails')).filter((e) => e.status === 'sent')).toHaveLength(0);
+});
