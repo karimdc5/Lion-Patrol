@@ -46,7 +46,7 @@ describe('nightReportState (mirrors patrol_client_report_evaluate)', () => {
 
 const items: ReportItems = {
   report: { id: 'r1', night: '2026-11-07', status: 'ready', ready_reason: 'fallback_8am', note: 'Sam Guard had not clocked out by 8:00 AM PT' },
-  site: { name: 'Trailside' }, org: { name: 'Lion Security Services' },
+  site: { name: 'Example Site' }, org: { name: 'Lion Security Services' },
   shifts: [{ member_id: 'b', guard: 'Bea Guard', clock_in_at: '2026-11-08T07:00:00Z', clock_out_at: '2026-11-08T13:00:00Z' }, { member_id: 'a', guard: 'Sam Guard', clock_in_at: '2026-11-08T06:00:00Z', clock_out_at: null }],
   tours: [{ started_at: '2026-11-08T08:00:00Z', expected_count: 3, scanned_count: 4, completed_at: '2026-11-08T08:20:00Z', guard: 'Sam Guard' }],
   scans: [{ scanned_at: '2026-11-08T08:05:00Z', checkpoint: 'Rear gate', guard: 'Sam Guard' }],
@@ -76,7 +76,7 @@ describe('mergeNightReport', () => {
   });
   it('renders PT times and a subject per site/night', () => {
     const t = renderReportText(r);
-    expect(t.subject).toBe('Nightly patrol report — Trailside — Sat, Nov 7, 2026');
+    expect(t.subject).toBe('Nightly patrol report — Example Site — Sat, Nov 7, 2026');
     expect(t.text).toContain('10:00 PM  On duty');   // 06:00Z = 10:00 PM PST
     expect(t.text).toContain('All times Pacific');
     expect(renderReportHtml({ ...r, siteName: '<b>x</b>' })).toContain('&lt;b&gt;x&lt;/b&gt;');
@@ -101,7 +101,7 @@ describe('mail config + messages (never sends)', () => {
     expect(buildMessage({ ...row, recipients: ['nope'] }, null, { testTo: null })).toBeNull();
     expect(buildMessage(row, null, { testTo: 'owner@test.invalid' })!.to).toEqual(['owner@test.invalid']);
     const log = buildMessage({ ...row, kind: 'client_log', subject: '' }, mergeNightReport(items), { testTo: null })!;
-    expect(log.subject).toContain('Trailside');
+    expect(log.subject).toContain('Example Site');
     expect(log.text).not.toContain('Sam');
   });
   it('provider requests are built, not sent', () => {

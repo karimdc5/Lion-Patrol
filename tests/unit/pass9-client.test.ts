@@ -10,7 +10,7 @@ const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
 function state(extra: Record<string, any[]> = {}) {
   return {
     tables: {
-      patrol_sites: [{ id: SITE, org_id: ORG, name: 'Trailside', tour_interval_min: 60 }],
+      patrol_sites: [{ id: SITE, org_id: ORG, name: 'Example Site', tour_interval_min: 60 }],
       patrol_org_settings: [{ id: ORG, org_id: ORG, tour_interval_min: 60 }],
       patrol_members: [{ id: 'm-guard', org_id: ORG, display_name: 'Secret Guardname', role: 'guard' }],
       ...extra,

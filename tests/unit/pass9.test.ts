@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { gpsLine, gpsStatusFor } from '../../src/lib/geo';
 
-// Trailside (real account): 100 Example St, Federal Way, 150 m geofence.
+// Fictional test site (not a real client): 100 Example St, Federal Way, 150 m geofence.
 const site = { lat: 47.32, lng: -122.31, geofence_m: 150, address: '100 Example St', city: 'Federal Way' };
 
 describe('pass 9 A1: GPS status + honest location lines', () => {
