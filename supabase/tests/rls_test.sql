@@ -510,7 +510,8 @@ grant all on rls_p7 to authenticated, anon;
 do $$
 declare u text; expected int; n int;
 begin
-  foreach u in array array['a1:1','a3:0','a4:0','a5:0','b1:0','b2:0','c1:0'] loop
+  -- a1 sees the no_show above + the client_request task from the pass 9 portal request; nobody else sees either
+  foreach u in array array['a1:2','a3:0','a4:0','a5:0','b1:0','b2:0','c1:0'] loop
     perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-4000-8000-0000000000%s","role":"authenticated"}', split_part(u, ':', 1)), true);
     execute 'set local role authenticated';
     select count(*) into n from public.patrol_owner_alerts;
@@ -702,17 +703,21 @@ do $$ declare p jsonb; begin
 end $$;
 reset role;
 -- nightly report: two guards at A2, one email only after the LAST clock-out (as postgres: triggers run)
-do $$ declare v_night date := current_date - 4; v_start timestamptz; r public.patrol_client_reports; n int; begin
+-- (the current night: a past night is already past its 8 AM PT fallback and would be ready at once)
+do $$ declare v_night date := public.patrol_night_of(now()); v_start timestamptz; r public.patrol_client_reports; n int; begin
   v_start := public.patrol_night_start(v_night);
+  perform set_config('rls.night', v_night::text, true);
+  -- drop a3's open clock-in from the geofence test (one open entry per guard; deleting fires no report trigger)
+  delete from public.patrol_time_entries where clock_out_at is null and member_id in ('20000000-0000-4000-8000-0000000000a3','20000000-0000-4000-8000-0000000000a5');
   insert into public.patrol_time_entries (id, org_id, site_id, member_id, clock_in_at, clock_out_at, gps_notice_accepted_at) values
-   ('c1000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a3', v_start + interval '14 hours', null, now() - interval '5 days'),
-   ('c1000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a5', v_start + interval '15 hours', null, now() - interval '5 days');
+   ('c1000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a3', v_start + interval '1 minute', null, now() - interval '5 days'),
+   ('c1000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a5', v_start + interval '2 minutes', null, now() - interval '5 days');
   select * into r from public.patrol_client_reports where site_id = '30000000-0000-4000-8000-0000000000a2' and night = v_night;
   if r.status <> 'waiting' then raise exception 'RLS FAIL: report should wait (%)', r.status; end if;
-  update public.patrol_time_entries set clock_out_at = v_start + interval '20 hours' where id = 'c1000000-0000-4000-8000-000000000001';
+  update public.patrol_time_entries set clock_out_at = v_start + interval '3 minutes' where id = 'c1000000-0000-4000-8000-000000000001';
   select * into r from public.patrol_client_reports where id = r.id;
   if r.status <> 'waiting' then raise exception 'RLS FAIL: ready before last guard out (%)', r.status; end if;
-  update public.patrol_time_entries set clock_out_at = v_start + interval '22 hours' where id = 'c1000000-0000-4000-8000-000000000002';
+  update public.patrol_time_entries set clock_out_at = v_start + interval '4 minutes' where id = 'c1000000-0000-4000-8000-000000000002';
   select * into r from public.patrol_client_reports where id = r.id;
   if r.status <> 'ready' or r.ready_reason <> 'last_clock_out' then raise exception 'RLS FAIL: not ready after last clock-out (% %)', r.status, r.ready_reason; end if;
   select count(*) into n from public.patrol_client_emails where ref_id = r.id;
@@ -728,7 +733,7 @@ end $$;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
 do $$ declare r public.patrol_client_reports; v_email uuid; it jsonb; begin
-  select * into r from public.patrol_client_reports where night = current_date - 4;
+  select * into r from public.patrol_client_reports where site_id = '30000000-0000-4000-8000-0000000000a2' and night = current_setting('rls.night')::date;
   it := public.patrol_client_report_items(r.id);
   if jsonb_array_length(it -> 'shifts') <> 2 then raise exception 'RLS FAIL: report items (%)', it -> 'shifts'; end if;
   begin
@@ -744,7 +749,7 @@ end $$;
 reset role;
 -- service_role (edge function) finishes a send; only then is it 'sent'
 do $$ declare r public.patrol_client_reports; v_email uuid; c jsonb; begin
-  select * into r from public.patrol_client_reports where night = current_date - 4;
+  select * into r from public.patrol_client_reports where site_id = '30000000-0000-4000-8000-0000000000a2' and night = current_setting('rls.night')::date;
   set local role authenticated;
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
   v_email := public.patrol_client_report_send(r.id);
