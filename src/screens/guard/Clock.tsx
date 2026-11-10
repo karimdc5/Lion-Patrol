@@ -158,9 +158,15 @@ export function ClockOutSheet({ open, onClose }: { open: boolean; onClose: () =>
   const minutes = te ? Math.max(0, Math.round((now - Date.parse(te.clock_in_at)) / 60000)) : 0;
   return (
     <Sheet open={open} onClose={onClose} title="Clock out" testid="clock-out-sheet"
-      footer={<Button variant="primary" size="lg" block loading={busy} data-testid="clock-out-confirm" onClick={async () => {
-        if (note.trim().length < 3) { setErr('Add a short shift note for the next guard and the owners.'); return; }
-        if (!confirmed && !(wrong && sheetNote.trim().length >= 3)) { setErr('Confirm your hours, or tell the owner what’s wrong with them.'); return; }
+      footer={<>{err && <div class="form-error" data-testid="clock-out-error" style={{ marginBottom: 8 }}>Not clocked out yet — fix the highlighted item above.</div>}<Button variant="primary" size="lg" block loading={busy} data-testid="clock-out-confirm" onClick={async () => {
+        // A6: say clearly why nothing happened (inline + toast + focus); the note is typed text only.
+        if (note.trim().length < 3) {
+          const m = 'Add a short shift note for the next guard and the owners — it’s required for the daily report.';
+          setErr(m); toast('Shift note required — you’re still clocked in.', 'error', 4000);
+          document.querySelector<HTMLTextAreaElement>('[data-testid="shift-note"]')?.focus();
+          return;
+        }
+        if (!confirmed && !(wrong && sheetNote.trim().length >= 3)) { setErr('Confirm your hours, or tell the owner what’s wrong with them.'); toast('Confirm your hours to clock out — you’re still clocked in.', 'error', 4000); return; }
         setBusy(true);
         try {
           const teId = await clockOut(note, note, { confirmed, note: wrong ? sheetNote : '' });
@@ -170,12 +176,12 @@ export function ClockOutSheet({ open, onClose }: { open: boolean; onClose: () =>
           if (teId) void import('../../pdf').then((m) => m.endOfShiftPdf(teId, { save: true })).then((r) => showPdf(r.bytes, r.filename, r.pages)).catch((e) => toast(`Shift PDF: ${(e as Error).message}`, 'error', 4000));
         }
         finally { setBusy(false); }
-      }}>Clock out and submit DAR</Button>}>
+      }}>Clock out and submit DAR</Button></>}>
       <div class="stack">
         <p class="muted sub">Your daily activity report ({entries.data?.length ?? 0} log entr{entries.data?.length === 1 ? 'y' : 'ies'}) will be submitted with this note. Location tracking stops now.</p>
-        <Field label="Shift note" error={err}>
-          <textarea class="input" rows={4} value={note} onInput={(e) => { setNote((e.target as HTMLTextAreaElement).value); setErr(null); }}
-            placeholder="Quiet night. All doors secured at 05:40. Light out by the east lot." data-testid="shift-note" />
+        <Field label="Shift note (required for DAR)" error={err} hint="Required. A few words for the next guard and the owners: what happened, anything left open.">
+          <textarea class="input" rows={4} value={note} required aria-required="true" onInput={(e) => { setNote((e.target as HTMLTextAreaElement).value); setErr(null); }}
+            placeholder="Type your shift note here" data-testid="shift-note" />
         </Field>
         {te && (
           <div class="card stack" data-testid="timesheet-confirm">
