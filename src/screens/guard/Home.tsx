@@ -107,7 +107,7 @@ export function GuardHome() {
           <HoldButton label="Hold for SOS" onConfirm={() => void fireSos()} class="hold-sos" size={76} testid="home-sos"><b style={{ fontSize: 17 }}>SOS</b></HoldButton>
           <div class="grow">
             <div class="headline">Emergency</div>
-            <div class="foot muted">Press and hold 2 seconds to alert the owners with your location. Call 911 first if anyone is in danger.</div>
+            <div class="foot muted">Press and hold 2 seconds to alert the owners (with your GPS location if available). Call 911 first if anyone is in danger.</div>
           </div>
         </div>
 
