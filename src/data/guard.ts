@@ -327,8 +327,23 @@ export async function saveDraftLocal(f: IncidentForm) {
   const uid = ctx().userId;
   await (await db()).put('drafts', { id: f.id, userId: uid, kind: 'incident', data: f, updatedAt: Date.now() });
 }
+/**
+ * A10: "Delete draft" removes it everywhere: this phone's draft, any not-yet-sent upload, and the
+ * server copy (drafts auto-sync once they have a site + category; RLS lets the author delete own drafts).
+ */
 export async function discardDraft(id: string) {
-  await (await db()).delete('drafts', id);
+  const d = await db();
+  await d.delete('drafts', id);
+  const opId = await kvGet<string>(`op:patrol_incidents:${id}`);
+  const op = opId ? await getOp(opId) : null;
+  if (op && op.status === 'pending') await discardOp(op.id);
+  const deps = op && op.status !== 'pending' && op.status !== 'done' ? [op.id] : [];
+  await d.delete('records', ['patrol_incidents', id]);
+  try {
+    const { userId, orgId } = ctx();
+    await enqueue({ userId, orgId, kind: 'delete', table: 'patrol_incidents', payload: null, match: { id, status: 'draft' }, entityKey: `patrol_incidents:${id}:delete`, dependsOn: deps, label: 'Delete draft' });
+    void kick();
+  } catch { /* signed out: the local draft is gone; nothing was synced for another account */ }
   bumpData();
 }
 

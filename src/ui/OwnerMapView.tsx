@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -13,15 +13,27 @@ export default function OwnerMapView({ sites, guards, height = 520 }: { sites: S
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const fitted = useRef(false);
+  const tiles = useRef<L.TileLayer | null>(null);
+  // A10: never a silent dark box — show "Loading map…" until tiles arrive, and Retry if they don't.
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchdog = () => { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => setState((s) => (s === 'ready' ? s : 'error')), 12_000); };
   useEffect(() => {
     if (!el.current) return;
     const m = L.map(el.current, { zoomControl: true, attributionControl: true }).setView([47.38, -122.23], 11);
-    L.tileLayer(OSM, { maxZoom: 19, className: 'osm-dark', attribution: '© OpenStreetMap contributors' }).addTo(m);
+    let loaded = 0, failed = 0;
+    const t = L.tileLayer(OSM, { maxZoom: 19, className: 'osm-dark', attribution: '© OpenStreetMap contributors' })
+      .on('tileload', () => { loaded++; setState('ready'); })
+      .on('tileerror', () => { failed++; if (!loaded && failed >= 4) setState('error'); })
+      .addTo(m);
+    tiles.current = t;
     layer.current = L.layerGroup().addTo(m);
     map.current = m;
+    watchdog();
     setTimeout(() => m.invalidateSize(), 50);
-    return () => { m.remove(); map.current = null; };
+    return () => { if (timer.current) clearTimeout(timer.current); m.remove(); map.current = null; };
   }, []);
+  const retry = () => { setState('loading'); watchdog(); map.current?.invalidateSize(); tiles.current?.redraw(); };
   useEffect(() => {
     const g = layer.current, m = map.current;
     if (!g || !m) return;
@@ -42,7 +54,21 @@ export default function OwnerMapView({ sites, guards, height = 520 }: { sites: S
     }
     if (pts.length && !fitted.current) { m.fitBounds(L.latLngBounds(pts).pad(0.25), { maxZoom: 16 }); fitted.current = true; }
   }, [JSON.stringify(sites.map((s) => [s.id, s.lat, s.lng, s.onDuty])), JSON.stringify(guards)]);
-  return <div ref={el} class="map-box owner-map" style={{ height }} data-testid="owner-map" />;
+  return (
+    <div style={{ position: 'relative' }}>
+      <div ref={el} class="map-box owner-map" style={{ height }} data-testid="owner-map" data-state={state} />
+      {state !== 'ready' && (
+        <div class="map-overlay" role="status" data-testid="map-status" style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, pointerEvents: state === 'error' ? 'auto' : 'none', background: state === 'error' ? 'rgba(10,15,28,.85)' : 'transparent', zIndex: 500, borderRadius: 16 }}>
+          {state === 'loading'
+            ? <span class="pill pill-muted">Loading map…</span>
+            : <>
+                <span class="sub" style={{ textAlign: 'center', maxWidth: 260 }}>The map tiles didn’t load. Check the connection, then retry. Site and guard lists still work.</span>
+                <button class="btn btn-outline" onClick={retry} data-testid="map-retry">Retry</button>
+              </>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function esc(t: string) { return t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`); }

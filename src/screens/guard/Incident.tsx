@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { Screen, TopBar, Button, Field, Empty, toast, Toggle, Segmented } from '../../ui/kit';
+import { Screen, TopBar, Button, Field, Empty, toast, Toggle, Segmented, Sheet } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
 import { currentOrgId, memberId, isStaff } from '../../auth/session';
@@ -74,6 +74,7 @@ export function IncidentEditor({ id }: { id: string }) {
   const [missing, setMissing] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const cats = useData(() => categoriesFor(org), [org]);
@@ -291,7 +292,15 @@ export function IncidentEditor({ id }: { id: string }) {
         </div>
 
         {req.size > 0 && <p class="foot faint">Required for {cat?.name}: {[...req].map((r) => REQUIRED_LABELS[r] ?? r).join(', ')}.</p>}
-        <button class="link-btn" style={{ color: 'var(--text-3)', alignSelf: 'center' }} onClick={async () => { if (confirm('Delete this draft? This can’t be undone.')) { await discardDraft(form.id); navigate('/g', { replace: true }); } }}>Delete draft</button>
+        {/* A10: in-app confirm (window.confirm is suppressed in some browsers/PWAs, which made this do nothing). */}
+        <button class="link-btn" style={{ color: 'var(--text-3)', alignSelf: 'center' }} onClick={() => setConfirmDelete(true)} data-testid="draft-delete">Delete draft</button>
+        <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete this draft?" testid="draft-delete-sheet"
+          footer={<>
+            <Button variant="danger" size="lg" block data-testid="draft-delete-confirm" onClick={async () => { setConfirmDelete(false); await discardDraft(form.id); toast('Draft deleted'); navigate('/g', { replace: true }); }}>Delete draft</Button>
+            <Button variant="ghost" block onClick={() => setConfirmDelete(false)}>Keep editing</Button>
+          </>}>
+          <p class="sub muted">“{form.title || 'Untitled incident'}” will be removed from this phone and from the server. This can’t be undone.</p>
+        </Sheet>
       </div>
       <div class="sticky-bar">
         <Button variant="primary" size="lg" block loading={busy} onClick={() => void submit()} data-testid="inc-submit">Submit report</Button>
