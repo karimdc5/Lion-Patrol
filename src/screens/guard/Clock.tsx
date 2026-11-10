@@ -166,7 +166,7 @@ export function ClockOutSheet({ open, onClose }: { open: boolean; onClose: () =>
           document.querySelector<HTMLTextAreaElement>('[data-testid="shift-note"]')?.focus();
           return;
         }
-        if (!confirmed && !(wrong && sheetNote.trim().length >= 3)) { setErr('Confirm your hours, or tell the owner what’s wrong with them.'); toast('Confirm your hours to clock out — you’re still clocked in.', 'error', 4000); return; }
+        if (!confirmed && !(wrong && sheetNote.trim().length >= 3)) { setErr('Confirm your hours, or tell the owner what’s wrong with them.'); toast('Hours not confirmed yet — you’re still clocked in.', 'error', 4000); return; }
         setBusy(true);
         try {
           const teId = await clockOut(note, note, { confirmed, note: wrong ? sheetNote : '' });

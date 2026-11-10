@@ -53,7 +53,7 @@ export function DarsList() {
                     <span class="foot muted">{fmtDate(`${d.report_date}T12:00:00Z`)} · {String(d.author_name)}{d.report_no ? ` · ${d.report_no}` : ''}</span>
                   </span>
                   <span class="stack" style={{ gap: 4, alignItems: 'flex-end' }}>
-                    <span class={`pill ${LABEL[String(d.status)]?.[1] ?? 'pill-muted'}`}>{LABEL[String(d.status)]?.[0] ?? String(d.status)}</span>
+                    {(() => { const st = d.status === 'sent_to_client' && !d.client_visible ? 'reviewed' : String(d.status); return <span class={`pill ${LABEL[st]?.[1] ?? 'pill-muted'}`}>{LABEL[st]?.[0] ?? st}</span>; })()}
                     {d.status !== 'open' && (d.client_visible
                       ? <span class="pill pill-success" data-testid="dar-shared">Shared with client</span>
                       : <span class="pill pill-muted" data-testid="dar-not-shared">Not shared</span>)}
