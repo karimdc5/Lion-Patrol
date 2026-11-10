@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { openApp, login, dismissEnroll, USERS, waitForServiceWorker, setOffline } from './helpers';
+import { openApp, login, dismissEnroll, USERS, waitForServiceWorker, setOffline, passAdminGate } from './helpers';
 
 test('guard signs in, stays signed in after reload, and cold-starts offline from cache', async ({ page, context }) => {
   await openApp(page);
@@ -42,6 +42,20 @@ test('owner lands in admin, switches to Guard mode and back; the choice survives
   await expect(page.getByRole('heading', { name: 'Hi, Karim' })).toBeVisible();
   await page.getByRole('link', { name: 'More' }).click();
   await page.getByTestId('mode-switch').click();
+  // pass 9 A8: no one-tap Admin from Guard mode — first switch asks to set a PIN, later ones ask for it
+  await expect(page.getByTestId('admin-gate')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Live' })).toHaveCount(0);
+  await passAdminGate(page);
+  await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
+  await page.getByRole('link', { name: 'More' }).click();
+  await page.getByTestId('mode-switch').click(); // admin → guard needs nothing
+  await expect(page.getByRole('heading', { name: 'Hi, Karim' })).toBeVisible();
+  await page.getByRole('link', { name: 'More' }).click();
+  await page.getByTestId('mode-switch').click();
+  await page.getByTestId('admin-gate-cancel').click();
+  await expect(page.getByRole('heading', { name: 'Live' })).toHaveCount(0);
+  await page.getByTestId('mode-switch').click();
+  await passAdminGate(page);
   await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
 });
 

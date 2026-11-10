@@ -76,3 +76,19 @@ base.afterEach(async ({ page }, info) => {
     console.log('APPSTATE', info.title, st);
   }
 });
+
+/** Pass 9 A8: Guard → Admin mode needs this device's PIN (set one on the first switch). */
+export async function passAdminGate(page: Page, pin = '2468') {
+  const gate = page.getByTestId('admin-gate');
+  await gate.waitFor({ state: 'visible' });
+  const pad = (id: string) => page.getByTestId(id);
+  const type = async (id: string) => { for (const d of pin) await pad(id).locator(`[data-key="${d}"]`).click(); };
+  await expect(pad('admin-gate-new').or(pad('admin-gate-pin'))).toBeVisible();
+  if (await pad('admin-gate-new').isVisible()) {
+    await type('admin-gate-new'); await pad('admin-gate-new').locator('[data-key="ok"]').click();
+    await type('admin-gate-confirm');
+  } else {
+    await type('admin-gate-pin'); await pad('admin-gate-pin').locator('[data-key="ok"]').click();
+  }
+  await expect(gate).toHaveCount(0);
+}

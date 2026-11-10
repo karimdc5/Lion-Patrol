@@ -14,6 +14,7 @@ import { PdfReadySheet } from './ui/PdfReady';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { lazyScreen } from './ui/lazy';
 import { shouldShowInstallGuide } from './lib/platform';
+import { requestAdmin, AdminGateSheet } from './ui/AdminGate';
 
 const AdminShell = lazyScreen(() => import('./screens/admin/AdminShell'));
 const ClientShell = lazyScreen(() => import('./screens/client/ClientShell'));
@@ -73,9 +74,10 @@ function RoleShell() {
     if (m && mode !== 'client') { if (mode === 'admin') void setUiMode('guard'); navigate(`/g/scan?code=${m[1]}`, { replace: true }); }
   }, [p]);
   // QA bug (c): an owner/admin/supervisor who used guard mode can still open admin URLs (e.g. /a/sites).
+  // Pass 9 A8: …but only through the PIN gate (no silent switch to Admin from Guard mode).
   const wantsAdmin = mode === 'guard' && isStaff.value && (p === '/a' || p.startsWith('/a/'));
-  useEffect(() => { if (wantsAdmin) void setUiMode('admin'); }, [wantsAdmin]);
-  const prefix = mode === 'admin' || wantsAdmin ? '/a' : mode === 'client' ? '/c' : '/g';
+  useEffect(() => { if (wantsAdmin) { requestAdmin(p); navigate('/g', { replace: true }); } }, [wantsAdmin]);
+  const prefix = mode === 'admin' ? '/a' : mode === 'client' ? '/c' : '/g';
   const inShell = p === prefix || p.startsWith(prefix + '/');
   // No deps on purpose: a screen may navigate('/') in the same tick as this redirect.
   useEffect(() => { if (!inShell) navigate(prefix, { replace: true }); });
@@ -87,7 +89,8 @@ function RoleShell() {
   if (!inShell) return <div class="screen" />;
   return (
     <>
-      {mode === 'admin' || wantsAdmin ? <AdminShell /> : mode === 'client' ? <ClientShell /> : <GuardShell />}
+      {mode === 'admin' ? <AdminShell /> : mode === 'client' ? <ClientShell /> : <GuardShell />}
+      {isStaff.value && <AdminGateSheet />}
       <EnrollPinSheet open={offerEnroll.value} onClose={() => { offerEnroll.value = false; }} />
     </>
   );

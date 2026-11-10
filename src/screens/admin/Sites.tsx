@@ -21,6 +21,7 @@ import { BoloCard } from '../../ui/BoloCard';
 import { AttachmentTray } from '../../ui/Attachments';
 import { SiteThumb, SiteHeaderPhoto, siteCover } from '../../ui/SitePhoto';
 import { siteCodes, saveSiteCodes, listAcks } from '../../data/postOrders';
+import { MaskedCodes } from '../../ui/MaskedCodes';
 import { fetchBilling, siteBilling, saveSiteBilling } from '../../data/owner';
 
 const MapView = lazyScreen(() => import('../../ui/MapView'), () => <div class="map-box skel" />);
@@ -383,14 +384,23 @@ function SiteCodesEditor({ siteId, admin }: { siteId: string; admin: boolean }) 
   return (
     <div class="card stack" data-testid="site-codes-editor">
       <div class="row-between"><b>Codes & guard notes</b><span class="pill pill-muted"><Icon name="lock" size={14} /> Guards only</span></div>
-      <Field label="Gate / door / alarm codes"><textarea class="input" rows={3} value={c} disabled={!admin} placeholder="Rear gate keypad: 4417#" onInput={(e) => setCodes((e.target as HTMLTextAreaElement).value)} data-testid="site-codes" style={{ fontFamily: 'ui-monospace, Menlo, monospace' }} /></Field>
-      <Field label="Notes for guards"><textarea class="input" rows={2} value={n} disabled={!admin} placeholder="Where the keys are, who to call after hours…" onInput={(e) => setNotes((e.target as HTMLTextAreaElement).value)} data-testid="site-guard-notes" /></Field>
-      <p class="foot muted">Never shown to clients (not in the portal or client app). Guards read and acknowledge post orders on their first shift here.</p>
-      {admin && <Button disabled={!dirty} onClick={async () => { await saveSiteCodes(siteId, c, n); setCodes(null); setNotes(null); toast('Codes saved'); }} data-testid="site-codes-save">Save codes</Button>}
+      {/* A8: masked until tapped; each reveal is logged. Empty → nothing to hide, show the editor. */}
+      {cur.loading ? null : (cur.data?.codes || cur.data?.guard_notes) ? (
+        <MaskedCodes siteId={siteId} label="Codes hidden — tap to view or edit" keepOpen={dirty}>{() => codesFields()}</MaskedCodes>
+      ) : codesFields()}
+      <p class="foot muted">Never shown to clients and never printed in PDFs or the portal. Guards read and acknowledge post orders on their first shift here.</p>
     </div>
   );
+  function codesFields() {
+    return (
+      <>
+        <Field label="Gate / door / alarm codes"><textarea class="input" rows={3} value={c} disabled={!admin} placeholder="e.g. Rear gate keypad: ____#" onInput={(e) => setCodes((e.target as HTMLTextAreaElement).value)} data-testid="site-codes" style={{ fontFamily: 'ui-monospace, Menlo, monospace' }} /></Field>
+        <Field label="Notes for guards"><textarea class="input" rows={2} value={n} disabled={!admin} placeholder="e.g. where the keys are, who to call after hours" onInput={(e) => setNotes((e.target as HTMLTextAreaElement).value)} data-testid="site-guard-notes" /></Field>
+        {admin && <Button disabled={!dirty} onClick={async () => { await saveSiteCodes(siteId, c, n); setCodes(null); setNotes(null); toast('Codes saved'); }} data-testid="site-codes-save">Save codes</Button>}
+      </>
+    );
+  }
 }
-
 function AckList({ siteId }: { siteId: string }) {
   const org = currentOrgId.value;
   const acks = useData(async () => (await listAcks(org)).filter((a) => a.site_id === siteId), [org, siteId]);

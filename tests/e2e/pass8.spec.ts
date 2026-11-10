@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { openApp, login, dismissEnroll, USERS, mutateServer, emailRequests } from './helpers';
+import { openApp, login, dismissEnroll, USERS, mutateServer, emailRequests, passAdminGate } from './helpers';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -57,6 +57,8 @@ test('item 24: post orders + codes are acknowledged on the first shift at a site
   await page.getByTestId('clock-in-btn').click();
   await page.getByTestId('gps-accept').click();
   await expect(page.getByTestId('po-first-shift')).toBeVisible();
+  await expect(page.getByTestId('po-codes')).not.toContainText('4417#'); // pass 9 A8: masked until tapped
+  await page.getByTestId('codes-reveal').click();
   await expect(page.getByTestId('po-codes')).toContainText('4417#');
   await shot(page, 'post-orders-first-shift');
   // can't skip it: Home sends the guard back until acknowledged
@@ -168,9 +170,11 @@ test('QA (c): an owner who used guard mode and clocked out can open admin pages 
   await page.getByTestId('mode-switch').click();
   await expect(page.getByTestId('back-to-admin')).toBeVisible();
   await page.goto('a/sites?backend=memory');
+  await passAdminGate(page); // pass 9 A8: admin URLs from guard mode go through the PIN gate
   await expect(page.getByRole('heading', { name: 'Sites' })).toBeVisible();
   await page.getByRole('link', { name: 'More' }).click();
   await page.getByTestId('mode-switch').click(); // back to guard mode
   await page.getByTestId('back-to-admin').click();
+  await passAdminGate(page);
   await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
 });

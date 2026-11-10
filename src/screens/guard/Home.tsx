@@ -9,6 +9,7 @@ import { onShift, openRun, listDrafts } from '../../data/guard';
 import { fmtDay, fmtTime, hms, relTime } from '../../lib/format';
 import { navigate } from '../../router';
 import { isIOS } from '../../lib/platform';
+import { requestAdmin } from '../../ui/AdminGate';
 import { GuardRight } from './common';
 import { fireSos } from './Sos';
 import { ClockOutSheet } from './Clock';
@@ -38,7 +39,7 @@ export function GuardHome() {
       <TopBar title={`Hi, ${first}`} large right={<GuardRight />} />
       <div class="screen-body stack-lg">
         {staff && (
-          <Button variant="outline" icon="layers" block onClick={async () => { navigate('/a'); await setUiMode('admin'); }} data-testid="back-to-admin">
+          <Button variant="outline" icon="layers" block onClick={() => requestAdmin('/a')} data-testid="back-to-admin">
             Back to admin{te ? ' (you stay clocked in)' : ''}
           </Button>
         )}

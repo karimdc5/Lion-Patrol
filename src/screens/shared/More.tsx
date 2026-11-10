@@ -5,6 +5,7 @@ import { navigate } from '../../router';
 import { roleLabel } from '../../lib/format';
 import { isStandalone } from '../../lib/platform';
 import { EnrollPinSheet } from '../public/EnrollPin';
+import { requestAdmin } from '../../ui/AdminGate';
 import { useData } from '../../ui/useData';
 import * as vault from '../../auth/vault';
 import { queue } from '../../data/sync/status';
@@ -51,9 +52,9 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
             <List>
               <Row icon={uiMode.value === 'admin' ? 'shield' : 'layers'} iconBg="var(--gold-soft)" iconColor="var(--gold)"
                 title={uiMode.value === 'admin' ? 'Switch to Guard mode' : 'Switch to Admin mode'}
-                sub={uiMode.value === 'admin' ? 'Clock in, patrol and report from your post' : 'Dashboard, sites, people and settings'}
+                sub={uiMode.value === 'admin' ? 'Clock in, patrol and report from your post' : 'Dashboard, sites, people and settings · needs this device’s PIN'}
                 chevron testid="mode-switch"
-                onClick={async () => { const next = uiMode.value === 'admin' ? 'guard' : 'admin'; navigate(next === 'admin' ? '/a' : '/g', { replace: true }); await setUiMode(next); }} />
+                onClick={async () => { if (uiMode.value !== 'admin') { requestAdmin('/a'); return; } navigate('/g', { replace: true }); await setUiMode('guard'); }} />
             </List>
           </>
         )}
