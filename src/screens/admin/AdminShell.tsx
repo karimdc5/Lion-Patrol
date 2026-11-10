@@ -12,7 +12,7 @@ import { IncidentsList, IncidentReview } from './Incidents';
 import { Schedule } from './Schedule';
 import { DarsList } from './Dars';
 import { OwnerMap } from './Map';
-import { Timesheets } from './Timesheets';
+import { Timesheets, ShiftDetail } from './Timesheets';
 import { GuardCards } from './GuardCards';
 import { InvoicesList, InvoiceEditor } from './Invoices';
 import { isAdmin } from '../../auth/session';
@@ -54,6 +54,7 @@ export default function AdminShell() {
   else if (p === '/a/dars') screen = <DarsList />;
   else if (p === '/a/map' && isAdmin.value) screen = <OwnerMap />;
   else if (p === '/a/timesheets' && isAdmin.value) screen = <Timesheets />;
+  else if ((m = match('/a/timesheets/shift/:id', p)) && isAdmin.value) screen = <ShiftDetail key={m.id} id={m.id!} />;
   else if (p === '/a/guard-cards' && isAdmin.value) screen = <GuardCards />;
   else if (p === '/a/invoices' && isAdmin.value) screen = <InvoicesList />;
   else if ((m = match('/a/invoices/:id', p)) && isAdmin.value) screen = <InvoiceEditor key={m.id} id={m.id!} />;
@@ -62,7 +63,7 @@ export default function AdminShell() {
   else if (p === '/a/more') screen = <MoreScreen base="/a" />;
   else if (p === '/a/more/sync') screen = <SyncScreen base="/a" />;
   else screen = <Dashboard />;
-  const hideTabs = /^\/a\/(incidents|sites|people)\/.+|^\/a\/settings\/categories|^\/a\/more\/sync|^\/a\/map|^\/a\/invoices\/.+/.test(p);
+  const hideTabs = /^\/a\/(incidents|sites|people)\/.+|^\/a\/settings\/categories|^\/a\/more\/sync|^\/a\/map|^\/a\/invoices\/.+|^\/a\/timesheets\/.+/.test(p);
   return (
     <div class="has-sidebar" data-shell="admin">
       <aside class="shell-side" aria-label="Sections">

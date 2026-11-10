@@ -232,3 +232,47 @@ export async function setSitePhoto(siteId: string, file: File) {
   await addAttachment('site', siteId, prepared);
   for (const a of old) await removeAttachment(a);
 }
+
+// ---------------------------------------------------------------- timesheets: owner confirm / edit / void (pass 9 A2/A3)
+// History is never deleted: voids keep the row (zero hours), edits keep the first clock-out in original_clock_out_at.
+const TE_OPTIONAL = ['owner_confirmed_by', 'edited_at', 'edited_by', 'edit_reason', 'original_clock_out_at', 'voided_at', 'voided_by', 'void_reason', 'clock_out_gps_status'];
+async function patchTimeEntry(te: Row, patch: Row, label: string, kind: import('./guard').AuditKind, detail: string) {
+  const { userId, orgId } = ctx();
+  const { logAudit } = await import('./guard');
+  const payload = { ...patch } as Record<string, unknown>;
+  delete payload.id;
+  await enqueue({ userId, orgId, kind: 'update', table: 'patrol_time_entries', payload, match: { id: te.id }, entityKey: `patrol_time_entries:${te.id}`, label, optional: TE_OPTIONAL },
+    [{ table: 'patrol_time_entries', row: { id: te.id, ...payload } as Row, orgId }]);
+  bumpData(); void kick();
+  void logAudit(kind, { table: 'patrol_time_entries', id: te.id, siteId: String(te.site_id), detail });
+}
+const minutesBetween = (a: string, b: string) => Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000));
+const me = async () => (await import('../auth/session')).memberId.value;
+
+export async function confirmTimeEntry(te: Row) {
+  if (!te.clock_out_at) throw new Error('Set the clock-out time first (Edit hours), then confirm.');
+  const minutes = minutesBetween(String(te.clock_in_at), String(te.clock_out_at));
+  await patchTimeEntry(te, { id: te.id, confirmed_at: now(), confirmed_minutes: minutes, owner_confirmed_by: await me() }, 'Confirm shift hours', 'timesheet_confirm', `${(minutes / 60).toFixed(2)} h`);
+}
+export async function editTimeEntry(te: Row, clockIn: string, clockOut: string, reason: string) {
+  if (reason.trim().length < 3) throw new Error('Write the reason for the change (it is logged).');
+  if (Date.parse(clockOut) <= Date.parse(clockIn)) throw new Error('Clock-out must be after clock-in.');
+  if (Date.parse(clockOut) > Date.now() + 5 * 60e3) throw new Error('Clock-out can’t be in the future.');
+  const minutes = minutesBetween(clockIn, clockOut);
+  if (minutes > 2880) throw new Error('A single shift can’t be longer than 48 hours. Split it or void it.');
+  const patch: Row = { id: te.id, clock_in_at: clockIn, clock_out_at: clockOut, edited_at: now(), edited_by: await me(), edit_reason: reason.trim(),
+    original_clock_out_at: te.original_clock_out_at ?? te.clock_out_at ?? null };
+  if (te.confirmed_at) patch.confirmed_minutes = minutes;
+  const before = `${String(te.clock_in_at)} → ${String(te.clock_out_at ?? 'open')}`;
+  await patchTimeEntry(te, patch, 'Edit shift hours', 'timesheet_edit', `${before} changed to ${clockIn} → ${clockOut} (${(minutes / 60).toFixed(2)} h) · ${reason.trim()}`);
+}
+export async function voidTimeEntry(te: Row, reason: string) {
+  if (reason.trim().length < 3) throw new Error('Write the reason for voiding (it is logged).');
+  const patch: Row = { id: te.id, voided_at: now(), voided_by: await me(), void_reason: reason.trim() };
+  // An open shift that is voided is also closed, so the guard stops showing as on duty.
+  if (!te.clock_out_at) Object.assign(patch, { clock_out_at: now(), original_clock_out_at: null });
+  await patchTimeEntry(te, patch, 'Void shift', 'timesheet_void', reason.trim());
+}
+export async function unvoidTimeEntry(te: Row) {
+  await patchTimeEntry(te, { id: te.id, voided_at: null, voided_by: null, void_reason: null }, 'Restore shift', 'timesheet_unvoid', `was voided: ${String(te.void_reason ?? '')}`);
+}

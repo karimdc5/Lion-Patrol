@@ -170,7 +170,10 @@ function OwnerAlerts() {
       <List>
         {open.map((a: OwnerAlert) => (
           <Row key={a.id} testid="owner-alert" icon={ALERT_ICON[a.kind] ?? 'alert'} iconBg="var(--warning-soft)" iconColor="var(--warning)" title={a.title} sub={`${a.body} · ${relTime(a.created_at)}`}
-            right={<Button variant="ghost" onClick={async () => { await ackOwnerAlert(a); toast('Alert dismissed'); }} data-testid="owner-alert-ack">Dismiss</Button>} />
+            right={<span class="row" style={{ gap: 4 }}>
+              {a.kind === 'long_shift' && a.time_entry_id ? <Button variant="outline" onClick={() => navigate(`/a/timesheets/shift/${String(a.time_entry_id)}`)} data-testid="owner-alert-review">Review</Button> : null}
+              <Button variant="ghost" onClick={async () => { await ackOwnerAlert(a); toast('Alert dismissed'); }} data-testid="owner-alert-ack">Dismiss</Button>
+            </span>} />
         ))}
       </List>
     </div>

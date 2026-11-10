@@ -3,8 +3,22 @@
  * No break tracking (Karim declined). Washington overtime: hours over 40 in a workweek (Mon–Sun);
  * no daily or double overtime. Shifts count toward the workweek they start in.
  */
-export interface TimeRow { id: string; member_id: string; site_id: string; clock_in_at: string; clock_out_at: string | null; confirmed_at?: string | null; timesheet_note?: string | null }
-export interface MemberWeek { member_id: string; days: number[]; total: number; regular: number; overtime: number; entries: TimeRow[]; open: number; unconfirmed: number; flagged: number }
+export interface TimeRow { id: string; member_id: string; site_id: string; clock_in_at: string; clock_out_at: string | null; confirmed_at?: string | null; timesheet_note?: string | null; voided_at?: string | null }
+export interface MemberWeek { member_id: string; days: number[]; total: number; regular: number; overtime: number; entries: TimeRow[]; open: number; unconfirmed: number; flagged: number; long: number; voided: number }
+
+/**
+ * Pass 9 A3: shifts over 12 h / 24 h (closed or still open) are flagged as a likely forgotten clock-out.
+ * Voided shifts are never flagged (and never counted).
+ */
+export type LongFlag = 'over12' | 'over24' | null;
+export function longFlag(t: TimeRow, now = Date.now()): LongFlag {
+  if (t.voided_at) return null;
+  const h = entryHours(t, now);
+  return h > 24 ? 'over24' : h > 12 ? 'over12' : null;
+}
+export const LONG_LABEL: Record<Exclude<LongFlag, null>, string> = { over12: 'Over 12 h — unclosed / forgot clock-out?', over24: 'Over 24 h — unclosed / forgot clock-out?' };
+/** Owner alert threshold for a shift that is still open (server cron, migration 20261110000100). */
+export const OPEN_ALERT_HOURS = 16;
 
 export const OT_WEEKLY_HOURS = 40;
 
@@ -29,7 +43,10 @@ export function weekByMember(rows: TimeRow[], start: Date, now = Date.now()): Me
   for (const t of rows) {
     const at = Date.parse(t.clock_in_at);
     if (at < s || at >= e) continue;
-    const w = by.get(t.member_id) ?? { member_id: t.member_id, days: [0, 0, 0, 0, 0, 0, 0], total: 0, regular: 0, overtime: 0, entries: [], open: 0, unconfirmed: 0, flagged: 0 };
+    const w = by.get(t.member_id) ?? { member_id: t.member_id, days: [0, 0, 0, 0, 0, 0, 0], total: 0, regular: 0, overtime: 0, entries: [], open: 0, unconfirmed: 0, flagged: 0, long: 0, voided: 0 };
+    // Voided shifts stay visible (history is never deleted) but count zero hours.
+    if (t.voided_at) { w.voided++; w.entries.push(t); by.set(t.member_id, w); continue; }
+    if (longFlag(t, now)) w.long++;
     const h = entryHours(t, now);
     const day = Math.floor((new Date(at).setHours(0, 0, 0, 0) - s) / 864e5 + 0.01);
     w.days[Math.min(6, Math.max(0, day))]! += h;

@@ -6,7 +6,7 @@ import { currentOrgId, memberId, getBackend } from '../../auth/session';
 import { listRecords, getRecord, putServerRows, scopeOf } from '../../data/repos/records';
 import { membersFor } from '../../data/repos/queries';
 import { fetchBilling, listInvoices, listSiteBilling, orgBilling, saveInvoice, saveOrgBilling, newInvoiceId, type Invoice, type OrgBilling } from '../../data/owner';
-import { buildInvoiceLines, invoiceNumber, invoiceDates, invoiceTotal, invoiceHours, monthLabel, usd, type InvoiceTimeRow, type InvoiceLine } from '../../domain/invoice';
+import { buildInvoiceLines, invoiceNumber, invoiceDates, invoiceTotal, invoiceHours, monthLabel, usd, missingBillingField, invoiceState, pacificDate, type InvoiceTimeRow, type InvoiceLine, type LeftOut } from '../../domain/invoice';
 import { PdfButton } from '../../ui/PdfButton';
 import { navigate } from '../../router';
 import type { Site } from '../../data/types';
@@ -14,6 +14,8 @@ import type { Row as R } from '../../data/db';
 import type { SelectQuery } from '../../data/backend/types';
 
 const STATUS: Record<string, [string, string]> = { draft: ['Draft', 'pill-muted'], sent: ['Sent', 'pill-info'], paid: ['Paid', 'pill-success'], void: ['Void', 'pill-danger'] };
+// A2: payment state shown in the list (sent → Unpaid / Overdue by the Pacific date).
+const STATE: Record<string, [string, string]> = { draft: ['Draft', 'pill-muted'], unpaid: ['Sent · unpaid', 'pill-info'], overdue: ['Overdue', 'pill-danger'], paid: ['Paid', 'pill-success'], void: ['Void', 'pill-danger'] };
 const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
 const shiftMonth = (m: string, n: number) => { const [y, mo] = m.split('-').map(Number); const d = new Date(Date.UTC(y!, mo! - 1 + n, 1)); return d.toISOString().slice(0, 10); };
 
@@ -47,26 +49,32 @@ export function InvoicesList() {
   const d = data.data;
   const monthInv = (d?.invoices ?? []).filter((i) => i.period_month === month);
 
+  const [blocked, setBlocked] = useState<{ site: Site; leftOut: LeftOut[]; missing?: string } | null>(null);
   const createDraft = async (site: Site) => {
     if (!org) return;
     setBusy(site.id);
     try {
       await fetchMonth(org, month);
       const b = d?.billing.find((x) => x.site_id === site.id);
-      if (b?.hourly_rate == null) { toast('Set the site’s billing rate first (Sites → site → Billing).', 'error', 4000); return; }
+      // A2: name the exact missing field instead of a generic message.
+      const missing = missingBillingField(b);
+      if (missing) { setBlocked({ site, leftOut: [], missing }); return; }
       const pay = await orgBilling(org);
       const names = Object.fromEntries((await membersFor(org)).map((m) => [m.id, m.display_name]));
       const rows = await listRecords<InvoiceTimeRow & R>('patrol_time_entries', org);
-      const { lines, excluded } = buildInvoiceLines(rows, { siteId: site.id, month, rate: Number(b.hourly_rate), names, onlyConfirmed: true });
+      const { lines, leftOut } = buildInvoiceLines(rows, { siteId: site.id, month, rate: Number(b!.hourly_rate), names, onlyConfirmed: true });
+      // A2: never create a $0 invoice — show which hours were left out and why.
+      if (!lines.length || invoiceTotal(lines) <= 0) { setBlocked({ site, leftOut }); return; }
       const dates = invoiceDates(month, pay.terms_days);
       const inv = { id: newInvoiceId(), org_id: org, site_id: site.id, period_month: month, invoice_no: invoiceNumber(pay.invoice_prefix, month, site.code, site.name), status: 'draft',
-        issue_date: dates.issue, due_date: dates.due, client_name: b.client_name, bill_to: b.billing_address, rate: Number(b.hourly_rate), lines,
-        notes: excluded ? null : null, total: invoiceTotal(lines), sent_at: null, paid_at: null, created_by: memberId.value } as unknown as Invoice;
+        issue_date: dates.issue, due_date: dates.due, client_name: b!.client_name, bill_to: b!.billing_address, rate: Number(b!.hourly_rate), lines,
+        notes: null, total: invoiceTotal(lines), sent_at: null, paid_at: null, created_by: memberId.value } as unknown as Invoice;
       await saveInvoice(inv);
-      toast(excluded ? `Draft created. ${excluded} unconfirmed shift${excluded > 1 ? 's' : ''} left out — review them in Timesheets.` : 'Draft created', 'info', 4500);
+      toast(leftOut.length ? `Draft created. ${leftOut.length} shift${leftOut.length > 1 ? 's' : ''} left out (not confirmed or still open) — confirm them in Timesheets, then recreate.` : 'Draft created', 'info', 5000);
       navigate(`/a/invoices/${inv.id}`);
     } finally { setBusy(null); }
   };
+  const today = pacificDate(new Date().toISOString());
 
   return (
     <Screen tabbar>
@@ -87,18 +95,39 @@ export function InvoicesList() {
                 const b = d!.billing.find((x) => x.site_id === s.id);
                 return inv ? (
                   <Row key={s.id} testid="inv-row" icon="file" title={`${s.name}${s.active === false ? ' (inactive)' : ''}`} sub={`${inv.invoice_no} · ${usd(Number(inv.total))} · due ${inv.due_date}`}
-                    right={<span class={`pill ${STATUS[inv.status]![1]}`}>{STATUS[inv.status]![0]}</span>} chevron href={`/a/invoices/${inv.id}`} />
+                    right={<span class={`pill ${STATE[invoiceState(inv, today)]![1]}`} data-testid="inv-state">{STATE[invoiceState(inv, today)]![0]}</span>} chevron href={`/a/invoices/${inv.id}`} />
                 ) : (
-                  <Row key={s.id} testid="inv-row" icon="building" title={`${s.name}${s.active === false ? ' (inactive)' : ''}`} sub={b?.hourly_rate != null ? `${usd(Number(b.hourly_rate))}/hr · ${b.client_name ?? 'no client name'}` : 'No billing rate set'}
+                  <Row key={s.id} testid="inv-row" icon="building" title={`${s.name}${s.active === false ? ' (inactive)' : ''}`} sub={missingBillingField(b) ? `Missing: ${missingBillingField(b)} (Sites → ${s.name} → Billing)` : `${usd(Number(b!.hourly_rate))}/hr · ${b!.client_name ?? 'no client name'}`}
                     right={<Button loading={busy === s.id} onClick={() => void createDraft(s)} data-testid="inv-create">Create draft</Button>} />
                 );
               })}
             </List>
           ) : <Empty icon="building" title="No sites" />}
         </div>
-        <p class="foot faint">Hours come from guard-confirmed clock-ins (Timesheets). Invoices are never sent by Lion Patrol — download the PDF and send it yourself, then mark it Sent.</p>
+        <p class="foot faint">Line items = confirmed hours (guard- or owner-confirmed in Timesheets) × the site’s rate. Voided shifts never count. Invoices are not emailed yet (needs a server-side sender) — download the PDF, send it, then mark it Sent.</p>
       </div>
       <PaymentSheet open={payOpen} onClose={() => setPayOpen(false)} />
+      <Sheet open={!!blocked} onClose={() => setBlocked(null)} title={blocked?.missing ? 'Billing rate needed' : 'No confirmed hours to bill'} testid="inv-blocked"
+        footer={<>
+          {blocked?.missing ? <Button variant="primary" size="lg" block onClick={() => { const id = blocked.site.id; setBlocked(null); navigate(`/a/sites/${id}`); }} data-testid="inv-blocked-site">Open {blocked.site.name} → Billing</Button>
+            : <Button variant="primary" size="lg" block onClick={() => { setBlocked(null); navigate('/a/timesheets'); }} data-testid="inv-blocked-ts">Review in Timesheets</Button>}
+          <Button variant="ghost" block onClick={() => setBlocked(null)}>Close</Button>
+        </>}>
+        {blocked && (blocked.missing ? (
+          <p class="sub" data-testid="inv-missing-field">Missing field: <b>{blocked.missing}</b> on {blocked.site.name} (Sites → {blocked.site.name} → Billing). Invoices are confirmed hours × this rate.</p>
+        ) : (
+          <div class="stack">
+            <p class="sub">A {monthLabel(month)} invoice for {blocked.site.name} would be <b>$0.00</b>, so it was not created. {blocked.leftOut.length ? 'These shifts were left out:' : 'There are no clocked hours at this site in this month.'}</p>
+            {blocked.leftOut.length > 0 && <List>
+              {blocked.leftOut.map((l, i) => (
+                <Row key={l.id ?? i} testid="inv-leftout" icon="clock" title={`${l.date} · ${l.guard} · ${l.hours.toFixed(2)} h`}
+                  sub={l.reason === 'open' ? 'Still open (no clock-out) — set the clock-out time' : 'Not confirmed — confirm, edit or void it'} chevron
+                  onClick={l.id ? () => { setBlocked(null); navigate(`/a/timesheets/shift/${l.id}`); } : undefined} />
+              ))}
+            </List>}
+          </div>
+        ))}
+      </Sheet>
     </Screen>
   );
 }
@@ -138,7 +167,7 @@ export function InvoiceEditor({ id }: { id: string }) {
     <Screen>
       <TopBar title={inv.invoice_no} backTo="/a/invoices" right={<SyncPill />} />
       <div class="screen-body stack-lg" style={{ paddingBottom: 120 }} data-testid="invoice-editor">
-        <div class="row" style={{ gap: 8 }}><span class={`pill ${STATUS[inv.status]![1]}`} data-testid="inv-status">{STATUS[inv.status]![0]}</span><span class="muted sub">{site.data?.name} · {monthLabel(inv.period_month)}</span></div>
+        <div class="row" style={{ gap: 8 }}><span class={`pill ${STATUS[inv.status]![1]}`} data-testid="inv-status">{STATUS[inv.status]![0]}</span>{invoiceState(inv, pacificDate(new Date().toISOString())) === 'overdue' && <span class="pill pill-danger" data-testid="inv-overdue">Overdue (due {inv.due_date})</span>}<span class="muted sub">{site.data?.name} · {monthLabel(inv.period_month)}</span></div>
         <div class="card stack">
           <Field label="Client"><input class="input" value={inv.client_name ?? ''} disabled={!draft} onInput={(e) => up({ client_name: (e.target as HTMLInputElement).value })} /></Field>
           <Field label="Bill to (address)"><input class="input" value={inv.bill_to ?? ''} disabled={!draft} onInput={(e) => up({ bill_to: (e.target as HTMLInputElement).value })} /></Field>
@@ -150,6 +179,7 @@ export function InvoiceEditor({ id }: { id: string }) {
         <div>
           <SectionLabel>Line items · {invoiceHours(inv.lines).toFixed(2)} h</SectionLabel>
           <div class="card stack" style={{ gap: 10 }}>
+            {inv.lines.length > 0 && <div class="inv-line foot muted" aria-hidden="true"><div class="grow">Date · guard</div><span style={{ minWidth: 64 }}>Hours</span><span style={{ minWidth: 64 }}>Rate</span><span style={{ minWidth: 76, textAlign: 'right' }}>Amount</span>{draft && <span style={{ width: 40 }} />}</div>}
             {inv.lines.length ? inv.lines.map((l, i) => (
               <div key={i} class="inv-line" data-testid="inv-line">
                 <div class="grow" style={{ minWidth: 0 }}><b>{l.date}</b><div class="foot muted ellipsis">{l.guard}</div></div>

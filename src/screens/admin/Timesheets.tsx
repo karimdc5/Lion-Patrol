@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'preact/hooks';
-import { Screen, TopBar, SyncPill, SectionLabel, Empty, Button, Avatar, toast } from '../../ui/kit';
+import { Screen, TopBar, SyncPill, SectionLabel, Empty, Button, Avatar, Field, toast } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
 import { currentOrgId, getBackend, orgName } from '../../auth/session';
-import { listRecords, putServerRows, scopeOf } from '../../data/repos/records';
-import { weekStart, addDays, weekByMember, payPeriod, toGustoCsv, OT_WEEKLY_HOURS, type TimeRow } from '../../domain/timesheet';
-import { fmtTime, fmtHours } from '../../lib/format';
+import { listRecords, getRecord, putServerRows, scopeOf } from '../../data/repos/records';
+import { weekStart, addDays, weekByMember, payPeriod, toGustoCsv, longFlag, LONG_LABEL, OPEN_ALERT_HOURS, OT_WEEKLY_HOURS, type TimeRow } from '../../domain/timesheet';
+import { fmtHours, fmtDateTime, fmtDay, fmtTime, toPacificInput, fromPacificInput } from '../../lib/format';
+import { gpsLine } from '../../lib/geo';
+import { confirmTimeEntry, editTimeEntry, voidTimeEntry, unvoidTimeEntry } from '../../data/admin';
+import { navigate } from '../../router';
 import type { Member, Site } from '../../data/types';
 import type { SelectQuery } from '../../data/backend/types';
 import type { Row } from '../../data/db';
@@ -92,7 +95,8 @@ export function Timesheets() {
                   {rows.map((w) => (
                     <tr key={w.member_id} data-testid="ts-row" onClick={() => setOpen(open === w.member_id ? null : w.member_id)} class="tap">
                       <td><span class="row" style={{ gap: 8 }}><Avatar name={name(w.member_id)} />{name(w.member_id)}</span>
-                        <span class="foot muted">{w.open ? `${w.open} on duty · ` : ''}{w.unconfirmed ? `${w.unconfirmed} unconfirmed` : 'all confirmed'}</span></td>
+                        <span class="foot muted">{w.open ? `${w.open} on duty · ` : ''}{w.unconfirmed ? `${w.unconfirmed} unconfirmed` : 'all confirmed'}{w.voided ? ` · ${w.voided} voided` : ''}</span>
+                        {w.long > 0 && <span class="pill pill-danger" style={{ marginTop: 4 }} data-testid="ts-long">{w.long} unclosed / forgot clock-out?</span>}</td>
                       {w.days.map((d, i) => <td key={i} class="tnum">{h(d)}</td>)}
                       <td class="tnum"><b>{w.total.toFixed(1)}</b></td>
                       <td class={`tnum ${w.overtime ? 'warning-text' : ''}`}>{w.overtime ? w.overtime.toFixed(1) : '–'}</td>
@@ -118,16 +122,25 @@ export function Timesheets() {
             <div data-testid="ts-detail">
               <SectionLabel>{name(open)} · shifts</SectionLabel>
               <div class="card stack" style={{ gap: 10 }}>
-                {w.entries.map((t) => (
-                  <div key={t.id} class="row-between">
-                    <span><b>{new Date(t.clock_in_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</b> · {fmtTime(t.clock_in_at)}–{t.clock_out_at ? fmtTime(t.clock_out_at) : 'now'}
-                      <div class="foot muted">{data.data?.sites.find((s) => s.id === t.site_id)?.name ?? ''}{t.timesheet_note ? ` · “${t.timesheet_note}”` : ''}</div></span>
-                    <span class="row" style={{ gap: 6 }}>
-                      <span class="tnum">{fmtHours(((t.clock_out_at ? Date.parse(t.clock_out_at) : Date.now()) - Date.parse(t.clock_in_at)) / 60000)}</span>
-                      {!t.clock_out_at ? <span class="pill pill-info">On duty</span> : t.confirmed_at ? <span class="pill pill-success"><Icon name="check" size={14} /> Confirmed</span> : t.timesheet_note ? <span class="pill pill-warning">Flagged</span> : <span class="pill pill-muted">Not confirmed</span>}
-                    </span>
-                  </div>
-                ))}
+                {w.entries.map((t) => {
+                  const lf = longFlag(t);
+                  const x = t as TimeRow & Row;
+                  return (
+                    // A3: start DATE + TIME and end DATE + TIME on every row; tap → owner confirm / edit / void (A2).
+                    <button key={t.id} class="row-between tap" style={{ textAlign: 'left', width: '100%', alignItems: 'flex-start' }} onClick={() => navigate(`/a/timesheets/shift/${t.id}`)} data-testid="ts-shift">
+                      <span style={{ minWidth: 0 }}>
+                        <b data-testid="ts-shift-range">{fmtDay(t.clock_in_at)}, {fmtTime(t.clock_in_at)} → {t.clock_out_at ? `${fmtDay(t.clock_out_at)}, ${fmtTime(t.clock_out_at)}` : 'still open'}</b>
+                        <div class="foot muted">{data.data?.sites.find((s) => s.id === t.site_id)?.name ?? ''}{t.timesheet_note ? ` · “${t.timesheet_note}”` : ''}{x.void_reason ? ` · voided: ${String(x.void_reason)}` : ''}</div>
+                        {lf && <span class="pill pill-danger" style={{ marginTop: 4 }} data-testid="ts-shift-long">{LONG_LABEL[lf]}</span>}
+                      </span>
+                      <span class="row" style={{ gap: 6, flexShrink: 0 }}>
+                        <span class="tnum" style={x.voided_at ? { textDecoration: 'line-through' } : undefined}>{fmtHours(((t.clock_out_at ? Date.parse(t.clock_out_at) : Date.now()) - Date.parse(t.clock_in_at)) / 60000)}</span>
+                        <ShiftPill t={x} />
+                        <Icon name="chevron-right" size={16} />
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );
@@ -141,8 +154,104 @@ export function Timesheets() {
           </div>
           <Button variant="primary" icon="download" onClick={() => void exportCsv()} data-testid="ts-export">Export Gusto CSV</Button>
         </div>
-        <p class="foot faint">Time records are kept for at least 3 years and are never deleted automatically. No break tracking.</p>
+        <p class="foot faint">Tap a shift to confirm, edit or void it (every change is logged). Shifts over 12 h are flagged; owners get an alert when a shift is still open after {OPEN_ALERT_HOURS} h. Nothing is clocked out automatically. Time records are kept for at least 3 years and are never deleted. No break tracking.</p>
       </div>
+    </Screen>
+  );
+}
+
+function ShiftPill({ t }: { t: Row }) {
+  if (t.voided_at) return <span class="pill pill-danger">Voided</span>;
+  if (!t.clock_out_at) return <span class="pill pill-info">On duty</span>;
+  if (t.confirmed_at) return <span class="pill pill-success"><Icon name="check" size={14} /> {t.owner_confirmed_by ? 'Owner confirmed' : 'Confirmed'}</span>;
+  if (t.timesheet_note) return <span class="pill pill-warning">Flagged</span>;
+  return <span class="pill pill-muted">Not confirmed</span>;
+}
+
+/**
+ * Pass 9 A2/A3: one shift — exact start/end dates, GPS, notes — with owner Confirm, Edit hours, Void
+ * (reason required, logged in Activity → Audit). Nothing is deleted.
+ */
+export function ShiftDetail({ id }: { id: string }) {
+  const org = currentOrgId.value;
+  useEffect(() => { void getBackend().select<Row>('patrol_time_entries', { eq: { id } }).then((r) => putServerRows('patrol_time_entries', r)).catch(() => undefined); }, [id]);
+  const d = useData(async () => {
+    const t = await getRecord<Row>('patrol_time_entries', id);
+    const [members, site] = await Promise.all([listRecords<Member>('patrol_members', org), t ? getRecord<Site>('patrol_sites', String(t.site_id)) : undefined]);
+    return { t, members, site };
+  }, [id, org]);
+  const [mode, setMode] = useState<'edit' | 'void' | null>(null);
+  const [inV, setIn] = useState(''), [outV, setOut] = useState(''), [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const t = d.data?.t;
+  if (!t) return <Screen><TopBar title="Shift" backTo="/a/timesheets" /><div class="screen-body">{d.loading ? null : <Empty icon="clock" title="Shift not found" body="It may not be synced to this device yet." />}</div></Screen>;
+  const name = d.data?.members.find((m) => m.id === t.member_id)?.display_name ?? 'Guard';
+  const site = d.data?.site ?? null;
+  const lf = longFlag(t as unknown as TimeRow);
+  const minutes = ((t.clock_out_at ? Date.parse(String(t.clock_out_at)) : Date.now()) - Date.parse(String(t.clock_in_at))) / 60000;
+  const run = async (fn: () => Promise<void>, msg: string) => {
+    setBusy(true);
+    try { await fn(); toast(msg); setMode(null); setReason(''); } catch (e) { toast((e as Error).message, 'error', 4000); } finally { setBusy(false); }
+  };
+  const openEdit = () => { setIn(toPacificInput(String(t.clock_in_at))); setOut(toPacificInput(String(t.clock_out_at ?? new Date().toISOString()))); setReason(''); setMode('edit'); };
+  return (
+    <Screen>
+      <TopBar title="Shift" backTo="/a/timesheets" right={<SyncPill />} />
+      <div class="screen-body stack-lg" data-testid="shift-detail" style={{ paddingBottom: 120 }}>
+        <div class="card stack" style={{ gap: 8 }}>
+          <div class="row-between"><b>{name}</b><ShiftPill t={t} /></div>
+          <div class="foot muted">{site?.name ?? ''}</div>
+          <div><span class="muted">Start</span> <b data-testid="sd-start">{fmtDateTime(String(t.clock_in_at))}</b></div>
+          <div><span class="muted">End</span> <b data-testid="sd-end">{t.clock_out_at ? fmtDateTime(String(t.clock_out_at)) : 'Still open (no clock-out)'}</b></div>
+          <div><span class="muted">Length</span> <b class="tnum">{fmtHours(minutes)}</b>{t.confirmed_minutes != null ? <span class="muted"> · billable {fmtHours(Number(t.confirmed_minutes))}</span> : null}</div>
+          {lf && <div class="form-error" role="alert" data-testid="sd-long">{LONG_LABEL[lf]} Check the real end time, then Edit hours or Void.</div>}
+          {t.voided_at ? <div class="form-error" data-testid="sd-voided">Voided {fmtDateTime(String(t.voided_at))} · {String(t.void_reason ?? '')}. Counts 0 hours on timesheets, payroll and invoices.</div> : null}
+          {t.edited_at ? <div class="foot muted">Edited {fmtDateTime(String(t.edited_at))} · {String(t.edit_reason ?? '')}{t.original_clock_out_at ? ` · original clock-out ${fmtDateTime(String(t.original_clock_out_at))}` : ''}</div> : null}
+          {t.timesheet_note ? <div class="foot">Guard’s note: “{String(t.timesheet_note)}”</div> : null}
+          {t.shift_note ? <div class="foot">Shift note: {String(t.shift_note)}</div> : null}
+        </div>
+        <div class="card stack" style={{ gap: 6 }}>
+          <div class="headline">Location</div>
+          <div class="foot" data-testid="sd-gps-in">Clock-in: {gpsLine({ lat: t.clock_in_lat, lng: t.clock_in_lng, accuracy: t.clock_in_accuracy_m }, site)}</div>
+          {t.clock_in_override_reason ? <div class="foot warning-text">Owner override at clock-in: {String(t.clock_in_override_reason)}</div> : null}
+          {t.clock_out_at ? <div class="foot" data-testid="sd-gps-out">Clock-out: {gpsLine({ lat: t.clock_out_lat, lng: t.clock_out_lng, accuracy: t.clock_out_accuracy_m }, site)}</div> : null}
+        </div>
+        {mode === 'edit' && (
+          <div class="card stack" data-testid="sd-edit">
+            <div class="headline">Edit hours (Pacific time)</div>
+            <div class="grid-2">
+              <Field label="Clock-in"><input class="input" type="datetime-local" value={inV} onInput={(e) => setIn((e.target as HTMLInputElement).value)} data-testid="sd-in" /></Field>
+              <Field label="Clock-out"><input class="input" type="datetime-local" value={outV} onInput={(e) => setOut((e.target as HTMLInputElement).value)} data-testid="sd-out" /></Field>
+            </div>
+            <Field label="Reason (required, logged)"><input class="input" value={reason} onInput={(e) => setReason((e.target as HTMLInputElement).value)} placeholder="e.g. forgot to clock out, left at 6:00 AM" data-testid="sd-reason" /></Field>
+            <div class="row" style={{ gap: 8 }}>
+              <Button variant="primary" loading={busy} onClick={() => void run(() => editTimeEntry(t, fromPacificInput(inV), fromPacificInput(outV), reason), 'Hours updated (logged)')} data-testid="sd-save">Save hours</Button>
+              <Button variant="ghost" onClick={() => setMode(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+        {mode === 'void' && (
+          <div class="card stack" data-testid="sd-void">
+            <div class="headline">Void this shift</div>
+            <div class="foot muted">The shift stays in the history, marked Voided, and counts 0 hours. You can restore it later.</div>
+            <Field label="Reason (required, logged)"><input class="input" value={reason} onInput={(e) => setReason((e.target as HTMLInputElement).value)} placeholder="e.g. test shift, not worked" data-testid="sd-void-reason" /></Field>
+            <div class="row" style={{ gap: 8 }}>
+              <Button variant="danger" loading={busy} onClick={() => void run(() => voidTimeEntry(t, reason), 'Shift voided (logged)')} data-testid="sd-void-confirm">Void shift</Button>
+              <Button variant="ghost" onClick={() => setMode(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </div>
+      {!mode && (
+        <div class="sticky-bar stack" style={{ gap: 8 }}>
+          {!t.voided_at && t.clock_out_at && !t.confirmed_at && <Button variant="primary" size="lg" block loading={busy} onClick={() => void run(() => confirmTimeEntry(t), 'Hours confirmed (logged)')} data-testid="sd-confirm">Confirm {fmtHours(minutes)}</Button>}
+          {!t.voided_at && <div class="grid-2">
+            <Button variant="outline" onClick={openEdit} data-testid="sd-edit-btn">{t.clock_out_at ? 'Edit hours' : 'Set clock-out'}</Button>
+            <Button variant="outline" onClick={() => { setReason(''); setMode('void'); }} data-testid="sd-void-btn">Void…</Button>
+          </div>}
+          {t.voided_at ? <Button variant="outline" block loading={busy} onClick={() => void run(() => unvoidTimeEntry(t), 'Shift restored (logged)')} data-testid="sd-unvoid">Restore shift</Button> : null}
+        </div>
+      )}
     </Screen>
   );
 }
