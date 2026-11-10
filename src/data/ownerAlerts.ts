@@ -53,3 +53,22 @@ export async function ackOwnerAlert(a: OwnerAlert) {
   try { await getBackend().update('patrol_owner_alerts', { acknowledged_at: at }, { id: a.id }); }
   catch (e) { if (!isNetworkError(e)) throw e; }
 }
+
+/**
+ * B9: an alert whose condition has cleared no longer shows on Live (and is acknowledged so it stays
+ * cleared on every device). Pure, so the rule is unit-tested:
+ * - no_show: the guard clocked in for that shift (or after the alert was raised);
+ * - long_shift: that time entry is now clocked out or voided.
+ * Missed checkpoints, geofence blocks and guard cards are facts about the past — they stay until dismissed.
+ */
+export function alertCleared(a: Pick<OwnerAlert, 'kind' | 'member_id' | 'created_at'> & { time_entry_id?: unknown }, times: Row[]): boolean {
+  if (a.kind === 'no_show') {
+    const since = Date.parse(a.created_at) - 3 * 3600e3;
+    return times.some((t) => t.member_id === a.member_id && !t.voided_at && Date.parse(String(t.clock_in_at)) >= since);
+  }
+  if (a.kind === 'long_shift') {
+    const te = times.find((t) => t.id === a.time_entry_id);
+    return !!te && (!!te.clock_out_at || !!te.voided_at);
+  }
+  return false;
+}

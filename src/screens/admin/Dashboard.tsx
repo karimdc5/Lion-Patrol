@@ -2,10 +2,11 @@ import { Screen, TopBar, SyncPill, List, Row, SectionLabel, Empty, Avatar, Butto
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
 import { currentOrgId, orgName, isAdmin } from '../../auth/session';
-import { listOwnerAlerts, ackOwnerAlert, type OwnerAlert } from '../../data/ownerAlerts';
+import { listOwnerAlerts, ackOwnerAlert, alertCleared, type OwnerAlert } from '../../data/ownerAlerts';
+import { useEffect } from 'preact/hooks';
 import { loadOps, completionBySite } from './ops';
 import { setAlertStatus } from '../../data/admin';
-import { relTime, fmtTime } from '../../lib/format';
+import { relTime, fmtTime, fmtDay } from '../../lib/format';
 import { gpsLine } from '../../lib/geo';
 import { navigate } from '../../router';
 import type { Row as R } from '../../data/db';
@@ -67,7 +68,7 @@ export function Dashboard() {
       <TopBar title="Live" large sub={orgName.value} right={<SyncPill />} action={isAdmin.value ? <Button icon="map" onClick={() => navigate('/a/map')} data-testid="open-map">Map</Button> : undefined} />
       <div class="screen-body stack-lg">
         {data && <AlertBanner alerts={data.alerts} members={data.members} sites={data.sites} />}
-        {isAdmin.value && <OwnerAlerts />}
+        {isAdmin.value && <OwnerAlerts times={data?.times} />}
         {isAdmin.value && <WaitingForOk />}
         {data && <GettingStarted d={data} />}
         <div class="grid-3">
@@ -173,17 +174,21 @@ function GettingStarted({ d }: { d: import('./ops').OpsData }) {
 
 const ALERT_ICON: Record<string, string> = { missed_checkpoint: 'qr', overdue_patrol: 'clock', no_show: 'user-x', geofence: 'pin', guard_card: 'key', long_shift: 'clock' };
 /** Item 18: owners/admins only (RLS returns no rows to anyone else). */
-function OwnerAlerts() {
+function OwnerAlerts({ times }: { times?: R[] }) {
   const org = currentOrgId.value;
   const list = useData(() => listOwnerAlerts(org), [org]);
-  const open = (list.data ?? []).filter((a) => !a.acknowledged_at).slice(0, 8);
+  const unacked = (list.data ?? []).filter((a) => !a.acknowledged_at);
+  const cleared = times ? unacked.filter((a) => alertCleared(a, times)) : [];
+  // B9: auto-clear (e.g. the no-show guard clocked in) — acknowledge so it stays cleared everywhere.
+  useEffect(() => { for (const a of cleared) void ackOwnerAlert(a).catch(() => {}); }, [cleared.map((a) => a.id).join()]);
+  const open = unacked.filter((a) => !cleared.includes(a)).slice(0, 8);
   if (!open.length) return null;
   return (
     <div data-testid="owner-alerts">
       <SectionLabel>Owner alerts</SectionLabel>
       <List>
         {open.map((a: OwnerAlert) => (
-          <Row key={a.id} testid="owner-alert" icon={ALERT_ICON[a.kind] ?? 'alert'} iconBg="var(--warning-soft)" iconColor="var(--warning)" title={a.title} sub={`${a.body} · ${relTime(a.created_at)}`}
+          <Row key={a.id} testid="owner-alert" icon={ALERT_ICON[a.kind] ?? 'alert'} iconBg="var(--warning-soft)" iconColor="var(--warning)" title={a.title} sub={<>{a.body}<br /><span class="faint" data-testid="owner-alert-time">{fmtDay(a.created_at)} · {fmtTime(a.created_at)} PT ({relTime(a.created_at)})</span></>}
             right={<span class="row" style={{ gap: 4 }}>
               {a.kind === 'long_shift' && a.time_entry_id ? <Button variant="outline" onClick={() => navigate(`/a/timesheets/shift/${String(a.time_entry_id)}`)} data-testid="owner-alert-review">Review</Button> : null}
               <Button variant="ghost" onClick={async () => { await ackOwnerAlert(a); toast('Alert dismissed'); }} data-testid="owner-alert-ack">Dismiss</Button>

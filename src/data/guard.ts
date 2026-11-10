@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { enqueue, getOp, discardOp } from './outbox/queue';
 import { kick } from './sync/engine';
 import { db, kvGet, kvSet, type Row } from './db';
-import { listRecords, getRecord, bumpData } from './repos/records';
+import { listRecords, getRecord, bumpData, putLocalMirror } from './repos/records';
 import { uuidv7 } from '../lib/uuid';
 import { getFix, startWatch, stopWatch, distanceM, gpsStatusFor, type Fix, type GpsStatus } from '../lib/geo';
 import { siteLocalDate } from '../lib/format';
@@ -104,6 +104,7 @@ export async function clockIn(siteId: string, shiftId: string | null, gpsAccepte
   const darOp = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_dars', payload: dar, entityKey: `patrol_dars:${dar.id}`, dependsOn: [teOp], label: 'Daily activity report' },
     [{ table: 'patrol_dars', row: { ...dar, author_name: name }, orgId }]);
   await rememberOp('patrol_dars', dar.id, darOp);
+  await putLocalMirror('patrol_member_status', { id: mid, member_id: mid, org_id: orgId, on_duty: true, time_entry_id: te.id, site_id: siteId, lat: te.clock_in_lat, lng: te.clock_in_lng, last_ping_at: fix ? at : null, on_duty_since: at, updated_at: at }, orgId);
   onShift.value = te;
   lastPing = { at: Date.now(), fix };
   ensureWatching();
@@ -132,6 +133,7 @@ export async function clockOut(note: string, summary: string, sheet?: TimesheetC
     await enqueue({ userId, orgId, kind: 'update', table: 'patrol_dars', payload: darPatch, match: { id: dar.id }, entityKey: `patrol_dars:${dar.id}`, label: 'Submit daily activity report' },
       [{ table: 'patrol_dars', row: { id: dar.id, ...darPatch, submitted_at: at }, orgId }]);
   }
+  await putLocalMirror('patrol_member_status', { id: te.member_id, member_id: te.member_id, org_id: orgId, on_duty: false, time_entry_id: null, updated_at: at }, orgId);
   stopWatch();
   onShift.value = null;
   bumpData(); void kick();

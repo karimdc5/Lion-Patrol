@@ -19,9 +19,10 @@ export interface SiteCompletion { site: Site; runs: number; complete: number; mi
 export function completionBySite(d: OpsData, sinceMs: number): SiteCompletion[] {
   return d.sites.filter((s) => s.active !== false).map((site) => {
     const runs = d.runs.filter((r) => r.site_id === site.id && Date.parse(r.started_at as string) >= sinceMs);
-    const expected = runs.reduce((n, r) => n + Number(r.expected_count ?? 0), 0);
-    const scanned = runs.reduce((n, r) => n + Math.min(Number(r.scanned_count ?? 0), Number(r.expected_count ?? 0)), 0);
     const finished = runs.filter((r) => Date.now() - Date.parse(r.started_at as string) > 60 * 60e3 || r.completed_at);
+    // B2: a tour still in progress (just started, 0/5) is not a miss yet — it counts once finished or overdue.
+    const expected = finished.reduce((n, r) => n + Number(r.expected_count ?? 0), 0);
+    const scanned = finished.reduce((n, r) => n + Math.min(Number(r.scanned_count ?? 0), Number(r.expected_count ?? 0)), 0);
     const missed = finished.filter((r) => Number(r.scanned_count ?? 0) < Number(r.expected_count ?? 0)).length;
     const late = runs.filter((r) => r.late).length + d.scans.filter((s) => s.site_id === site.id && Date.parse(s.scanned_at as string) >= sinceMs && (s.flags as string[] ?? []).includes('late')).length;
     return { site, runs: runs.length, complete: runs.filter((r) => r.completed_at).length, missed, late, scanned, expected, pct: expected ? Math.round((scanned / expected) * 100) : 0 };

@@ -140,6 +140,17 @@ export async function pruneOrgs(keepOrgIds: string[]) {
   return removed;
 }
 
+/**
+ * B2: a local mirror of a server-derived row (e.g. patrol_member_status after your own clock-in) so
+ * Live updates at once in every mode. Not pending (nothing to upload); the next server read replaces
+ * it, and the 2-minute recent-local window keeps an older in-flight read from undoing it.
+ */
+export async function putLocalMirror(table: string, row: Row, orgId: string) {
+  const d = await db();
+  const prev = await d.get('records', [table, row.id]);
+  await d.put('records', { table, id: row.id, orgId, parentId: prev?.parentId ?? null, updatedAt: new Date().toISOString(), _pending: 0, _localRev: (prev?._localRev ?? 0) + 1, data: { ...(prev?.data ?? {}), ...row } });
+}
+
 /** Local cache id for server rows of tables keyed by something other than `id`. */
 export function withLocalId(table: string, r: Record<string, unknown>): Row {
   if (typeof r.id === 'string') return r as Row;
