@@ -1,4 +1,5 @@
 import { BoloCreate } from './Bolo';
+import { MySchedule } from './MySchedule';
 import { useEffect } from 'preact/hooks';
 import { TabBar, type TabDef } from '../../ui/kit';
 import { path, match, startsWith, navigate } from '../../router';
@@ -58,6 +59,7 @@ export function GuardShell() {
   else if (p === '/g/sos') screen = <SosScreen />;
   else if (p === '/g/more') screen = <MoreScreen base="/g" />;
   else if (p === '/g/more/sync') screen = <SyncScreen base="/g" />;
+  else if (p === '/g/more/schedule') screen = <MySchedule />;
   else if ((m = match('/g/post-orders/:siteId', p))) screen = <PostOrders siteId={m.siteId!} />;
   else if ((m = match('/g/bolo/new/:siteId', p))) screen = <BoloCreate siteId={m.siteId!} />;
   else screen = <GuardHome />;

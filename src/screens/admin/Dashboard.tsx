@@ -77,6 +77,7 @@ export function Dashboard() {
           <Stat label="Patrols 24h" value={`${totalPct}%`} tone={totalPct < 80 ? 'warning' : 'success'} />
         </div>
 
+        <div class="desk-2">
         <div>
           <SectionLabel>On shift now</SectionLabel>
           {onDuty.length ? (
@@ -134,6 +135,7 @@ export function Dashboard() {
             <List>{review.slice(0, 5).map((i) => <Row key={i.id} icon="alert" iconBg="var(--warning-soft)" iconColor="var(--warning)" title={String(i.title || i.category_name)} sub={`${i.author_name} · ${relTime(i.occurred_at as string)}`} chevron href={`/a/incidents/${i.id}`} />)}</List>
           ) : <Empty icon="check-circle" title="All caught up" body="New incident reports appear here for review." />}
           <Button variant="ghost" block onClick={() => navigate('/a/feed')}>Open activity feed</Button>
+        </div>
         </div>
       </div>
     </Screen>
