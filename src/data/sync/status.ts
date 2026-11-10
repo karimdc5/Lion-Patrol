@@ -27,7 +27,7 @@ export const syncLabel = computed(() => {
   const total = q.pending + q.inflight;
   switch (syncState.value) {
     case 'offline': return total ? `Offline · ${total} pending` : 'Offline';
-    case 'error': return authPaused.value ? 'Sign in to sync' : `Error · tap`;
+    case 'error': return authPaused.value ? 'Sign in to sync' : `${q.dead} not uploaded · tap`; // B3: names the real problem
     case 'syncing': return `Syncing ${total}`;
     case 'pending': return `${total} pending`;
     default: return 'Synced';

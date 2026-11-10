@@ -18,3 +18,22 @@ describe('pass 9 B9: owner alerts auto-clear when the condition clears', () => {
     expect(alertCleared({ kind: 'missed_checkpoint', member_id: 'm1', created_at: raised }, [{ id: 't1', member_id: 'm1', clock_in_at: raised }])).toBe(false);
   });
 });
+
+import { classify, isDuplicateSubmit } from '../../src/data/outbox/classify';
+import { BackendError } from '../../src/data/backend/types';
+
+describe('pass 9 B3: an already-submitted DAR is a duplicate, never NEEDS ATTENTION', () => {
+  const err = new BackendError('P0001', 'not_editable', 400);
+  it('submit of a submitted DAR / incident = success', () => {
+    expect(classify(err, { kind: 'update', table: 'patrol_dars', payload: { status: 'submitted', summary: 'x' } })).toEqual({ action: 'success' });
+    expect(classify(err, { kind: 'update', table: 'patrol_incidents', payload: { status: 'submitted' } })).toEqual({ action: 'success' });
+  });
+  it('a real edit after submit is still a dead op with a clear message', () => {
+    expect(classify(err, { kind: 'update', table: 'patrol_dars', payload: { summary: 'late edit' } })).toEqual({ action: 'dead', reason: 'This report was already submitted and can no longer be edited.' });
+    expect(classify(err)).toMatchObject({ action: 'dead' });
+  });
+  it('recognises old dead ops by their humanized message', () => {
+    expect(isDuplicateSubmit('This report was already submitted and can no longer be edited.', { kind: 'update', table: 'patrol_dars', payload: { status: 'submitted' } })).toBe(true);
+    expect(isDuplicateSubmit('This report was already submitted and can no longer be edited.', { kind: 'insert', table: 'patrol_dars', payload: { status: 'submitted' } })).toBe(false);
+  });
+});

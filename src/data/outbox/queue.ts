@@ -1,3 +1,4 @@
+import { isDuplicateSubmit } from './classify';
 import { db, type CachedRecord, type BlobRecord, type Row } from '../db';
 import { uuidv7 } from '../../lib/uuid';
 import type { OutboxOp, OpKind } from './types';
@@ -147,7 +148,13 @@ export async function resetInflight(): Promise<number> {
   const tx = d.transaction('outbox', 'readwrite');
   const inflight = await tx.store.index('byStatus').getAll('inflight');
   for (const o of inflight) await tx.store.put({ ...o, status: 'pending', nextAttemptAt: 0 });
+  // B3: older builds parked a duplicate "submit report" as dead (stuck NEEDS ATTENTION). It was a success.
+  const settled: string[] = [];
+  for (const o of await tx.store.index('byStatus').getAll('dead')) {
+    if (isDuplicateSubmit(o.lastError?.message ?? '', o)) { await tx.store.put({ ...o, status: 'done', doneAt: Date.now() }); settled.push(o.entityKey); }
+  }
   await tx.done;
+  for (const k of settled) await settleRecord(k);
   return inflight.length;
 }
 

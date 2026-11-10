@@ -98,7 +98,7 @@ export class OutboxWorker {
       this.deps.onStatus?.({ type: 'success', at: this.now() });
       return 'ok';
     } catch (e) {
-      let verdict = classify(e);
+      let verdict = classify(e, op);
       if (verdict.action === 'refresh') {
         const fresh = await backend.auth.ensureFresh().catch(() => null);
         if (fresh) {
@@ -110,7 +110,7 @@ export class OutboxWorker {
             return 'ok';
           } catch (e2) {
             e = e2;
-            verdict = classify(e2);
+            verdict = classify(e2, op);
           }
         }
         if (verdict.action === 'refresh') {
