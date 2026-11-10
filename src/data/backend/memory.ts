@@ -1,6 +1,7 @@
 import { durableStorage } from '../../auth/storage-adapter';
 import { uuidv7 } from '../../lib/uuid';
 import seedCategories from '../../domain/categories.seed.json';
+import { clientProofRpcs, siteProof } from './memoryClient';
 import { BackendError, type AuthApi, type AuthEvent, type Backend, type SelectQuery, type StoredSession } from './types';
 
 /**
@@ -148,6 +149,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       case 'patrol_post_order_acks': return mine || staff;
       case 'patrol_invites': case 'patrol_audit_log': return c.adminOrgs.includes(r.org_id);
       case 'patrol_share_links': case 'patrol_portal_links': return staff;
+      case 'patrol_client_requests': return staff;
       default: return false;
     }
   }
@@ -338,6 +340,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
   }
 
   const rpcs: Record<string, (s: MockState, c: Ctx, a: Record<string, any>) => unknown> = {
+    ...clientProofRpcs,
     patrol_bootstrap(s, c) {
       const vis = (t: string) => (s.tables[t] ?? []).filter((r) => visible(s, c, t, r));
       const now = Date.now();
@@ -497,7 +500,8 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         org: { name: o.name, phone: o.phone, email: o.email, license_no: o.license_no },
         site: { id: site.id, name: site.name, address: site.address, city: site.city, state: site.state },
         incidents: (s.tables.patrol_incidents ?? []).filter((i) => i.site_id === l.site_id && i.client_visible && i.status !== 'draft').sort((x, y) => y.occurred_at.localeCompare(x.occurred_at))
-          .map((i) => ({ ...strip(i), field_config: (s.tables.patrol_categories ?? []).find((x) => x.id === i.category_id)?.field_config ?? null })),
+          .map((i) => ({ ...strip(i), field_config: (s.tables.patrol_categories ?? []).find((x) => x.id === i.category_id)?.field_config ?? null,
+            photos: (s.tables.patrol_attachments ?? []).filter((x) => x.parent_type === 'incident' && x.parent_id === i.id && x.kind === 'image' && x.upload_status === 'uploaded').map((x) => ({ path: x.storage_path, thumb: x.thumb_path ?? null })) })),
         dars: (s.tables.patrol_dars ?? []).filter((d) => d.site_id === l.site_id && d.client_visible).sort((x, y) => String(y.report_date).localeCompare(String(x.report_date))).map((d) => ({
           id: d.id, report_no: d.report_no, report_date: d.report_date, author_name: d.author_name, summary: d.summary, status: d.status,
           entries: (s.tables.patrol_dar_entries ?? []).filter((e) => e.dar_id === d.id && !e.deleted_at).sort((x, y) => x.occurred_at.localeCompare(y.occurred_at)).map((e) => ({ occurred_at: e.occurred_at, category_name: e.category_name, body: e.body })),
@@ -507,6 +511,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
           .sort((x, y) => y.created_at.localeCompare(x.created_at))
           .map((b) => ({ id: b.id, title: b.title, description: b.description, person_desc: b.person_desc, vehicle_desc: b.vehicle_desc, expires_at: b.expires_at, created_at: b.created_at, photos: bolosPhotos(s, b.id) })),
         runs: (s.tables.patrol_tour_runs ?? []).filter((r) => r.site_id === l.site_id && Date.parse(r.started_at) > Date.now() - 14 * 864e5).map((r) => ({ started_at: r.started_at, expected_count: r.expected_count, scanned_count: r.scanned_count, completed_at: r.completed_at })),
+        proof: siteProof(s, l.site_id),
       };
     },
     patrol_notify_targets(s, c, a) {
@@ -717,7 +722,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
     },
     async rpc<T>(fn: string, args: Record<string, unknown> = {}) {
       await net('rpc', fn, fn === 'patrol_bootstrap' ? 'read' : 'write');
-      const anonOk = fn === 'patrol_get_portal' || fn === 'patrol_get_shared_report';
+      const anonOk = fn === 'patrol_get_portal' || fn === 'patrol_get_shared_report' || fn === 'patrol_portal_request';
       const userId = anonOk ? await uid() : await requireUser();
       const s = load();
       const handler = rpcs[fn];
