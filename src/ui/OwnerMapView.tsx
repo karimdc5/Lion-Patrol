@@ -5,9 +5,17 @@ import L from 'leaflet';
 export interface SitePin { id: string; lat: number; lng: number; name: string; address: string; onDuty: number; photo?: () => Promise<string | null> }
 export interface GuardPin { id: string; lat: number; lng: number; name: string; site: string; seen: string }
 
-const OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+/**
+ * B1: two free, keyless tile sources. Carto dark (CDN, 4 subdomains, already dark — no CSS filter)
+ * first; if it keeps failing we switch to OpenStreetMap (darkened with CSS). Both are allowed by the
+ * CSP and cached by the service worker. Same code path in demo and real mode.
+ */
+export const TILE_SOURCES = [
+  { id: 'carto', url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', opts: { subdomains: 'abcd', maxZoom: 20, attribution: '© OpenStreetMap © CARTO' } },
+  { id: 'osm', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', opts: { maxZoom: 19, className: 'osm-dark', attribution: '© OpenStreetMap contributors' } },
+] as const;
 
-/** Lazy chunk: owner map on OpenStreetMap tiles (free, no key), darkened with CSS to fit the app. */
+/** Lazy chunk: owner map on free OpenStreetMap-based tiles, with loading state, fallback source and Retry. */
 export default function OwnerMapView({ sites, guards, height = 520 }: { sites: SitePin[]; guards: GuardPin[]; height?: number }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -21,19 +29,34 @@ export default function OwnerMapView({ sites, guards, height = 520 }: { sites: S
   useEffect(() => {
     if (!el.current) return;
     const m = L.map(el.current, { zoomControl: true, attributionControl: true }).setView([47.38, -122.23], 11);
-    let loaded = 0, failed = 0;
-    const t = L.tileLayer(OSM, { maxZoom: 19, className: 'osm-dark', attribution: '© OpenStreetMap contributors' })
-      .on('tileload', () => { loaded++; setState('ready'); })
-      .on('tileerror', () => { failed++; if (!loaded && failed >= 4) setState('error'); })
-      .addTo(m);
-    tiles.current = t;
-    layer.current = L.layerGroup().addTo(m);
     map.current = m;
+    pickSource(0);
+    layer.current = L.layerGroup().addTo(m);
     watchdog();
+    // A map created in a not-yet-sized box asks for zero tiles (blank dark box) — re-measure on resize.
     setTimeout(() => m.invalidateSize(), 50);
-    return () => { if (timer.current) clearTimeout(timer.current); m.remove(); map.current = null; };
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => m.invalidateSize()) : null;
+    ro?.observe(el.current);
+    return () => { ro?.disconnect(); if (timer.current) clearTimeout(timer.current); m.remove(); map.current = null; };
   }, []);
-  const retry = () => { setState('loading'); watchdog(); map.current?.invalidateSize(); tiles.current?.redraw(); };
+  function pickSource(i: number) {
+    const m = map.current;
+    if (!m) return;
+    tiles.current?.remove();
+    let loaded = 0, failed = 0;
+    const src = TILE_SOURCES[i] ?? TILE_SOURCES[0];
+    tiles.current = L.tileLayer(src.url, { ...src.opts, keepBuffer: 4 })
+      .on('tileload', () => { loaded++; setState('ready'); })
+      .on('tileerror', () => {
+        failed++;
+        if (loaded || failed < 4) return;
+        if (i + 1 < TILE_SOURCES.length) pickSource(i + 1); // fallback source
+        else setState('error');
+      })
+      .addTo(m);
+    tiles.current.bringToBack();
+  }
+  const retry = () => { setState('loading'); watchdog(); map.current?.invalidateSize(); pickSource(0); };
   useEffect(() => {
     const g = layer.current, m = map.current;
     if (!g || !m) return;
