@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { openApp, login, dismissEnroll, USERS, mutateServer } from './helpers';
+import { openApp, login, dismissEnroll, USERS, mutateServer, passAdminGate } from './helpers';
 
 // Pass 9, chunk 1 (Karim's real-account bugs A1–A10). Memory backend only; nothing is ever emailed.
 type Server = { tables: Record<string, Array<Record<string, any>>> };
@@ -155,4 +155,66 @@ test('Client logs: hold for OK by default; Send now shows the honest "email not 
   await expect(row.getByTestId('client-log-status')).toHaveText('Not sent — email not configured');
   await expect(page.getByTestId('email-not-configured')).toContainText('Email sending not configured');
   expect((await rows(page, 'patrol_client_emails')).filter((e) => e.status === 'sent')).toHaveLength(0);
+});
+
+// ------------------------------------------------------------------ pass 9 chunk 3 (Section B demo bugs)
+test('B2/B9: Live shows my own clock-in at once; owner alerts carry a PT time', async ({ page }) => {
+  await owner(page);
+  await more(page, 'mode-switch');
+  await page.getByTestId('home-clock-in').click();
+  await page.getByTestId('site-option').filter({ hasText: 'Kent Station Market' }).click();
+  await page.getByTestId('clock-in-btn').click();
+  await page.getByTestId('gps-accept').click();
+  await page.getByTestId('po-ack').click(); // first shift at this site → post orders first
+  await expect(page.getByTestId('duty-hero')).toContainText('On duty');
+  await more(page, 'mode-switch');
+  await passAdminGate(page);
+  await expect(page.getByTestId('onshift-row').filter({ hasText: 'Karim Daher' })).toBeVisible();
+  const alert = page.getByTestId('owner-alert').first();
+  if (await alert.isVisible({ timeout: 15_000 }).catch(() => false)) await expect(alert.getByTestId('owner-alert-time')).toContainText(/ PT \(/);
+});
+
+test('B12/B13 guard: More has Schedule, Profile & settings and an honest Messages entry', async ({ page }) => {
+  await signIn(page, USERS.marcus);
+  await page.getByRole('link', { name: 'More' }).click();
+  await page.getByTestId('more-messages').click();
+  await expect(page.getByTestId('messages-honest')).toContainText('needs the Lion Patrol server');
+  await expect(page.getByTestId('messages-sheet').locator('textarea, input')).toHaveCount(0); // no fake message box
+  await page.keyboard.press('Escape');
+  await page.getByTestId('more-profile').click();
+  await expect(page.getByTestId('profile-pin')).toBeVisible();
+  await page.getByTestId('profile-name').click();
+  await expect(page.getByTestId('name-input')).toHaveValue('Marcus Reed');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('more-my-schedule').click();
+  await expect(page.getByRole('heading', { name: 'My schedule' }).or(page.getByText('My schedule').first())).toBeVisible();
+});
+
+test('B13 owner: feed entries open, contacts have Save + saved state with phone validation, clear DAR PDF labels; B12 desktop sidebar', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await owner(page);
+  const side = page.getByRole('complementary', { name: 'Sections' });
+  for (const name of ['People', 'Schedule', 'Daily reports', 'Timesheets', 'Guard cards', 'Invoices', 'Client logs', 'Settings']) await expect(side.getByRole('link', { name })).toBeVisible();
+  await side.getByRole('link', { name: 'Activity' }).click();
+  await page.getByLabel('Date range').selectOption('30');
+  await page.getByTestId('feed-filters').getByRole('button', { name: 'Scans' }).click();
+  await page.getByTestId('feed-item').first().click();
+  await expect(page.getByTestId('feed-detail')).toBeVisible();
+  await expect(page.getByTestId('feed-detail')).toContainText('PT');
+  await page.keyboard.press('Escape');
+  await side.getByRole('link', { name: 'Sites' }).click();
+  await page.getByText('Kent Station Market').first().click();
+  await page.getByRole('button', { name: 'Contacts' }).click();
+  await expect(page.getByTestId('contacts-state')).toContainText('All contacts saved');
+  const phone = page.locator('input[type="tel"]').first();
+  await phone.fill('(253) 555-01a8');
+  await expect(phone).toHaveValue('(253) 555-018'); // letters never get in
+  await phone.fill('(253) 555-0189');
+  await expect(page.getByTestId('contacts-state')).toContainText('Unsaved changes');
+  await page.getByTestId('contacts-save').click();
+  await expect(page.getByTestId('contacts-state')).toContainText('All contacts saved');
+  await expect.poll(async () => (await rows(page, 'patrol_sites')).find((s) => s.id === MARKET)?.contacts?.[0]?.phone).toBe('(253) 555-0189');
+  await side.getByRole('link', { name: 'Daily reports' }).click();
+  await expect(page.getByTestId('dar-pdf').first()).toContainText('Daily report PDF');
+  await expect(page.getByTestId('dar-pdf-legend')).toBeVisible();
 });

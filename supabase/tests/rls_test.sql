@@ -455,6 +455,22 @@ do $$ begin
   if (select count(*) from public.patrol_bolos) <> 2 then raise exception 'RLS FAIL: supervisor should see 2 BOLOs'; end if;
   update public.patrol_bolos set status = 'archived' where id = 'a0000000-0000-4000-8000-0000000000b2';
   if (select status from public.patrol_bolos where id = 'a0000000-0000-4000-8000-0000000000b2') <> 'archived' then raise exception 'RLS FAIL: supervisor could not archive BOLO'; end if;
+  -- pass 9 B13: staff may add a photo to a BOLO someone else posted
+  insert into public.patrol_attachments (org_id, member_id, parent_type, parent_id, kind, storage_path, mime)
+  values ('10000000-0000-4000-8000-00000000000a', public.patrol_member_id_in('10000000-0000-4000-8000-00000000000a'), 'bolo', 'a0000000-0000-4000-8000-0000000000b2', 'image',
+          '10000000-0000-4000-8000-00000000000a/bolo/b2/photo.jpg', 'image/jpeg');
+end $$;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
+do $$ declare ok boolean := false; begin
+  -- …but a guard who did not post the BOLO still cannot
+  begin
+    insert into public.patrol_attachments (org_id, member_id, parent_type, parent_id, kind, storage_path, mime)
+    values ('10000000-0000-4000-8000-00000000000a', public.patrol_member_id_in('10000000-0000-4000-8000-00000000000a'), 'bolo', 'a0000000-0000-4000-8000-0000000000b2', 'image',
+            '10000000-0000-4000-8000-00000000000a/bolo/b2/x.jpg', 'image/jpeg');
+  exception when insufficient_privilege or foreign_key_violation then ok := true; end;
+  if not ok then raise exception 'RLS FAIL: non-author guard attached a photo to a BOLO'; end if;
 end $$;
 reset role;
 set local role anon;

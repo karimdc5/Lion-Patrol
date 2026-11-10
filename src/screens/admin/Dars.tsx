@@ -27,6 +27,7 @@ export function DarsList() {
     <Screen tabbar>
       <TopBar title="Daily reports" large right={<SyncPill />} sub="One report per guard shift. Share with the client when reviewed." />
       <div class="screen-body stack-lg">
+        <p class="foot muted" data-testid="dar-pdf-legend">Daily report PDF = the guard’s activity log for that night (the report a client can get). Shift PDF = everything on that shift — clock in/out with GPS, checkpoint scans, log entries and incident reports with photos (internal).</p>
         {(sites.data ?? []).filter((s) => s.active !== false).length > 0 && (
           // A4: per-site auto-share — DARs submitted at this site go to the client portal automatically.
           <div data-testid="dar-autoshare">
@@ -60,8 +61,8 @@ export function DarsList() {
                   </span>
                 </div>
                 <div class="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  <PdfButton label="PDF" testid="dar-pdf" make={() => import('../../pdf').then((m) => m.darPdf(d.id))} />
-                  {d.time_entry_id ? <PdfButton label="Shift PDF" testid="shift-pdf" make={() => import('../../pdf').then((m) => m.endOfShiftPdf(String(d.time_entry_id), { preferSaved: true }))} /> : null}
+                  <PdfButton label="Daily report PDF" testid="dar-pdf" make={() => import('../../pdf').then((m) => m.darPdf(d.id))} />
+                  {d.time_entry_id ? <PdfButton label="Shift PDF (incl. incidents)" testid="shift-pdf" make={() => import('../../pdf').then((m) => m.endOfShiftPdf(String(d.time_entry_id), { preferSaved: true }))} /> : null}
                   {d.status === 'submitted' && <Button loading={busy === d.id} onClick={async () => { setBusy(d.id); await setDarStatus(d.id, 'reviewed'); setBusy(null); toast('Marked reviewed'); }}>Mark reviewed</Button>}
                   {d.status !== 'open' && !d.client_visible && <Button variant="outline" loading={busy === `${d.id}:share`} onClick={() => void share(d, true)} data-testid="dar-share">Share with client</Button>}
                   {d.status !== 'open' && !!d.client_visible && <Button variant="ghost" loading={busy === `${d.id}:share`} onClick={() => void share(d, false)} data-testid="dar-unshare">Stop sharing</Button>}

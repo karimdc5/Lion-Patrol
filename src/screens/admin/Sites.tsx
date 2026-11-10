@@ -67,6 +67,8 @@ export function SiteEditor({ id }: { id: string }) {
   const up = (p: Partial<Site>) => { setSite({ ...site, ...p }); setDirty(true); };
   const save = async () => {
     if (!site.name.trim()) { setErr('Give the site a name.'); setTab('details'); return; }
+    const badPhone = (site.contacts ?? []).map((c) => phoneError(c.phone)).find(Boolean);
+    if (badPhone) { setTab('contacts'); toast(`Contact phone: ${badPhone}`, 'error'); return; }
     await saveSite(site, ordersChanged);
     setDirty(false); setOrdersChanged(false);
     toast(isNew ? 'Site created' : 'Site saved');
@@ -120,13 +122,13 @@ export function SiteEditor({ id }: { id: string }) {
         {tab === 'orders' && !isNew && <SiteCodesEditor siteId={site.id} admin={admin} />}
         {tab === 'orders' && !isNew && <AckList siteId={site.id} />}
         {tab === 'checkpoints' && <CheckpointsTab site={site} />}
-        {tab === 'contacts' && <ContactsTab site={site} disabled={!admin} onChange={(contacts) => up({ contacts })} />}
+        {tab === 'contacts' && <ContactsTab site={site} disabled={!admin} onChange={(contacts) => up({ contacts })} dirty={dirty} isNew={isNew} onSave={save} />}
         {tab === 'access' && <AccessTab site={site} disabled={!admin} />}
         {tab === 'bolos' && <BolosTab site={site} />}
         {tab === 'portal' && <PortalTab site={site} />}
         {tab === 'email' && admin && <ClientEmailTab site={site} />}
       </div>
-      {admin && (dirty || isNew) && (tab === 'details' || tab === 'orders' || tab === 'contacts') && (
+      {admin && (dirty || isNew) && (tab === 'details' || tab === 'orders') && (
         <div class="sticky-bar"><Button variant="primary" size="lg" block onClick={() => void save()} disabled={!dirty && !isNew} data-testid="site-save">{isNew ? 'Create site' : 'Save changes'}</Button></div>
       )}
       <Sheet open={mapOpen} onClose={() => setMapOpen(false)} title="Tap to place the pin">
@@ -229,7 +231,8 @@ function CheckpointSheet({ cp, onClose, disabled }: { cp: Checkpoint | null; onC
   );
 }
 
-function ContactsTab({ site, disabled, onChange }: { site: Site; disabled: boolean; onChange: (c: Site['contacts']) => void }) {
+/** B13: contacts get an explicit Save button and a saved / unsaved indicator (no silent inline edits). */
+function ContactsTab({ site, disabled, onChange, dirty, isNew, onSave }: { site: Site; disabled: boolean; onChange: (c: Site['contacts']) => void; dirty: boolean; isNew: boolean; onSave: () => Promise<void> }) {
   const list = site.contacts ?? [];
   const set = (i: number, p: Partial<Site['contacts'][number]>) => onChange(list.map((c, j) => (j === i ? { ...c, ...p } : c)));
   return (
@@ -247,6 +250,12 @@ function ContactsTab({ site, disabled, onChange }: { site: Site; disabled: boole
       ))}
       {!list.length && <Empty icon="phone" title="No contacts" body="Add the store manager, property office and police non-emergency line." />}
       {!disabled && <Button icon="plus" block onClick={() => onChange([...list, { name: '', role: '', phone: '', email: '' }])}>Add contact</Button>}
+      {!disabled && (
+        <div class="sticky-bar stack" style={{ gap: 6 }}>
+          <span class={`foot ${dirty ? 'muted' : ''}`} style={{ textAlign: 'center', color: dirty ? undefined : 'var(--success)' }} data-testid="contacts-state">{dirty ? 'Unsaved changes' : isNew ? 'Not saved yet' : '✓ All contacts saved'}</span>
+          <Button variant="primary" size="lg" block disabled={!dirty && !isNew} onClick={() => void onSave()} data-testid="contacts-save">{isNew ? 'Create site' : 'Save contacts'}</Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -288,7 +297,8 @@ function BolosTab({ site }: { site: Site }) {
       <p class="foot muted">Be On the Lookout alerts guards post for this site. Active ones are pinned for guards (and on the client portal when shared).</p>
       {!rows.length ? <Empty icon="eye" title="No BOLOs" body="Guards post BOLOs from their Home screen." /> : rows.map((b) => (
         <div key={b.id} class="stack" data-testid="admin-bolo">
-          <BoloCard b={b}><AttachmentTray parentType="bolo" parentId={b.id} editable={false} label="Photos" /></BoloCard>
+          {/* B13: staff can add a photo to any active BOLO (same media pipeline as reports; needs migration 300 on the server). */}
+          <BoloCard b={b}><AttachmentTray parentType="bolo" parentId={b.id} editable={b.status === 'active'} label="Photos" /></BoloCard>
           <div class="row" style={{ gap: 8 }}>
             <span class={`pill ${b.status === 'active' ? 'pill-danger' : 'pill-muted'}`}>{b.status === 'active' ? 'Active' : 'Resolved'}</span>
             {b.visible_to_client && <span class="pill pill-muted">On client portal</span>}
