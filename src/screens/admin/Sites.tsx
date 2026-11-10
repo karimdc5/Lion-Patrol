@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { phoneInput, phoneError } from '../../lib/phone';
 import { Screen, TopBar, SyncPill, List, Row, Empty, SkeletonList, Button, Field, Toggle, Sheet, toast, SectionLabel, Avatar } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
@@ -239,7 +240,7 @@ function ContactsTab({ site, disabled, onChange }: { site: Site; disabled: boole
           <div class="grid-2">
             <input class="input" placeholder="Name" value={c.name} disabled={disabled} onInput={(e) => set(i, { name: (e.target as HTMLInputElement).value })} />
             <input class="input" placeholder="Role" value={c.role ?? ''} disabled={disabled} onInput={(e) => set(i, { role: (e.target as HTMLInputElement).value })} />
-            <input class="input" type="tel" placeholder="Phone" value={c.phone ?? ''} disabled={disabled} onInput={(e) => set(i, { phone: (e.target as HTMLInputElement).value })} />
+            <input class="input" type="tel" inputMode="tel" placeholder="Phone" value={c.phone ?? ''} disabled={disabled} onInput={(e) => set(i, { phone: phoneInput((e.target as HTMLInputElement).value) })} />
             <input class="input" type="email" placeholder="Email" value={c.email ?? ''} disabled={disabled} onInput={(e) => set(i, { email: (e.target as HTMLInputElement).value })} />
           </div>
         </div>

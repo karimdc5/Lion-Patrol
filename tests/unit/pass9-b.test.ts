@@ -37,3 +37,25 @@ describe('pass 9 B3: an already-submitted DAR is a duplicate, never NEEDS ATTENT
     expect(isDuplicateSubmit('This report was already submitted and can no longer be edited.', { kind: 'insert', table: 'patrol_dars', payload: { status: 'submitted' } })).toBe(false);
   });
 });
+
+import { phoneError, phoneInput } from '../../src/lib/phone';
+import { cardSummary, cardDays } from '../../src/data/owner';
+
+describe('pass 9 B8: phones and guard-card expiry', () => {
+  it('phone inputs drop letters; save-time check rejects garbage', () => {
+    expect(phoneInput('(253) 555-01a6')).toBe('(253) 555-016');
+    expect(phoneError('(253) 555-01a6')).toMatch(/digits only/);
+    expect(phoneError('555')).toMatch(/full phone number/);
+    expect(phoneError('(206) 555-0139')).toBeNull();
+    expect(phoneError('+1 206.555.0139')).toBeNull();
+    expect(phoneError('')).toBeNull();
+  });
+  it('expiry is counted on the Pacific date and summarised from the cards on file only', () => {
+    const now = new Date('2026-11-08T06:30:00Z'); // Nov 7, 10:30 PM PT (already Nov 8 in UTC)
+    expect(cardDays('2026-11-27', now)).toBe(20);
+    expect(cardDays('2026-11-07', now)).toBe(0);
+    const cards = ['2026-11-27', '2028-11-03', '2028-02-23', '2027-07-31', '2030-07-30'].map((expires_on) => ({ expires_on }));
+    expect(cardSummary(cards, now)).toEqual({ onFile: 5, valid: 5, expired: 0, soon: 1 });
+    expect(cardSummary([...cards, { expires_on: '2026-11-03' }], now)).toMatchObject({ expired: 1 });
+  });
+});

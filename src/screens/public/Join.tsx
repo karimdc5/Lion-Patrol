@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { phoneInput, phoneError } from '../../lib/phone';
 import { Button, Field, TopBar, Screen } from '../../ui/kit';
 import { signUp, signIn, redeemInvite, identity, phase } from '../../auth/session';
 import { navigate, query } from '../../router';
@@ -23,8 +24,9 @@ export function Join() {
   const submit = async (e: Event) => {
     e.preventDefault();
     setError(null);
-    if (code.replace(/[^A-Z0-9]/g, '').length < 12) { setError('Enter the full invite code, like LION-7K4Q-9XW2.'); return; }
+    if (code.replace(/[^A-Z0-9]/g, '').length < 12) { setError('Enter the full invite code (e.g. LION-XXXX-XXXX).'); return; }
     if (!name.trim()) { setError('Enter your name as it should appear on reports.'); return; }
+    const pe = phoneError(phone); if (pe) { setError(pe); return; }
     setBusy(true);
     try {
       if (!signedIn) {
@@ -58,7 +60,7 @@ export function Join() {
             <input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} autoComplete="name" placeholder="First and last name" name="name" />
           </Field>
           <Field label="Mobile phone (optional)">
-            <input class="input" type="tel" inputMode="tel" value={phone} onInput={(e) => setPhone((e.target as HTMLInputElement).value)} autoComplete="tel" placeholder="e.g. (206) 555-0100" name="phone" />
+            <input class="input" type="tel" inputMode="tel" value={phone} onInput={(e) => setPhone(phoneInput((e.target as HTMLInputElement).value))} autoComplete="tel" placeholder="e.g. (206) 555-0100" name="phone" />
           </Field>
           {!signedIn && (
             <>

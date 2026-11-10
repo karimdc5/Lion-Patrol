@@ -43,9 +43,16 @@ export async function saveGuardCard(memberIdArg: string, card_no: string, expire
 /** Days until expiry (negative = expired), null when unknown. */
 export function cardDays(expires: string | null | undefined, now = new Date()): number | null {
   if (!expires) return null;
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  // B8: "today" is the Pacific date (not the browser's or UTC) so every screen agrees on expiry.
+  const [ty, tm, td] = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/Los_Angeles' }).format(now).split('-').map(Number);
+  const today = Date.UTC(ty!, tm! - 1, td!);
   const [y, m, d] = expires.split('-').map(Number);
   return Math.round((Date.UTC(y!, m! - 1, d!) - today) / 864e5);
+}
+/** B8: one compliance summary (Guard cards header + tests) from the cards on file — the single source of truth. */
+export function cardSummary(cards: Array<{ expires_on: string | null | undefined }>, now = new Date()) {
+  const days = cards.map((c) => cardDays(c.expires_on, now)).filter((d): d is number => d != null);
+  return { onFile: cards.length, valid: days.filter((d) => d >= 0).length, expired: days.filter((d) => d < 0).length, soon: days.filter((d) => d >= 0 && d <= 30).length };
 }
 export function cardStatus(expires: string | null | undefined): { tone: 'success' | 'warning' | 'danger' | 'muted'; label: string } {
   const d = cardDays(expires);

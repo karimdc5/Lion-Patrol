@@ -23,22 +23,31 @@ test('item 23: guard cards — expiry status, onboarding import (name/email/card
   await expect(page.getByTestId('owner-alert').filter({ hasText: 'Guard card expires soon: Tasha Greene' })).toBeVisible({ timeout: 20_000 });
   await more(page, 'more-guard-cards');
   const row = (n: string) => page.getByTestId('gc-row').filter({ hasText: n });
-  await expect(row('Tasha Greene')).toContainText(/Expires in 19 days/);
+  await expect(row('Tasha Greene')).toContainText(/Expires in 20 days/);
   await expect(row('Marcus Reed')).toContainText('Valid');
-  await expect(row('Dana Whitfield')).toContainText('No card on file');
+  await expect(row('Dana Whitfield')).toContainText('Valid'); // pass 9 B8: card on file, Jul 31, 2027
+  await expect(page.getByTestId('gc-summary')).toContainText('5 cards on file · 5 valid · 0 expired');
+  await expect(page.getByTestId('gc-summary')).toContainText('Expiring within 30 days — 1');
   await shot(page, 'guard-cards');
   await page.getByTestId('gc-import').click();
   const sheet = page.getByTestId('gc-import-sheet');
   await expect(sheet.getByTestId('gc-onb-row')).toHaveCount(2);
   await expect(sheet).not.toContainText('000-00'); // never SSN / bank / DOB
   await expect(sheet).not.toContainText('1990');
+  // B8: onboarding agrees with the card on file — one person, one expiry.
   const dana = sheet.getByTestId('gc-onb-row').filter({ hasText: 'WA-SG-0661204' });
   await expect(dana.getByTestId('gc-onb-member')).toHaveValue(/0b5e/); // matched by email
-  await dana.getByTestId('gc-onb-import').click();
-  await expect.poll(async () => (await rows(page, 'patrol_guard_cards')).find((c) => c.card_no === 'WA-SG-0661204')?.source).toBe('onboarding');
+  await expect(dana.getByTestId('gc-onb-import')).toHaveText('Imported');
+  await expect(dana.getByTestId('gc-onb-differs')).toHaveCount(0);
+  // A different card shows what's on file and replaces it only on tap.
+  const jordan = sheet.getByTestId('gc-onb-row').filter({ hasText: 'WA-SG-2203119' });
+  await jordan.getByTestId('gc-onb-member').selectOption({ label: 'Dana Whitfield' });
+  await expect(jordan.getByTestId('gc-onb-differs')).toContainText('On file (used everywhere): WA-SG-0661204');
+  await jordan.getByTestId('gc-onb-import').click();
+  await expect.poll(async () => (await rows(page, 'patrol_guard_cards')).find((c) => c.card_no === 'WA-SG-2203119')?.source).toBe('onboarding');
   await shot(page, 'guard-cards-import');
   await page.keyboard.press('Escape');
-  await expect(row('Dana Whitfield')).toContainText(/Expired 5 days ago/);
+  await expect(row('Dana Whitfield')).toContainText('WA-SG-2203119');
   // manual edit on the member page
   await row('Marcus Reed').click();
   await page.getByTestId('guard-card-exp').fill('2027-01-31');

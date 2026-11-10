@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { phoneInput } from '../../lib/phone';
 import { Screen, TopBar, Button, Field, Empty, toast, Toggle, Segmented, Sheet } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
@@ -326,7 +327,7 @@ function PersonCard({ p, onChange, onRemove }: { p: Person; onChange: (p: Person
       </div>
       <input class="input" placeholder="Name (or “Unknown”)" value={p.name} onInput={(e) => onChange({ ...p, name: (e.target as HTMLInputElement).value })} data-testid="person-name" />
       <input class="input" placeholder="Description: age, height, clothing" value={p.description} onInput={(e) => onChange({ ...p, description: (e.target as HTMLInputElement).value })} />
-      <input class="input" type="tel" placeholder="Phone (optional)" value={p.phone} onInput={(e) => onChange({ ...p, phone: (e.target as HTMLInputElement).value })} />
+      <input class="input" type="tel" inputMode="tel" placeholder="Phone (optional)" value={p.phone} onInput={(e) => onChange({ ...p, phone: phoneInput((e.target as HTMLInputElement).value) })} />
     </div>
   );
 }

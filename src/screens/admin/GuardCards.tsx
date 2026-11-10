@@ -3,7 +3,7 @@ import { Screen, TopBar, SyncPill, List, Row, SectionLabel, Empty, Button, Sheet
 import { useData } from '../../ui/useData';
 import { currentOrgId, isAdmin, role } from '../../auth/session';
 import { membersFor } from '../../data/repos/queries';
-import { fetchGuardCards, listGuardCards, saveGuardCard, cardStatus, cardDays, onboardingCards, type GuardCard, type OnboardingCard } from '../../data/owner';
+import { fetchGuardCards, listGuardCards, saveGuardCard, cardStatus, cardDays, cardSummary, onboardingCards, type GuardCard, type OnboardingCard } from '../../data/owner';
 import { fmtDate, roleLabel } from '../../lib/format';
 import { isNetworkError } from '../../data/backend/types';
 import type { Member } from '../../data/types';
@@ -53,7 +53,11 @@ export function GuardCards() {
     <Screen tabbar>
       <TopBar title="Guard cards" large right={<SyncPill />} sub="WA security guard licenses · owners only"
         action={role.value === 'owner' ? <Button variant="primary" icon="download" onClick={() => setImportOpen(true)} data-testid="gc-import">Import</Button> : undefined} />
-      <div class="screen-body">
+      <div class="screen-body stack">
+        {(() => {
+          const sum = cardSummary(rows.flatMap(({ c }) => (c ? [c] : [])));
+          return <div class="card" data-testid="gc-summary"><b>Compliance</b> · {sum.onFile} card{sum.onFile === 1 ? '' : 's'} on file · {sum.valid} valid · {sum.expired} expired<div class="foot muted">Expiring within 30 days — {sum.soon}</div></div>;
+        })()}
         {rows.length ? (
           <List>
             {rows.map(({ m, c }) => {
@@ -94,7 +98,9 @@ function ImportSheet({ open, onClose, members, cards }: { open: boolean; onClose
           return (
             <div key={o.link_id} class="card stack" data-testid="gc-onb-row" style={{ gap: 8 }}>
               <div class="row-between"><b>{[o.first_name, o.last_name].filter(Boolean).join(' ') || o.email || 'New hire'}</b><span class="foot muted">{fmtDate(o.submitted_at)}</span></div>
-              <div class="foot muted">{o.email ?? 'no email'} · {o.card_no ?? 'no number'} · expires {fmtDay(o.expires_on)}</div>
+              <div class="foot muted">Onboarding: {o.email ?? 'no email'} · {o.card_no ?? 'no number'} · expires {fmtDay(o.expires_on)} ({cardStatus(o.expires_on).label})</div>
+              {/* B8: the card on file is the one source of truth; onboarding only replaces it when you tap Import. */}
+              {existing && !same && <div class="foot" data-testid="gc-onb-differs">On file (used everywhere): {existing.card_no ?? 'no number'} · expires {fmtDay(existing.expires_on)} — {cardStatus(existing.expires_on).label}. Import replaces it.</div>}
               <div class="row" style={{ gap: 8 }}>
                 <select class="input grow" value={target} onChange={(e) => setPick({ ...pick, [o.link_id]: (e.target as HTMLSelectElement).value })} data-testid="gc-onb-member">
                   <option value="">Match to a team member…</option>
@@ -103,7 +109,7 @@ function ImportSheet({ open, onClose, members, cards }: { open: boolean; onClose
                 <Button variant="primary" disabled={!target || !!same} data-testid="gc-onb-import" onClick={async () => {
                   await saveGuardCard(target, o.card_no ?? '', o.expires_on, 'onboarding', o.link_id);
                   toast('Guard card imported');
-                }}>{same ? 'Imported' : 'Import'}</Button>
+                }}>{same ? 'Imported' : existing ? 'Replace' : 'Import'}</Button>
               </div>
             </div>
           );
