@@ -3,16 +3,16 @@ import type { Row } from '../../data/db';
 import type { Member, MemberStatus, Site, Checkpoint } from '../../data/types';
 
 export interface OpsData {
-  sites: Site[]; members: Member[]; status: MemberStatus[]; alerts: Row[]; incidents: Row[]; scans: Row[]; runs: Row[]; entries: Row[]; dars: Row[]; times: Row[]; checkpoints: Checkpoint[];
+  sites: Site[]; members: Member[]; status: MemberStatus[]; alerts: Row[]; incidents: Row[]; scans: Row[]; runs: Row[]; entries: Row[]; dars: Row[]; times: Row[]; checkpoints: Checkpoint[]; audit: Row[];
 }
 export async function loadOps(org: string | null): Promise<OpsData> {
-  const [sites, members, status, alerts, incidents, scans, runs, entries, dars, times, checkpoints] = await Promise.all([
+  const [sites, members, status, alerts, incidents, scans, runs, entries, dars, times, checkpoints, audit] = await Promise.all([
     listRecords<Site>('patrol_sites', org), listRecords<Member>('patrol_members', org), listRecords<MemberStatus>('patrol_member_status', org),
     listRecords<Row>('patrol_alerts', org), listRecords<Row>('patrol_incidents', org), listRecords<Row>('patrol_scans', org),
     listRecords<Row>('patrol_tour_runs', org), listRecords<Row>('patrol_dar_entries', org), listRecords<Row>('patrol_dars', org),
-    listRecords<Row>('patrol_time_entries', org), listRecords<Checkpoint>('patrol_checkpoints', org),
+    listRecords<Row>('patrol_time_entries', org), listRecords<Checkpoint>('patrol_checkpoints', org), listRecords<Row>('patrol_audit_log', org),
   ]);
-  return { sites, members, status, alerts, incidents: incidents.filter((i) => i.status !== 'draft'), scans, runs, entries, dars, times, checkpoints };
+  return { sites, members, status, alerts, incidents: incidents.filter((i) => i.status !== 'draft'), scans, runs, entries, dars, times, checkpoints, audit };
 }
 
 export interface SiteCompletion { site: Site; runs: number; complete: number; missed: number; late: number; pct: number; scanned: number; expected: number }

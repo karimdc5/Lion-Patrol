@@ -48,3 +48,33 @@ export function geofenceCheck(site: { lat: number | null; lng: number | null; ge
   const d = distanceM(fix, { lat: site.lat, lng: site.lng });
   return { ok: d <= site.geofence_m + Math.min(fix.accuracy || 0, 100), distance: d };
 }
+
+/** Pass 9 A1: how a clock-in/out location was recorded (stored on the time entry). */
+export type GpsStatus = 'ok' | 'outside' | 'unavailable' | 'no_site_pin';
+export function gpsStatusFor(site: { lat: number | null; lng: number | null; geofence_m: number }, fix: { lat: number; lng: number; accuracy: number } | null): { status: GpsStatus; distance: number | null } {
+  if (site.lat == null || site.lng == null) return { status: fix ? 'ok' : 'unavailable', distance: null };
+  const g = geofenceCheck(site, fix);
+  if (!fix) return { status: 'unavailable', distance: null };
+  return { status: g.ok ? 'ok' : 'outside', distance: g.distance == null ? null : Math.round(g.distance) };
+}
+
+export const fmtDistance = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1609).toFixed(1)} mi`);
+
+/**
+ * Honest one-line location for Live / Activity / Timesheets / PDFs. Never implies a GPS fix that
+ * doesn't exist: without coordinates it says so and falls back to the site address, labeled.
+ */
+export function gpsLine(p: { lat?: unknown; lng?: unknown; accuracy?: unknown }, site?: { lat: number | null; lng: number | null; geofence_m?: number; address?: string | null; city?: string | null } | null): string {
+  const lat = p.lat == null ? null : Number(p.lat), lng = p.lng == null ? null : Number(p.lng);
+  if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) {
+    const addr = site ? [site.address, site.city].filter(Boolean).join(', ') : '';
+    return addr ? `Site address (GPS unavailable): ${addr}` : 'GPS unavailable';
+  }
+  const acc = p.accuracy == null ? '' : ` ±${Math.round(Number(p.accuracy))} m`;
+  let where = '';
+  if (site && site.lat != null && site.lng != null) {
+    const d = distanceM({ lat, lng }, { lat: site.lat, lng: site.lng });
+    where = d <= (site.geofence_m ?? 150) + Math.min(Number(p.accuracy ?? 0) || 0, 100) ? ` · at site (${fmtDistance(d)} from pin)` : ` · ${fmtDistance(d)} from site — OUTSIDE geofence`;
+  }
+  return `GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}${acc}${where}`;
+}

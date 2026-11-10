@@ -8,6 +8,7 @@ import { sitesFor, shiftsFor, checkpointsFor, siteLabels } from '../../data/repo
 import { onShift, openRun, listDrafts } from '../../data/guard';
 import { fmtDay, fmtTime, hms, relTime } from '../../lib/format';
 import { navigate } from '../../router';
+import { isIOS } from '../../lib/platform';
 import { GuardRight } from './common';
 import { fireSos } from './Sos';
 import { ClockOutSheet } from './Clock';
@@ -67,6 +68,19 @@ export function GuardHome() {
             <Button variant="primary" size="lg" block style={{ marginTop: 16 }} onClick={() => navigate('/g/clock')} data-testid="home-clock-in">Clock in</Button>
           )}
         </div>
+
+        {te && (
+          // A1: honest and persistent — web apps can't track location in the background.
+          <div class="card row" data-testid="gps-background-warning" style={{ alignItems: 'flex-start', gap: 10, borderColor: 'var(--warning)' }}>
+            <Icon name="pin" class="warning-text" />
+            <div class="foot">
+              <b>Location only updates while Lion Patrol is open on screen.</b>{' '}
+              {isIOS() ? 'iPhone pauses it when the screen locks or you switch apps.' : 'Your phone may pause it when the screen locks or you switch apps.'}{' '}
+              Owners see “No recent GPS” until you open the app again. GPS is always recorded at each checkpoint scan, log entry and clock-out.
+              {te.clock_in_lat == null && <div class="warning-text" style={{ marginTop: 4 }} data-testid="clockin-nogps">GPS was unavailable at clock-in — the owners see “Site address (GPS unavailable)”.</div>}
+            </div>
+          </div>
+        )}
 
         {te && (
           <div class="qa-grid">

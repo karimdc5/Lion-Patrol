@@ -6,6 +6,7 @@ import { listOwnerAlerts, ackOwnerAlert, type OwnerAlert } from '../../data/owne
 import { loadOps, completionBySite } from './ops';
 import { setAlertStatus } from '../../data/admin';
 import { relTime, fmtTime } from '../../lib/format';
+import { gpsLine } from '../../lib/geo';
 import { navigate } from '../../router';
 import type { Row as R } from '../../data/db';
 
@@ -70,19 +71,26 @@ export function Dashboard() {
                 const site = data!.sites.find((x) => x.id === s.site_id);
                 const run = data!.runs.filter((r) => r.member_id === s.member_id && !r.completed_at).sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)))[0];
                 const stale = !s.last_ping_at || Date.now() - Date.parse(s.last_ping_at) > 15 * 60e3;
+                // A1: never imply "on site" without GPS — show how the clock-in location was recorded.
+                const te = data!.times.find((t) => t.id === s.time_entry_id);
+                const inLat = te?.clock_in_lat ?? null;
+                const inStatus = String(te?.clock_in_gps_status ?? (te ? (inLat == null ? 'unavailable' : '') : ''));
                 return (
                   <Row key={s.member_id} testid="onshift-row"
                     title={<span class="row" style={{ gap: 10 }}><Avatar name={m?.display_name ?? '?'} gold />{m?.display_name ?? 'Guard'}</span>}
-                    sub={`${site?.name ?? ''} · on since ${fmtTime(s.on_duty_since)} · ping ${relTime(s.last_ping_at)}`}
+                    sub={`${site?.name ?? ''} · on since ${fmtTime(s.on_duty_since)} · GPS ${s.last_ping_at ? relTime(s.last_ping_at) : 'never recorded'}${te ? ` · clock-in: ${gpsLine({ lat: inLat, lng: te.clock_in_lng, accuracy: te.clock_in_accuracy_m }, site)}` : ''}`}
                     right={<span class="stack" style={{ gap: 4, alignItems: 'flex-end' }}>
                       {run && <span class="pill pill-gold tnum">{String(run.scanned_count ?? 0)}/{String(run.expected_count)}</span>}
+                      {inStatus === 'unavailable' && <span class="pill pill-danger" data-testid="onshift-nogps">GPS unavailable at clock-in</span>}
+                      {inStatus === 'outside' && <span class="pill pill-danger" data-testid="onshift-outside">Clocked in outside geofence</span>}
+                      {te?.clock_in_override_reason ? <span class="pill pill-warning">Owner override</span> : null}
                       {stale && <span class="pill pill-warning">No recent GPS</span>}
                     </span>} />
                 );
               })}
             </List>
           ) : <Empty icon="shield" title="No one is on shift" body="Guards appear here when they clock in." />}
-          <p class="foot faint" style={{ padding: '6px 4px' }}>Locations update while a guard has Lion Patrol open; iPhone pauses web apps in the background.</p>
+          <p class="foot faint" style={{ padding: '6px 4px' }}>GPS is recorded at clock-in, each checkpoint scan, log entries and clock-out, and every few minutes only while Lion Patrol is open on screen. iPhone pauses web apps when locked or in the background, so “No recent GPS” is expected then — it does not mean the guard left.</p>
         </div>
 
         <div>
@@ -149,7 +157,7 @@ function GettingStarted({ d }: { d: import('./ops').OpsData }) {
   );
 }
 
-const ALERT_ICON: Record<string, string> = { missed_checkpoint: 'qr', overdue_patrol: 'clock', no_show: 'user-x', geofence: 'pin', guard_card: 'key' };
+const ALERT_ICON: Record<string, string> = { missed_checkpoint: 'qr', overdue_patrol: 'clock', no_show: 'user-x', geofence: 'pin', guard_card: 'key', long_shift: 'clock' };
 /** Item 18: owners/admins only (RLS returns no rows to anyone else). */
 function OwnerAlerts() {
   const org = currentOrgId.value;

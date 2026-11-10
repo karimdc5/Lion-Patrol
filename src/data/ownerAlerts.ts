@@ -11,7 +11,7 @@ import { isNetworkError } from './backend/types';
  * patrol_owner_alerts, readable by owners/admins only (RLS). Any worker device of the org runs the
  * detector; it only learns a count, and a generic "N new owner alerts" email goes to the owners.
  */
-export interface OwnerAlert extends Row { kind: 'missed_checkpoint' | 'overdue_patrol' | 'no_show' | 'geofence'; title: string; body: string; site_id: string | null; member_id: string | null; created_at: string; acknowledged_at: string | null; lat?: number | null; lng?: number | null }
+export interface OwnerAlert extends Row { kind: 'missed_checkpoint' | 'overdue_patrol' | 'no_show' | 'geofence' | 'guard_card' | 'long_shift'; title: string; body: string; site_id: string | null; member_id: string | null; created_at: string; acknowledged_at: string | null; lat?: number | null; lng?: number | null }
 
 let lastCheck = 0;
 export async function checkOwnerAlerts(minGapMs = 60_000): Promise<number> {

@@ -22,6 +22,8 @@ import { getBackend } from '../auth/session';
 import { isNetworkError } from '../data/backend/types';
 import type { OrgInfo, PdfPhoto } from './report';
 import { extraDetails, type FieldConfig } from '../domain/incident';
+import { gpsLine } from '../lib/geo';
+import { siteLocalDate } from '../lib/format';
 
 const TZ = 'America/Los_Angeles';
 const timeLabel = (iso: unknown) => (iso ? new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ }).format(new Date(String(iso))) : '');
@@ -129,7 +131,6 @@ export async function darPdf(id: string) {
 }
 
 // ---------------------------------------------------------------- end-of-shift PDF (item 12)
-const gps = (lat: unknown, lng: unknown, acc?: unknown) => (lat != null && lng != null ? `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}${acc != null ? ` (±${Math.round(Number(acc))} m)` : ''}` : null);
 
 /** False only when the server answers but doesn't know parent type 'shift' yet (migration 20261029000200 not applied). */
 async function shiftParentSupported(): Promise<boolean> {
@@ -163,7 +164,8 @@ async function savedShiftPdf(teId: string): Promise<Uint8Array | null> {
 export async function endOfShiftPdf(teId: string, opts: { save?: boolean; preferSaved?: boolean } = {}) {
   const te = await getRecord<Row>('patrol_time_entries', teId);
   if (!te) throw new Error('Shift not found on this device.');
-  const filename = `Shift-${String(te.clock_in_at).slice(0, 10)}-${teId.slice(-6)}.pdf`;
+  // A10: filename date is the Pacific shift date, never the UTC date.
+  const filename = `Shift-${siteLocalDate(String(te.clock_in_at))}-${teId.slice(-6)}.pdf`;
   if (opts.preferSaved) {
     const saved = await savedShiftPdf(teId);
     if (saved) {
@@ -188,13 +190,18 @@ export async function endOfShiftPdf(teId: string, opts: { save?: boolean; prefer
   const bolos = bolosAll.filter((b) => b.created_by === te.member_id && b.site_id === te.site_id && inShift(b.created_at));
   const officer = String(members.find((m) => m.id === te.member_id)?.display_name ?? dar?.author_name ?? 'Officer');
   const cats = await listRecords<Row & { name: string; field_config?: FieldConfig | null }>('patrol_categories', org);
+  // A1: honest GPS lines; without a fix the site address is used, labeled "(GPS unavailable)".
+  const siteRow = await getRecord<Site>('patrol_sites', String(te.site_id));
+  const override = te.clock_in_override_reason ? ` · Owner override: ${String(te.clock_in_override_reason)}` : '';
+  const inGps = gpsLine({ lat: te.clock_in_lat, lng: te.clock_in_lng, accuracy: te.clock_in_accuracy_m }, siteRow) + override;
+  const outGps = te.clock_out_at ? gpsLine({ lat: te.clock_out_lat, lng: te.clock_out_lng, accuracy: te.clock_out_accuracy_m }, siteRow) : null;
   const timeline = [
-    { at: String(te.clock_in_at), kind: 'Clock in', text: gps(te.clock_in_lat, te.clock_in_lng, te.clock_in_accuracy_m) ?? 'No GPS' },
+    { at: String(te.clock_in_at), kind: 'Clock in', text: inGps },
     ...entries.map((e) => ({ at: String(e.occurred_at), kind: /^Patrol (started|ended)/.test(String(e.body)) ? 'Patrol' : String(e.category_name ?? 'Log'), text: String(e.body) })),
-    ...scans.map((x) => ({ at: String(x.scanned_at), kind: 'Checkpoint', text: `${cps.find((c) => c.id === x.checkpoint_id)?.name ?? 'Checkpoint'}${(x.flags as string[] ?? []).length ? ` (${(x.flags as string[]).join(', ').replace(/_/g, ' ')})` : ''}` })),
+    ...scans.map((x) => ({ at: String(x.scanned_at), kind: 'Checkpoint', text: `${cps.find((c) => c.id === x.checkpoint_id)?.name ?? 'Checkpoint'}${(x.flags as string[] ?? []).length ? ` (${(x.flags as string[]).join(', ').replace(/_/g, ' ')})` : ''} · ${gpsLine({ lat: x.lat, lng: x.lng, accuracy: x.accuracy_m })}` })),
     ...incidents.map((i) => ({ at: String(i.occurred_at), kind: 'Incident', text: `${i.report_no ? `${i.report_no} · ` : ''}${i.title || i.category_name || 'Incident'}` })),
     ...bolos.map((b) => ({ at: String(b.created_at), kind: 'BOLO', text: String(b.title) })),
-    ...(te.clock_out_at ? [{ at: String(te.clock_out_at), kind: 'Clock out', text: gps(te.clock_out_lat, te.clock_out_lng, te.clock_out_accuracy_m) ?? 'No GPS' }] : []),
+    ...(te.clock_out_at ? [{ at: String(te.clock_out_at), kind: 'Clock out', text: outGps ?? '' }] : []),
   ].sort((a, b) => a.at.localeCompare(b.at));
   const incOut = [];
   for (const i of incidents) {
@@ -208,7 +215,7 @@ export async function endOfShiftPdf(teId: string, opts: { save?: boolean; prefer
   const { buildShiftPdf } = await import('./report');
   const r = await buildShiftPdf({
     org: await orgInfo(org), site: await siteInfo(String(te.site_id)), logoPng: await logo(), officer,
-    shift: { clock_in: String(te.clock_in_at), clock_out: (te.clock_out_at as string) ?? null, in_gps: gps(te.clock_in_lat, te.clock_in_lng, te.clock_in_accuracy_m), out_gps: gps(te.clock_out_lat, te.clock_out_lng, te.clock_out_accuracy_m), note: (te.shift_note as string) ?? null, timesheet: confirmed },
+    shift: { clock_in: String(te.clock_in_at), clock_out: (te.clock_out_at as string) ?? null, in_gps: inGps, out_gps: outGps, note: (te.shift_note as string) ?? null, timesheet: confirmed },
     timeline, stats: { patrols: Math.max(runs.length, entries.filter((e) => /^Patrol started/.test(String(e.body))).length), scans: scans.length, entries: entries.length, incidents: incidents.length, bolos: bolos.length },
     incidents: incOut, bolos: bolos.map((b) => ({ title: String(b.title), at: String(b.created_at), description: [b.description, b.person_desc && `Person: ${b.person_desc}`, b.vehicle_desc && `Vehicle: ${b.vehicle_desc}`].filter(Boolean).join(' · ') })),
     photos: await photoBytes(logAtts),

@@ -173,13 +173,17 @@ export function pickNext(ops: OutboxOp[], now: number): OutboxOp | undefined {
 
 async function execute(op: OutboxOp, backend: Backend) {
   switch (op.kind) {
-    case 'insert': {
-      const rows = Array.isArray(op.payload) ? op.payload : [op.payload];
-      return backend.insert(op.table!, rows as object[], { ignoreDuplicates: true });
-    }
+    case 'insert':
     case 'upsert': {
-      const rows = Array.isArray(op.payload) ? op.payload : [op.payload];
-      return backend.upsert(op.table!, rows as object[]);
+      const rows = (Array.isArray(op.payload) ? op.payload : [op.payload]) as object[];
+      const send = (r: object[]) => (op.kind === 'insert' ? backend.insert(op.table!, r, { ignoreDuplicates: true }) : backend.upsert(op.table!, r));
+      try {
+        return await send(rows);
+      } catch (e) {
+        // Same PGRST204 fallback as updates: drop optional columns the server doesn't have yet.
+        if (!(e instanceof BackendError && e.code === 'PGRST204' && op.optional?.length)) throw e;
+        return send(rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !op.optional!.includes(k)))));
+      }
     }
     case 'update':
       try {

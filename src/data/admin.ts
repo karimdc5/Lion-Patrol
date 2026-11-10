@@ -177,6 +177,8 @@ export function refreshDashboard(): Promise<void> {
       ['patrol_dars', { eq: { org_id: orgId }, gte: { report_date: since(30).slice(0, 10) }, order: ['report_date', 'desc'], limit: 100 }],
       ['patrol_shifts', { eq: { org_id: orgId }, gte: { ends_at: since(7) }, order: ['starts_at', 'asc'], limit: 400 }],
       ['patrol_bolos', { eq: { org_id: orgId }, gte: { updated_at: since(90) }, order: ['created_at', 'desc'], limit: 200 }],
+      // Pass 9: owners-only audit log (overrides, timesheet edits, code views, DAR sharing). Others get no rows.
+      ['patrol_audit_log', { eq: { org_id: orgId }, gte: { created_at: since(30) }, order: ['created_at', 'desc'], limit: 300 }],
     ];
     await Promise.all(jobs.map(async ([t, q]) => {
       try {
