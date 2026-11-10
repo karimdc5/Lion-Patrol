@@ -14,9 +14,9 @@ function ctx() {
 }
 const now = () => new Date().toISOString();
 
-async function upsertRow(table: string, row: Row, label: string) {
+async function upsertRow(table: string, row: Row, label: string, optional?: string[]) {
   const { userId, orgId } = ctx();
-  await enqueue({ userId, orgId, kind: 'upsert', table, payload: row, entityKey: `${table}:${row.id}`, label }, [{ table, row, orgId }]);
+  await enqueue({ userId, orgId, kind: 'upsert', table, payload: row, entityKey: `${table}:${row.id}`, label, ...(optional ? { optional } : {}) }, [{ table, row, orgId }]);
   bumpData(); void kick();
 }
 
@@ -31,8 +31,9 @@ export async function saveSite(s: Site, postOrdersChanged = false) {
     state: s.state || 'WA', zip: s.zip || null, lat: s.lat, lng: s.lng, geofence_m: Number(s.geofence_m) || 150, post_orders_html: s.post_orders_html ?? '',
     post_orders_updated_at: postOrdersChanged ? now() : s.post_orders_updated_at, contacts: s.contacts ?? [], tour_interval_min: s.tour_interval_min ?? null,
     tour_max_duration_min: s.tour_max_duration_min ?? null, active: s.active,
+    ...(s.auto_share_dars !== undefined ? { auto_share_dars: !!s.auto_share_dars } : {}),
   };
-  await upsertRow('patrol_sites', row, `Site · ${row.name}`);
+  await upsertRow('patrol_sites', row, `Site · ${row.name}`, ['auto_share_dars']);
 }
 
 // ---------------------------------------------------------------- checkpoints
@@ -143,6 +144,30 @@ export const setIncidentClientVisible = (id: string, visible: boolean) =>
   rpcOrQueue('patrol_set_incident_client_visible', { p_id: id, p_visible: visible }, `patrol_incidents:${id}:visible`, visible ? 'Share with client' : 'Hide from client', { table: 'patrol_incidents', row: { id, client_visible: visible } });
 export const addIncidentNote = (id: string, body: string) =>
   rpcOrQueue('patrol_add_incident_note', { p_id: id, p_body: body, p_internal: true }, `patrol_incidents:${id}:note`, 'Internal note');
+/**
+ * Pass 9 A4: share / un-share one DAR with the site's client portal (logged server-side).
+ * Before migration 20261110000100 is applied, sharing falls back to the old "sent to client" status;
+ * un-sharing needs the migration and says so.
+ */
+export async function setDarShared(id: string, shared: boolean) {
+  try {
+    await rpcOrQueue('patrol_set_dar_client_visible', { p_id: id, p_visible: shared }, `patrol_dars:${id}:visible`, shared ? 'Share DAR with client' : 'Un-share DAR', { table: 'patrol_dars', row: { id, client_visible: shared } });
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code !== 'PGRST202' && code !== '42883') throw e;
+    if (shared) { await setDarStatus(id, 'sent_to_client'); return; }
+    const d = await db(); const rec = await d.get('records', ['patrol_dars', id]);
+    if (rec) await d.put('records', { ...rec, data: { ...rec.data, client_visible: true } });
+    bumpData();
+    throw new Error('Un-sharing needs the pass 9 database update (migration 20261110000100). The report is still shared.');
+  }
+}
+/** Pass 9 A4: per-site "auto-share DARs with the client" (applies to DARs submitted from now on). */
+export async function setSiteAutoShareDars(site: Site, on: boolean) {
+  await saveSite({ ...site, auto_share_dars: on });
+  const { logAudit } = await import('./guard');
+  void logAudit('dar_autoshare', { table: 'patrol_sites', id: site.id, siteId: site.id, detail: on ? 'on' : 'off' });
+}
 export const setDarStatus = (id: string, status: string) =>
   rpcOrQueue('patrol_set_dar_status', { p_id: id, p_status: status }, `patrol_dars:${id}:review`, `DAR ${status}`, { table: 'patrol_dars', row: { id, status, ...(status === 'sent_to_client' ? { client_visible: true } : {}) } });
 
