@@ -54,7 +54,7 @@ export function ScanScreen() {
   useEffect(() => {
     let stopped = false, timer = 0;
     void (async () => {
-      if (!navigator.mediaDevices?.getUserMedia) { setCamErr('Camera not available on this device. Enter the code printed under the QR.'); setManual(true); return; }
+      if (!navigator.mediaDevices?.getUserMedia) { setCamErr('Camera not available on this device. Enter the code printed under the QR.'); return; }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false });
         if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
@@ -63,7 +63,7 @@ export function ScanScreen() {
         v.srcObject = stream;
         // B5: a stream that can't play ("Unable to play media") is a camera failure, not a silent black box.
         const played = await v.play().then(() => true, () => false);
-        if (!played && !stopped) { setCamErr('The camera started but the video can’t play here. Enter the code printed under the QR.'); setManual(true); }
+        if (!played && !stopped) { setCamErr('The camera started but the video can’t play here. Enter the code printed under the QR.'); }
         const track = stream.getVideoTracks()[0];
         const caps = (track?.getCapabilities?.() ?? {}) as { torch?: boolean };
         if (caps.torch) setTorch(false);
@@ -95,7 +95,6 @@ export function ScanScreen() {
       } catch (e) {
         const name = (e as Error).name;
         setCamErr(name === 'NotAllowedError' || name === 'SecurityError' ? CAM_HELP : name === 'NotFoundError' || name === 'OverconstrainedError' ? 'No camera found on this device. Enter the code printed under the QR.' : 'Couldn’t start the camera. Enter the code printed under the QR.');
-        setManual(true);
       }
     })();
     return () => { stopped = true; clearTimeout(timer); streamRef.current?.getTracks().forEach((t) => t.stop()); };
