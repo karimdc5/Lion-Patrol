@@ -24,10 +24,10 @@ function EmailSettings() {
   const save = async (patch: Partial<OrgSettings>) => { if (!s.data) return; await saveOrgSettings({ ...s.data, ...patch, id: s.data.org_id } as never); toast('Email settings saved'); };
   return (
     <div class="card stack" data-testid="email-settings">
-      <div class="row-between"><span>Email owners about incidents & SOS<div class="foot muted">Sent from the guard’s phone through EmailJS.</div></span>
+      <div class="row-between"><span>Email owners about incidents & SOS<div class="foot muted" data-testid="email-honest">On by default. Sent from the guard’s phone through EmailJS when the report uploads — this is not a server: an offline phone sends when it reconnects, and nothing is emailed in demo mode.</div></span>
         <Toggle label="Email notifications" checked={!!s.data?.email_enabled} onChange={(v) => admin && void save({ email_enabled: v })} /></div>
       <Field label="Email incidents at or above"><select class="input" value={s.data?.email_min_severity ?? 'medium'} disabled={!admin} onChange={(e) => void save({ email_min_severity: (e.target as HTMLSelectElement).value })} data-testid="email-severity"><option value="low">Low (every incident)</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical only</option></select></Field>
-      <div class="banner banner-warning" data-testid="testing-guard"><Icon name="lock" /><div><b>Testing: owners only.</b> Notifications can only go to owner or admin accounts. Client addresses can’t be added in this version. SOS alerts are always sent when email is on.</div></div>
+      <div class="banner banner-warning" data-testid="testing-guard"><Icon name="lock" /><div><b>Testing: owners only.</b> Notifications can only go to owner or admin accounts. Client addresses can’t be added here (client email is per site and needs the server — below). SOS alerts are always sent when email is on.</div></div>
       <div class="field"><span class="field-label">Recipients</span>
         {list.length ? <div class="chip-row">{list.map((e) => <span key={e} class="pill pill-gold" data-testid="recipient">{e}{admin && <button aria-label={`Remove ${e}`} onClick={() => void save({ notify_emails: list.filter((x) => x !== e) })}><Icon name="x" size={12} /></button>}</span>)}</div> : <p class="foot muted">No recipients yet.</p>}
       </div>
@@ -49,6 +49,7 @@ function EmailSettings() {
         <div class="foot muted">Set per site under Sites → Client email: who receives them, the nightly report (held for your OK by default, or auto-send) and incident sent / missed patrol / daily report / invoice emails. They are sent by the server from contact@lionofseattle.com — only after email sending is set up on the server. Until then nothing is emailed to clients and Client logs shows “Email sending not configured”.</div>
         {isAdmin.value && <Button variant="ghost" onClick={() => navigate('/a/client-logs')}>Open Client logs</Button>}
       </div>
+      <div class="foot muted" data-testid="needs-server">Needs the server (not available from the phone alone): client email, SMS, push notifications, in-app messaging and emailed invites. See the backend setup guide for what to turn on.</div>
     </div>
   );
 }

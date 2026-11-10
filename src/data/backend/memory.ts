@@ -788,5 +788,5 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
 }
 
 export function defaultSettings(orgId: string, emails: string[]): R {
-  return { id: orgId, org_id: orgId, notify_emails: emails, client_notifications_enabled: false, auto_share_with_client: false, report_prefix: 'LSS', next_report_no: 1, gps_ping_interval_s: 120, ping_retention_days: 30, max_video_mb: 50, max_video_s: 60, tour_interval_min: 60, tour_max_duration_min: 30, email_enabled: false, email_min_severity: 'medium', email_owners_only: true, updated_at: new Date().toISOString() };
+  return { id: orgId, org_id: orgId, notify_emails: emails, client_notifications_enabled: false, auto_share_with_client: false, report_prefix: 'LSS', next_report_no: 1, gps_ping_interval_s: 120, ping_retention_days: 30, max_video_mb: 50, max_video_s: 60, tour_interval_min: 60, tour_max_duration_min: 30, email_enabled: true, email_min_severity: 'medium', email_owners_only: true, updated_at: new Date().toISOString() };
 }
