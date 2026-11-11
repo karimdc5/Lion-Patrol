@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { Screen, TopBar, Button, Field, Empty, toast, Toggle, Segmented } from '../../ui/kit';
+import { phoneInput } from '../../lib/phone';
+import { Screen, TopBar, Button, Field, Empty, toast, Toggle, Segmented, Sheet } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
 import { currentOrgId, memberId, isStaff } from '../../auth/session';
@@ -74,6 +75,7 @@ export function IncidentEditor({ id }: { id: string }) {
   const [missing, setMissing] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const cats = useData(() => categoriesFor(org), [org]);
@@ -254,7 +256,7 @@ export function IncidentEditor({ id }: { id: string }) {
             {form.police_called && (
               <>
                 <div class="grid-2">
-                  <Field label="Agency"><input class="input" value={form.police_agency} placeholder="Kent PD" onInput={(e) => update({ police_agency: (e.target as HTMLInputElement).value })} /></Field>
+                  <Field label="Agency"><input class="input" value={form.police_agency} placeholder="e.g. Kent PD" onInput={(e) => update({ police_agency: (e.target as HTMLInputElement).value })} /></Field>
                   <Field label="Case / report #" error={E('police_case_no')}><input class="input" value={form.police_case_no} onInput={(e) => update({ police_case_no: (e.target as HTMLInputElement).value })} data-testid="police-case" /></Field>
                 </div>
                 <Field label="Officer name / badge"><input class="input" value={form.officer_name} onInput={(e) => update({ officer_name: (e.target as HTMLInputElement).value })} /></Field>
@@ -279,7 +281,7 @@ export function IncidentEditor({ id }: { id: string }) {
           <div class={`cap ${req.has('property_damage') ? 'req' : ''}`}>Property damage</div>
           <div class="subform">
             <div class="row-between"><span>Property was damaged or stolen</span><Toggle label="Property damaged" checked={form.property_damage} onChange={(v) => update({ property_damage: v })} /></div>
-            {form.property_damage && <Field label="Estimated value (USD)" error={E('property_damage')}><input class="input" inputMode="decimal" value={form.damage_estimate_usd} placeholder="250" onInput={(e) => update({ damage_estimate_usd: (e.target as HTMLInputElement).value })} /></Field>}
+            {form.property_damage && <Field label="Estimated value (USD)" error={E('property_damage')}><input class="input" inputMode="decimal" value={form.damage_estimate_usd} placeholder="e.g. 250" onInput={(e) => update({ damage_estimate_usd: (e.target as HTMLInputElement).value })} /></Field>}
           </div>
           {!form.property_damage && E('property_damage') && <div class="field-error">{E('property_damage')}</div>}
         </div>}
@@ -291,7 +293,15 @@ export function IncidentEditor({ id }: { id: string }) {
         </div>
 
         {req.size > 0 && <p class="foot faint">Required for {cat?.name}: {[...req].map((r) => REQUIRED_LABELS[r] ?? r).join(', ')}.</p>}
-        <button class="link-btn" style={{ color: 'var(--text-3)', alignSelf: 'center' }} onClick={async () => { if (confirm('Delete this draft? This can’t be undone.')) { await discardDraft(form.id); navigate('/g', { replace: true }); } }}>Delete draft</button>
+        {/* A10: in-app confirm (window.confirm is suppressed in some browsers/PWAs, which made this do nothing). */}
+        <button class="link-btn" style={{ color: 'var(--text-3)', alignSelf: 'center' }} onClick={() => setConfirmDelete(true)} data-testid="draft-delete">Delete draft</button>
+        <Sheet open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete this draft?" testid="draft-delete-sheet"
+          footer={<>
+            <Button variant="danger" size="lg" block data-testid="draft-delete-confirm" onClick={async () => { setConfirmDelete(false); await discardDraft(form.id); toast('Draft deleted'); navigate('/g', { replace: true }); }}>Delete draft</Button>
+            <Button variant="ghost" block onClick={() => setConfirmDelete(false)}>Keep editing</Button>
+          </>}>
+          <p class="sub muted">“{form.title || 'Untitled incident'}” will be removed from this phone and from the server. This can’t be undone.</p>
+        </Sheet>
       </div>
       <div class="sticky-bar">
         <Button variant="primary" size="lg" block loading={busy} onClick={() => void submit()} data-testid="inc-submit">Submit report</Button>
@@ -317,7 +327,7 @@ function PersonCard({ p, onChange, onRemove }: { p: Person; onChange: (p: Person
       </div>
       <input class="input" placeholder="Name (or “Unknown”)" value={p.name} onInput={(e) => onChange({ ...p, name: (e.target as HTMLInputElement).value })} data-testid="person-name" />
       <input class="input" placeholder="Description: age, height, clothing" value={p.description} onInput={(e) => onChange({ ...p, description: (e.target as HTMLInputElement).value })} />
-      <input class="input" type="tel" placeholder="Phone (optional)" value={p.phone} onInput={(e) => onChange({ ...p, phone: (e.target as HTMLInputElement).value })} />
+      <input class="input" type="tel" inputMode="tel" placeholder="Phone (optional)" value={p.phone} onInput={(e) => onChange({ ...p, phone: phoneInput((e.target as HTMLInputElement).value) })} />
     </div>
   );
 }

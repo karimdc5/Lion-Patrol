@@ -19,7 +19,8 @@ const GREY = rgb(0.6, 0.64, 0.7);
 const LIGHT = rgb(0.18, 0.22, 0.3);
 const SOFT = rgb(0.08, 0.11, 0.18);
 
-export const formatCode = (c: string) => (c.length === 8 ? `${c.slice(0, 4)}-${c.slice(4)}` : c);
+export { formatCode } from '../domain/tour';
+import { formatCode } from '../domain/tour';
 export const qrUrl = (base: string, code: string) => `${base.replace(/\/?$/, '/')}q/${code}`;
 
 /** Draw a QR matrix as merged vector rectangles (crisp at any print size). */

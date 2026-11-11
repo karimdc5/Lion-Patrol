@@ -6,14 +6,19 @@ import { currentOrgId, memberId, getBackend } from '../../auth/session';
 import { listRecords, getRecord, putServerRows, scopeOf } from '../../data/repos/records';
 import { membersFor } from '../../data/repos/queries';
 import { fetchBilling, listInvoices, listSiteBilling, orgBilling, saveInvoice, saveOrgBilling, newInvoiceId, type Invoice, type OrgBilling } from '../../data/owner';
-import { buildInvoiceLines, invoiceNumber, invoiceDates, invoiceTotal, invoiceHours, monthLabel, usd, type InvoiceTimeRow, type InvoiceLine } from '../../domain/invoice';
+import { buildInvoiceLines, invoiceNumber, invoiceDates, invoiceTotal, invoiceHours, monthLabel, usd, missingBillingField, invoiceState, pacificDate, type InvoiceTimeRow, type InvoiceLine, type LeftOut } from '../../domain/invoice';
 import { PdfButton } from '../../ui/PdfButton';
 import { navigate } from '../../router';
+import { listClientEmails, sendInvoiceEmail, isNotInstalled, INVOICE_SEND_ERRORS, type ClientEmail } from '../../data/clientLogs';
+import { kickMessage } from './ClientLogs';
+import { fmtDateTime } from '../../lib/format';
 import type { Site } from '../../data/types';
 import type { Row as R } from '../../data/db';
 import type { SelectQuery } from '../../data/backend/types';
 
 const STATUS: Record<string, [string, string]> = { draft: ['Draft', 'pill-muted'], sent: ['Sent', 'pill-info'], paid: ['Paid', 'pill-success'], void: ['Void', 'pill-danger'] };
+// A2: payment state shown in the list (sent → Unpaid / Overdue by the Pacific date).
+const STATE: Record<string, [string, string]> = { draft: ['Draft', 'pill-muted'], unpaid: ['Sent · unpaid', 'pill-info'], overdue: ['Overdue', 'pill-danger'], paid: ['Paid', 'pill-success'], void: ['Void', 'pill-danger'] };
 const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
 const shiftMonth = (m: string, n: number) => { const [y, mo] = m.split('-').map(Number); const d = new Date(Date.UTC(y!, mo! - 1 + n, 1)); return d.toISOString().slice(0, 10); };
 
@@ -47,26 +52,32 @@ export function InvoicesList() {
   const d = data.data;
   const monthInv = (d?.invoices ?? []).filter((i) => i.period_month === month);
 
+  const [blocked, setBlocked] = useState<{ site: Site; leftOut: LeftOut[]; missing?: string } | null>(null);
   const createDraft = async (site: Site) => {
     if (!org) return;
     setBusy(site.id);
     try {
       await fetchMonth(org, month);
       const b = d?.billing.find((x) => x.site_id === site.id);
-      if (b?.hourly_rate == null) { toast('Set the site’s billing rate first (Sites → site → Billing).', 'error', 4000); return; }
+      // A2: name the exact missing field instead of a generic message.
+      const missing = missingBillingField(b);
+      if (missing) { setBlocked({ site, leftOut: [], missing }); return; }
       const pay = await orgBilling(org);
       const names = Object.fromEntries((await membersFor(org)).map((m) => [m.id, m.display_name]));
       const rows = await listRecords<InvoiceTimeRow & R>('patrol_time_entries', org);
-      const { lines, excluded } = buildInvoiceLines(rows, { siteId: site.id, month, rate: Number(b.hourly_rate), names, onlyConfirmed: true });
+      const { lines, leftOut } = buildInvoiceLines(rows, { siteId: site.id, month, rate: Number(b!.hourly_rate), names, onlyConfirmed: true });
+      // A2: never create a $0 invoice — show which hours were left out and why.
+      if (!lines.length || invoiceTotal(lines) <= 0) { setBlocked({ site, leftOut }); return; }
       const dates = invoiceDates(month, pay.terms_days);
       const inv = { id: newInvoiceId(), org_id: org, site_id: site.id, period_month: month, invoice_no: invoiceNumber(pay.invoice_prefix, month, site.code, site.name), status: 'draft',
-        issue_date: dates.issue, due_date: dates.due, client_name: b.client_name, bill_to: b.billing_address, rate: Number(b.hourly_rate), lines,
-        notes: excluded ? null : null, total: invoiceTotal(lines), sent_at: null, paid_at: null, created_by: memberId.value } as unknown as Invoice;
+        issue_date: dates.issue, due_date: dates.due, client_name: b!.client_name, bill_to: b!.billing_address, rate: Number(b!.hourly_rate), lines,
+        notes: null, total: invoiceTotal(lines), sent_at: null, paid_at: null, created_by: memberId.value } as unknown as Invoice;
       await saveInvoice(inv);
-      toast(excluded ? `Draft created. ${excluded} unconfirmed shift${excluded > 1 ? 's' : ''} left out — review them in Timesheets.` : 'Draft created', 'info', 4500);
+      toast(leftOut.length ? `Draft created. ${leftOut.length} shift${leftOut.length > 1 ? 's' : ''} left out (not confirmed or still open) — confirm them in Timesheets, then recreate.` : 'Draft created', 'info', 5000);
       navigate(`/a/invoices/${inv.id}`);
     } finally { setBusy(null); }
   };
+  const today = pacificDate(new Date().toISOString());
 
   return (
     <Screen tabbar>
@@ -87,18 +98,39 @@ export function InvoicesList() {
                 const b = d!.billing.find((x) => x.site_id === s.id);
                 return inv ? (
                   <Row key={s.id} testid="inv-row" icon="file" title={`${s.name}${s.active === false ? ' (inactive)' : ''}`} sub={`${inv.invoice_no} · ${usd(Number(inv.total))} · due ${inv.due_date}`}
-                    right={<span class={`pill ${STATUS[inv.status]![1]}`}>{STATUS[inv.status]![0]}</span>} chevron href={`/a/invoices/${inv.id}`} />
+                    right={<span class={`pill ${STATE[invoiceState(inv, today)]![1]}`} data-testid="inv-state">{STATE[invoiceState(inv, today)]![0]}</span>} chevron href={`/a/invoices/${inv.id}`} />
                 ) : (
-                  <Row key={s.id} testid="inv-row" icon="building" title={`${s.name}${s.active === false ? ' (inactive)' : ''}`} sub={b?.hourly_rate != null ? `${usd(Number(b.hourly_rate))}/hr · ${b.client_name ?? 'no client name'}` : 'No billing rate set'}
+                  <Row key={s.id} testid="inv-row" icon="building" title={`${s.name}${s.active === false ? ' (inactive)' : ''}`} sub={missingBillingField(b) ? `Missing: ${missingBillingField(b)} (Sites → ${s.name} → Billing)` : `${usd(Number(b!.hourly_rate))}/hr · ${b!.client_name ?? 'no client name'}`}
                     right={<Button loading={busy === s.id} onClick={() => void createDraft(s)} data-testid="inv-create">Create draft</Button>} />
                 );
               })}
             </List>
           ) : <Empty icon="building" title="No sites" />}
         </div>
-        <p class="foot faint">Hours come from guard-confirmed clock-ins (Timesheets). Invoices are never sent by Lion Patrol — download the PDF and send it yourself, then mark it Sent.</p>
+        <p class="foot faint">Line items = confirmed hours (guard- or owner-confirmed in Timesheets) × the site’s rate. Voided shifts never count. Invoices are not emailed yet (needs a server-side sender) — download the PDF, send it, then mark it Sent.</p>
       </div>
       <PaymentSheet open={payOpen} onClose={() => setPayOpen(false)} />
+      <Sheet open={!!blocked} onClose={() => setBlocked(null)} title={blocked?.missing ? 'Billing rate needed' : 'No confirmed hours to bill'} testid="inv-blocked"
+        footer={<>
+          {blocked?.missing ? <Button variant="primary" size="lg" block onClick={() => { const id = blocked.site.id; setBlocked(null); navigate(`/a/sites/${id}`); }} data-testid="inv-blocked-site">Open {blocked.site.name} → Billing</Button>
+            : <Button variant="primary" size="lg" block onClick={() => { setBlocked(null); navigate('/a/timesheets'); }} data-testid="inv-blocked-ts">Review in Timesheets</Button>}
+          <Button variant="ghost" block onClick={() => setBlocked(null)}>Close</Button>
+        </>}>
+        {blocked && (blocked.missing ? (
+          <p class="sub" data-testid="inv-missing-field">Missing field: <b>{blocked.missing}</b> on {blocked.site.name} (Sites → {blocked.site.name} → Billing). Invoices are confirmed hours × this rate.</p>
+        ) : (
+          <div class="stack">
+            <p class="sub">A {monthLabel(month)} invoice for {blocked.site.name} would be <b>$0.00</b>, so it was not created. {blocked.leftOut.length ? 'These shifts were left out:' : 'There are no clocked hours at this site in this month.'}</p>
+            {blocked.leftOut.length > 0 && <List>
+              {blocked.leftOut.map((l, i) => (
+                <Row key={l.id ?? i} testid="inv-leftout" icon="clock" title={`${l.date} · ${l.guard} · ${l.hours.toFixed(2)} h`}
+                  sub={l.reason === 'open' ? 'Still open (no clock-out) — set the clock-out time' : 'Not confirmed — confirm, edit or void it'} chevron
+                  onClick={l.id ? () => { setBlocked(null); navigate(`/a/timesheets/shift/${l.id}`); } : undefined} />
+              ))}
+            </List>}
+          </div>
+        ))}
+      </Sheet>
     </Screen>
   );
 }
@@ -109,10 +141,11 @@ function PaymentSheet({ open, onClose }: { open: boolean; onClose: () => void })
   useEffect(() => { if (open) void orgBilling(org).then(setB); }, [open, org]);
   return (
     <Sheet open={open} onClose={onClose} title="Payment details" testid="inv-payment-sheet"
-      footer={<Button variant="primary" size="lg" block data-testid="inv-payment-save" onClick={async () => { if (b) { await saveOrgBilling(b); toast('Payment details saved'); onClose(); } }}>Save</Button>}>
+      footer={<Button variant="primary" size="lg" block data-testid="inv-payment-save" onClick={async () => { if (b) { if (b.pay_url && !/^https:\/\//.test(b.pay_url.trim())) { toast('The pay link must start with https://', 'error'); return; } await saveOrgBilling(b); toast('Payment details saved'); onClose(); } }}>Save</Button>}>
       {b && (
         <div class="stack">
           <Field label="Payment line"><input class="input" value={b.payment_note} onInput={(e) => setB({ ...b, payment_note: (e.target as HTMLInputElement).value })} data-testid="inv-pay-note" /></Field>
+          <Field label="Online pay link (optional)" hint="Must start with https://. Shown on sent invoices in the client portal and invoice emails. Leave blank if you don't take online payments — clients are told it isn't set up." error={b.pay_url && !/^https:\/\//.test(b.pay_url) ? 'Must start with https://' : null}><input class="input" type="url" value={b.pay_url ?? ''} onInput={(e) => setB({ ...b, pay_url: (e.target as HTMLInputElement).value })} placeholder="e.g. https://pay.example.com/lion" data-testid="inv-pay-url" /></Field>
           <Field label="Payment details (printed on invoices)" hint="e.g. account name and the routing/account numbers you share with clients. Stored only in your org settings."><textarea class="input" rows={3} value={b.payment_details} onInput={(e) => setB({ ...b, payment_details: (e.target as HTMLTextAreaElement).value })} data-testid="inv-pay-details" /></Field>
           <div class="grid-2">
             <Field label="Terms (days)"><input class="input" inputMode="numeric" value={String(b.terms_days)} onInput={(e) => setB({ ...b, terms_days: Math.max(0, Math.min(120, Number((e.target as HTMLInputElement).value) || 0)) })} /></Field>
@@ -138,7 +171,7 @@ export function InvoiceEditor({ id }: { id: string }) {
     <Screen>
       <TopBar title={inv.invoice_no} backTo="/a/invoices" right={<SyncPill />} />
       <div class="screen-body stack-lg" style={{ paddingBottom: 120 }} data-testid="invoice-editor">
-        <div class="row" style={{ gap: 8 }}><span class={`pill ${STATUS[inv.status]![1]}`} data-testid="inv-status">{STATUS[inv.status]![0]}</span><span class="muted sub">{site.data?.name} · {monthLabel(inv.period_month)}</span></div>
+        <div class="row" style={{ gap: 8 }}><span class={`pill ${STATUS[inv.status]![1]}`} data-testid="inv-status">{STATUS[inv.status]![0]}</span>{invoiceState(inv, pacificDate(new Date().toISOString())) === 'overdue' && <span class="pill pill-danger" data-testid="inv-overdue">Overdue (due {inv.due_date})</span>}<span class="muted sub">{site.data?.name} · {monthLabel(inv.period_month)}</span></div>
         <div class="card stack">
           <Field label="Client"><input class="input" value={inv.client_name ?? ''} disabled={!draft} onInput={(e) => up({ client_name: (e.target as HTMLInputElement).value })} /></Field>
           <Field label="Bill to (address)"><input class="input" value={inv.bill_to ?? ''} disabled={!draft} onInput={(e) => up({ bill_to: (e.target as HTMLInputElement).value })} /></Field>
@@ -150,6 +183,7 @@ export function InvoiceEditor({ id }: { id: string }) {
         <div>
           <SectionLabel>Line items · {invoiceHours(inv.lines).toFixed(2)} h</SectionLabel>
           <div class="card stack" style={{ gap: 10 }}>
+            {inv.lines.length > 0 && <div class="inv-line foot muted" aria-hidden="true"><div class="grow">Date · guard</div><span style={{ minWidth: 64 }}>Hours</span><span style={{ minWidth: 64 }}>Rate</span><span style={{ minWidth: 76, textAlign: 'right' }}>Amount</span>{draft && <span style={{ width: 40 }} />}</div>}
             {inv.lines.length ? inv.lines.map((l, i) => (
               <div key={i} class="inv-line" data-testid="inv-line">
                 <div class="grow" style={{ minWidth: 0 }}><b>{l.date}</b><div class="foot muted ellipsis">{l.guard}</div></div>
@@ -167,12 +201,41 @@ export function InvoiceEditor({ id }: { id: string }) {
         <PdfButton block label="Download PDF" testid="inv-pdf" make={() => import('../../pdf').then((m) => m.invoicePdf(inv))} />
         <div class="card stack">
           <div class="headline">Status</div>
-          <div class="foot muted">Lion Patrol never emails invoices. Send the PDF yourself, then mark it here.</div>
+          <InvoiceEmail inv={inv} />
           <div class="row-between"><span>Sent to client</span><Toggle label="Sent to client" checked={inv.status === 'sent' || inv.status === 'paid'} onChange={(v) => void persist({ status: v ? 'sent' : 'draft', sent_at: v ? new Date().toISOString() : null, paid_at: null }, v ? 'Marked sent' : 'Back to draft')} /></div>
           <div class="row-between"><span>Paid</span><Toggle label="Paid" checked={inv.status === 'paid'} onChange={(v) => void persist({ status: v ? 'paid' : 'sent', paid_at: v ? new Date().toISOString() : null }, v ? 'Marked paid' : 'Marked unpaid')} /></div>
         </div>
       </div>
       {draft && <div class="sticky-bar"><Button variant="primary" size="lg" block onClick={() => void persist()} data-testid="inv-save">Save draft</Button></div>}
     </Screen>
+  );
+}
+
+const EMAIL_STATUS: Record<string, string> = {
+  queued: 'Queued', sending: 'Sending…', sent: 'Emailed', not_configured: 'Not sent — email sending not configured', failed: 'Send failed',
+  dry_run: 'Dry run — not emailed', no_recipients: 'Not sent — no client email', cancelled: 'Cancelled',
+};
+
+/** Pass 9 A12: invoice "Send to client" queues a server-side email; the state shown is what the server recorded. */
+function InvoiceEmail({ inv }: { inv: Invoice }) {
+  const [tick, setTick] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const emails = useData(async () => {
+    try { return (await listClientEmails(inv.org_id)).filter((e: ClientEmail) => e.kind === 'invoice' && e.ref_id === inv.id); }
+    catch (e) { return isNotInstalled(e) ? null : []; }
+  }, [inv.id, tick]);
+  const last = emails.data?.[0];
+  if (emails.data === null) return <div class="foot muted" data-testid="inv-email-not-installed">Emailing invoices needs the server update (pass 9 migration). Until then, send the PDF yourself, then mark it here.</div>;
+  return (
+    <div class="stack" style={{ gap: 6 }}>
+      <div class="foot muted">Send to client emails this invoice from contact@lionofseattle.com through the server (needs 'Invoice sent' on under Sites → Client email). Or send the PDF yourself and mark it below.</div>
+      {last && <div class="foot" data-testid="inv-email-status">{EMAIL_STATUS[last.status] ?? last.status} · {fmtDateTime(last.sent_at ?? last.created_at)}{last.error && last.status !== 'sent' ? ` — ${last.error}` : ''}</div>}
+      <Button icon="mail" loading={busy} disabled={inv.status === 'void' || !(inv.total > 0)} data-testid="inv-send-client" onClick={async () => {
+        setBusy(true);
+        try { const k = kickMessage(await sendInvoiceEmail(inv.id)); toast(k.text, k.kind, 4000); }
+        catch (e) { const m = (e as Error).message; toast(INVOICE_SEND_ERRORS[m] ?? m, 'error', 5000); }
+        finally { setBusy(false); setTick((t) => t + 1); }
+      }}>{last ? 'Send to client again' : 'Send to client'}</Button>
+    </div>
   );
 }

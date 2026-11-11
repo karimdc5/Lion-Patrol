@@ -9,6 +9,7 @@ import { sanitizeHtml } from '../../lib/sanitize';
 import { GuardRight } from './common';
 import { BoloPinned } from './Bolo';
 import { siteCodes, hasAcked, acknowledgePostOrders } from '../../data/postOrders';
+import { MaskedCodes } from '../../ui/MaskedCodes';
 import { navigate, query } from '../../router';
 
 /** Post orders for a site: rules, codes (guards only), contacts. Acknowledged once, on the first shift there (item 24). */
@@ -39,8 +40,10 @@ export function PostOrders({ siteId }: { siteId: string }) {
               <>
                 <SectionLabel>Codes & guard notes</SectionLabel>
                 <div class="card stack" data-testid="po-codes">
-                  {codes.data!.codes && <pre class="po-codes">{codes.data!.codes}</pre>}
-                  {codes.data!.guard_notes && <div class="sub" style={{ whiteSpace: 'pre-wrap' }}>{codes.data!.guard_notes}</div>}
+                  <MaskedCodes siteId={s.id}>{() => <>
+                    {codes.data!.codes && <pre class="po-codes" data-testid="po-codes-text">{codes.data!.codes}</pre>}
+                    {codes.data!.guard_notes && <div class="sub" style={{ whiteSpace: 'pre-wrap' }}>{codes.data!.guard_notes}</div>}
+                  </>}</MaskedCodes>
                   <div class="foot faint">Guards only. Never share codes with anyone off the team.</div>
                 </div>
               </>

@@ -455,6 +455,22 @@ do $$ begin
   if (select count(*) from public.patrol_bolos) <> 2 then raise exception 'RLS FAIL: supervisor should see 2 BOLOs'; end if;
   update public.patrol_bolos set status = 'archived' where id = 'a0000000-0000-4000-8000-0000000000b2';
   if (select status from public.patrol_bolos where id = 'a0000000-0000-4000-8000-0000000000b2') <> 'archived' then raise exception 'RLS FAIL: supervisor could not archive BOLO'; end if;
+  -- pass 9 B13: staff may add a photo to a BOLO someone else posted
+  insert into public.patrol_attachments (org_id, member_id, parent_type, parent_id, kind, storage_path, mime)
+  values ('10000000-0000-4000-8000-00000000000a', public.patrol_member_id_in('10000000-0000-4000-8000-00000000000a'), 'bolo', 'a0000000-0000-4000-8000-0000000000b2', 'image',
+          '10000000-0000-4000-8000-00000000000a/bolo/b2/photo.jpg', 'image/jpeg');
+end $$;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a2","role":"authenticated"}', true);
+do $$ declare ok boolean := false; begin
+  -- …but a guard who did not post the BOLO still cannot
+  begin
+    insert into public.patrol_attachments (org_id, member_id, parent_type, parent_id, kind, storage_path, mime)
+    values ('10000000-0000-4000-8000-00000000000a', public.patrol_member_id_in('10000000-0000-4000-8000-00000000000a'), 'bolo', 'a0000000-0000-4000-8000-0000000000b2', 'image',
+            '10000000-0000-4000-8000-00000000000a/bolo/b2/x.jpg', 'image/jpeg');
+  exception when insufficient_privilege or foreign_key_violation then ok := true; end;
+  if not ok then raise exception 'RLS FAIL: non-author guard attached a photo to a BOLO'; end if;
 end $$;
 reset role;
 set local role anon;
@@ -467,6 +483,20 @@ do $$ declare p jsonb; begin
   if (p -> 'incidents' -> 0) ? 'review_notes' then raise exception 'RLS FAIL: portal leaks review notes'; end if;
   if public.patrol_get_portal('nope') is not null then raise exception 'RLS FAIL: bad portal token'; end if;
 end $$;
+-- pass 9 chunk 2: portal proof + client request thread
+do $$ declare p jsonb; begin
+  p := public.patrol_get_portal((select v from rls_tokens where k = 'portal'));
+  if not (p ? 'proof') or (p -> 'proof' ->> 'checkpoint_count')::int <> 2 then raise exception 'RLS FAIL: portal proof (%)', p -> 'proof'; end if;
+  -- guard A1 is clocked in at A1, but the site has no pin: never claimed "on site"
+  if p -> 'proof' -> 'live' ->> 'on_site' <> 'unverified' then raise exception 'RLS FAIL: on_site claim without GPS (%)', p -> 'proof' -> 'live'; end if;
+  if (p -> 'proof') ? 'guard' or (p -> 'proof' -> 'live') ? 'guard' then raise exception 'RLS FAIL: portal proof leaks guard name'; end if;
+  perform public.patrol_portal_request((select v from rls_tokens where k = 'portal'), 'Please check the rear gate tonight', 'Front desk');
+  begin
+    perform public.patrol_client_email_claim(5);
+    raise exception 'RLS FAIL: anon can claim client emails';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
@@ -476,6 +506,13 @@ set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 do $$ begin
   if public.patrol_get_portal((select v from rls_tokens where k = 'portal')) is not null then raise exception 'RLS FAIL: revoked portal link still works'; end if;
+end $$;
+do $$ begin
+  begin
+    perform public.patrol_portal_request((select v from rls_tokens where k = 'portal'), 'After revoke', null);
+    raise exception 'RLS FAIL: revoked link can still post requests';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 reset role;
 
@@ -489,7 +526,8 @@ grant all on rls_p7 to authenticated, anon;
 do $$
 declare u text; expected int; n int;
 begin
-  foreach u in array array['a1:1','a3:0','a4:0','a5:0','b1:0','b2:0','c1:0'] loop
+  -- a1 sees the no_show above + the client_request task from the pass 9 portal request; nobody else sees either
+  foreach u in array array['a1:2','a3:0','a4:0','a5:0','b1:0','b2:0','c1:0'] loop
     perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-4000-8000-0000000000%s","role":"authenticated"}', split_part(u, ':', 1)), true);
     execute 'set local role authenticated';
     select count(*) into n from public.patrol_owner_alerts;
@@ -654,6 +692,90 @@ begin
   select count(*) into n2 from public.patrol_owner_alerts where kind = 'guard_card';
   if n1 <> 1 or n2 <> 1 then raise exception 'RLS FAIL: cron dedupe (% then %)', n1, n2; end if;
   if has_function_privilege('authenticated', 'public.patrol_cron_owner_alerts()', 'execute') then raise exception 'RLS FAIL: cron fn callable'; end if;
+end $$;
+
+-- ===================================================================== pass 9 chunk 2: client requests, client logs, outbox
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+do $$ declare n int; begin
+  if (select count(*) from public.patrol_client_requests where body = 'Please check the rear gate tonight') <> 1 then raise exception 'RLS FAIL: owner sees portal request'; end if;
+  if (select count(*) from public.patrol_owner_alerts where kind = 'client_request') <> 1 then raise exception 'RLS FAIL: request did not land as owner task'; end if;
+  perform public.patrol_reply_client_request((select id from public.patrol_client_requests limit 1), 'On it', 'in_progress');
+  begin
+    perform public.patrol_client_email_result(gen_random_uuid(), 'sent');
+    raise exception 'RLS FAIL: owner can mark an email sent';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a4","role":"authenticated"}', true);
+do $$ declare p jsonb; begin
+  p := public.patrol_client_site_proof('30000000-0000-4000-8000-0000000000a1');
+  if p is null or jsonb_array_length(p -> 'requests') <> 1 or p -> 'requests' -> 0 ->> 'reply' <> 'On it' then raise exception 'RLS FAIL: client proof / thread (%)', p -> 'requests'; end if;
+  if public.patrol_client_site_proof('30000000-0000-4000-8000-0000000000a2') is not null then raise exception 'RLS FAIL: client reads other site proof'; end if;
+  perform public.patrol_client_request('30000000-0000-4000-8000-0000000000a1', 'Client login request');
+  if (select count(*) from public.patrol_client_reports) <> 0 or (select count(*) from public.patrol_client_emails) <> 0 then raise exception 'RLS FAIL: client reads client logs'; end if;
+end $$;
+reset role;
+-- nightly report: two guards at A2, one email only after the LAST clock-out (as postgres: triggers run)
+-- (the current night: a past night is already past its 8 AM PT fallback and would be ready at once)
+do $$ declare v_night date := public.patrol_night_of(now()); v_start timestamptz; r public.patrol_client_reports; n int; begin
+  v_start := public.patrol_night_start(v_night);
+  perform set_config('rls.night', v_night::text, true);
+  -- drop a3's open clock-in from the geofence test (one open entry per guard; deleting fires no report trigger)
+  delete from public.patrol_time_entries where clock_out_at is null and member_id in ('20000000-0000-4000-8000-0000000000a3','20000000-0000-4000-8000-0000000000a5');
+  insert into public.patrol_time_entries (id, org_id, site_id, member_id, clock_in_at, clock_out_at, gps_notice_accepted_at) values
+   ('c1000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a3', v_start + interval '1 minute', null, now() - interval '5 days'),
+   ('c1000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a5', v_start + interval '2 minutes', null, now() - interval '5 days');
+  select * into r from public.patrol_client_reports where site_id = '30000000-0000-4000-8000-0000000000a2' and night = v_night;
+  if r.status <> 'waiting' then raise exception 'RLS FAIL: report should wait (%)', r.status; end if;
+  update public.patrol_time_entries set clock_out_at = v_start + interval '3 minutes' where id = 'c1000000-0000-4000-8000-000000000001';
+  select * into r from public.patrol_client_reports where id = r.id;
+  if r.status <> 'waiting' then raise exception 'RLS FAIL: ready before last guard out (%)', r.status; end if;
+  update public.patrol_time_entries set clock_out_at = v_start + interval '4 minutes' where id = 'c1000000-0000-4000-8000-000000000002';
+  select * into r from public.patrol_client_reports where id = r.id;
+  if r.status <> 'ready' or r.ready_reason <> 'last_clock_out' then raise exception 'RLS FAIL: not ready after last clock-out (% %)', r.status, r.ready_reason; end if;
+  select count(*) into n from public.patrol_client_emails where ref_id = r.id;
+  if n <> 1 or (select kind from public.patrol_client_emails where ref_id = r.id) <> 'owner_ping' then raise exception 'RLS FAIL: expected exactly one owner ping, no client email (%)', n; end if;
+  -- fallback: a guard who never clocked out; the cron marks the night ready with a note
+  insert into public.patrol_time_entries (id, org_id, site_id, member_id, clock_in_at, gps_notice_accepted_at) values
+   ('c1000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-00000000000a','30000000-0000-4000-8000-0000000000a2','20000000-0000-4000-8000-0000000000a5', public.patrol_night_start(current_date - 2) + interval '14 hours', now() - interval '3 days');
+  perform public.patrol_cron_client_reports();
+  select * into r from public.patrol_client_reports where site_id = '30000000-0000-4000-8000-0000000000a2' and night = current_date - 2;
+  if r.status <> 'ready' or r.ready_reason <> 'fallback_8am' or r.note not like 'Super A had not clocked out%' then raise exception 'RLS FAIL: 8 AM fallback (% % %)', r.status, r.ready_reason, r.note; end if;
+  update public.patrol_time_entries set clock_out_at = clock_in_at + interval '1 hour' where id = 'c1000000-0000-4000-8000-000000000003';
+end $$;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+do $$ declare r public.patrol_client_reports; v_email uuid; it jsonb; begin
+  select * into r from public.patrol_client_reports where site_id = '30000000-0000-4000-8000-0000000000a2' and night = current_setting('rls.night')::date;
+  it := public.patrol_client_report_items(r.id);
+  if jsonb_array_length(it -> 'shifts') <> 2 then raise exception 'RLS FAIL: report items (%)', it -> 'shifts'; end if;
+  begin
+    insert into public.patrol_client_emails (org_id, kind, dedupe_key) values ('10000000-0000-4000-8000-00000000000a', 'invoice', 'fake');
+    raise exception 'RLS FAIL: owner inserted outbox row directly';
+  exception when insufficient_privilege then null;
+  end;
+  v_email := public.patrol_client_report_send(r.id);
+  if (select status from public.patrol_client_reports where id = r.id) <> 'queued' then raise exception 'RLS FAIL: send now did not queue'; end if;
+  perform public.patrol_client_email_unavailable(v_email, 'Email function not deployed');
+  if (select status from public.patrol_client_reports where id = r.id) <> 'not_configured' then raise exception 'RLS FAIL: honest not_configured state'; end if;
+end $$;
+reset role;
+-- service_role (edge function) finishes a send; only then is it 'sent'
+do $$ declare r public.patrol_client_reports; v_email uuid; c jsonb; begin
+  select * into r from public.patrol_client_reports where site_id = '30000000-0000-4000-8000-0000000000a2' and night = current_setting('rls.night')::date;
+  set local role authenticated;
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+  v_email := public.patrol_client_report_send(r.id);
+  reset role;
+  set local role service_role;
+  c := public.patrol_client_email_claim(50);
+  if not exists (select 1 from jsonb_array_elements(c) x where (x ->> 'id')::uuid = v_email) then raise exception 'RLS FAIL: claim missed queued email'; end if;
+  perform public.patrol_client_email_result(v_email, 'dry_run', 'CLIENT_MAIL_MODE is not live', null, '{}');
+  reset role;
+  if (select status from public.patrol_client_reports where id = r.id) <> 'dry_run' then raise exception 'RLS FAIL: dry run state'; end if;
 end $$;
 
 -- ===================================================================== function privileges (hardening)

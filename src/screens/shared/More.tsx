@@ -5,6 +5,7 @@ import { navigate } from '../../router';
 import { roleLabel } from '../../lib/format';
 import { isStandalone } from '../../lib/platform';
 import { EnrollPinSheet } from '../public/EnrollPin';
+import { requestAdmin } from '../../ui/AdminGate';
 import { useData } from '../../ui/useData';
 import * as vault from '../../auth/vault';
 import { queue } from '../../data/sync/status';
@@ -14,6 +15,8 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
   const [enroll, setEnroll] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
   const [nameOpen, setNameOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [msgOpen, setMsgOpen] = useState(false);
   const enrolled = useData(() => vault.isEnrolled(identity.value?.userId ?? ''), [identity.value?.userId, enroll]);
   const staff = isStaff.value;
   const pending = queue.value.pending + queue.value.inflight + queue.value.dead;
@@ -30,6 +33,16 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
           {m && <Button variant="ghost" onClick={() => setNameOpen(true)} data-testid="edit-name">Edit</Button>}
         </div>
 
+        {base === '/g' && (
+          <>
+            <SectionLabel>Me</SectionLabel>
+            <List>
+              <Row icon="calendar" title="Schedule" sub="Your upcoming shifts" chevron href="/g/more/schedule" testid="more-my-schedule" />
+              <Row icon="user" title="Profile & settings" sub="Display name and quick-unlock PIN" chevron onClick={() => setProfileOpen(true)} testid="more-profile" />
+              <Row icon="mail" title="Messages" sub="In-app messaging needs the server — not available yet. Call or text your supervisor." onClick={() => setMsgOpen(true)} testid="more-messages" />
+            </List>
+          </>
+        )}
         {base === '/a' && (
           <>
             <SectionLabel>Manage</SectionLabel>
@@ -41,6 +54,7 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
               {isAdmin.value && <Row icon="clock" title="Timesheets" sub="Weekly hours, overtime, Gusto export" chevron href="/a/timesheets" testid="more-timesheets" />}
               {isAdmin.value && <Row icon="key" title="Guard cards" sub="WA licenses, expiry reminders, onboarding import" chevron href="/a/guard-cards" testid="more-guard-cards" />}
               {isAdmin.value && <Row icon="file" title="Invoices" sub="Monthly client invoices from clocked hours" chevron href="/a/invoices" testid="more-invoices" />}
+              {isAdmin.value && <Row icon="mail" title="Client logs" sub="Nightly combined client reports — preview, OK, send" chevron href="/a/client-logs" testid="more-client-logs" />}
               <Row icon="settings" title="Settings & categories" chevron href="/a/settings" testid="more-settings" />
             </List>
           </>
@@ -51,9 +65,9 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
             <List>
               <Row icon={uiMode.value === 'admin' ? 'shield' : 'layers'} iconBg="var(--gold-soft)" iconColor="var(--gold)"
                 title={uiMode.value === 'admin' ? 'Switch to Guard mode' : 'Switch to Admin mode'}
-                sub={uiMode.value === 'admin' ? 'Clock in, patrol and report from your post' : 'Dashboard, sites, people and settings'}
+                sub={uiMode.value === 'admin' ? 'Clock in, patrol and report from your post' : 'Dashboard, sites, people and settings · needs this device’s PIN'}
                 chevron testid="mode-switch"
-                onClick={async () => { const next = uiMode.value === 'admin' ? 'guard' : 'admin'; navigate(next === 'admin' ? '/a' : '/g', { replace: true }); await setUiMode(next); }} />
+                onClick={async () => { if (uiMode.value !== 'admin') { requestAdmin('/a'); return; } navigate('/g', { replace: true }); await setUiMode('guard'); }} />
             </List>
           </>
         )}
@@ -85,6 +99,16 @@ export function MoreScreen({ base }: { base: '/g' | '/a' | '/c' }) {
       </div>
       <EnrollPinSheet open={enroll} onClose={() => setEnroll(false)} />
       {nameOpen && <NameSheet open onClose={() => setNameOpen(false)} />}
+      <Sheet open={profileOpen} onClose={() => setProfileOpen(false)} title="Profile & settings" testid="profile-sheet">
+        <List>
+          <Row icon="user" title="Display name" sub={m?.display_name ?? '—'} chevron onClick={() => { setProfileOpen(false); setNameOpen(true); }} testid="profile-name" />
+          <Row icon="key" title={enrolled.data ? 'Change PIN' : 'Set a PIN'} sub={enrolled.data ? 'Remembered on this device' : 'Quick unlock on a shared phone'} chevron onClick={() => { setProfileOpen(false); setEnroll(true); }} testid="profile-pin" />
+        </List>
+        <p class="foot muted" style={{ marginTop: 10 }}>Email {identity.value?.email ?? '—'} · role {roleLabel(role.value ?? '')}. Pay, phone and guard card are kept by your employer.</p>
+      </Sheet>
+      <Sheet open={msgOpen} onClose={() => setMsgOpen(false)} title="Messages" testid="messages-sheet">
+        <p class="sub muted" data-testid="messages-honest">In-app messaging isn’t available yet — it needs the Lion Patrol server to deliver messages between phones, and that isn’t set up. Nothing you type here would be sent, so there is no message box. For anything urgent call or text your supervisor; in an emergency use SOS or call 911.</p>
+      </Sheet>
       <Sheet open={confirmOut} onClose={() => setConfirmOut(false)} title="Sign out?" testid="signout-sheet"
         footer={<>
           <Button variant="danger" size="lg" block onClick={async () => { setConfirmOut(false); await signOut({ forget: true }); toast('Signed out'); navigate('/', { replace: true }); }} data-testid="signout-confirm">Sign out and forget this device</Button>

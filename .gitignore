@@ -7,3 +7,6 @@ blob-report/
 .scratch/
 *.local
 .DS_Store
+
+# Internal, local-only docs (briefs, status logs, backend setup, feedback) — never commit
+docs/

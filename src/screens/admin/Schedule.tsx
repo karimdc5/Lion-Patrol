@@ -96,7 +96,7 @@ function ShiftSheet({ shift, onClose, members, sites, isNew }: { shift: Shift | 
           <Field label="End" hint={new Date(cur.ends_at).getDate() !== new Date(cur.starts_at).getDate() ? 'Ends next day' : undefined}><input class="input" type="time" value={en.time} onInput={(e) => setTimes(st.date, st.time, (e.target as HTMLInputElement).value)} /></Field>
         </div>
         {isNew && <Field label="Repeat weekly"><select class="input" value={String(repeat)} onChange={(e) => setRepeat(Number((e.target as HTMLSelectElement).value))} data-testid="shift-repeat"><option value="0">Don’t repeat</option><option value="1">+1 week</option><option value="3">+3 weeks</option><option value="7">+7 weeks</option></select></Field>}
-        <Field label="Notes"><input class="input" value={cur.notes ?? ''} onInput={(e) => setS({ ...cur, notes: (e.target as HTMLInputElement).value })} placeholder="Relieve Tasha at the main gate" /></Field>
+        <Field label="Notes"><input class="input" value={cur.notes ?? ''} onInput={(e) => setS({ ...cur, notes: (e.target as HTMLInputElement).value })} placeholder="e.g. relieve the guard at the main gate" /></Field>
       </div>
     </Sheet>
   );

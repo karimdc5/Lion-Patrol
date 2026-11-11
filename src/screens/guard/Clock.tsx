@@ -8,7 +8,7 @@ import { hasConsent, acceptConsent, clockIn, clockOut, onShift, openDar, reportG
 import { showPdf } from '../../ui/PdfReady';
 import { hasAcked } from '../../data/postOrders';
 import { listByParent } from '../../data/repos/records';
-import { getFix, distanceM, geofenceCheck, type Fix } from '../../lib/geo';
+import { getFix, distanceM, gpsStatusFor, fmtDistance, type Fix } from '../../lib/geo';
 import { navigate } from '../../router';
 import { fmtTime, fmtHours } from '../../lib/format';
 
@@ -25,7 +25,7 @@ export function GpsNotice({ open, onAccept, onDecline }: { open: boolean; onAcce
         <div class="row" style={{ alignItems: 'flex-start' }}><span class="list-icon" style={{ background: 'var(--success-soft)', color: 'var(--success)' }}><Icon name="clock" /></span>
           <p class="sub">Tracking <b>stops when you clock out</b>. Nothing is recorded off duty.</p></div>
         <div class="row" style={{ alignItems: 'flex-start' }}><span class="list-icon" style={{ background: 'var(--raised-2)' }}><Icon name="smartphone" /></span>
-          <p class="sub muted">iPhone pauses web apps in the background, so location updates only while Lion Patrol is open on screen.</p></div>
+          <p class="sub muted">iPhone pauses web apps when the screen is locked or another app is open, so location updates <b>only while Lion Patrol is open on screen</b>. Open the app at each checkpoint and before clocking out.</p></div>
       </div>
     </Sheet>
   );
@@ -48,35 +48,51 @@ export function ClockScreen() {
   }, [sites.data, myShift?.site_id]);
   useEffect(() => { void hasConsent('gps_notice').then((ok) => { if (ok) void getFix(6000).then(setFix); }).catch(() => undefined); }, []);
 
+  // Pass 9 A1: when a staff member is outside the fence (or has no GPS), they may override with a reason.
+  const [override, setOverride] = useState<{ fix: Fix | null; status: 'outside' | 'unavailable'; distance: number | null; acceptedAt: string } | null>(null);
+  const [reason, setReason] = useState('');
+  const [blocked, setBlocked] = useState<string | null>(null);
+
+  const finish = async (acceptedAt: string, here: Fix | null, gps: Parameters<typeof clockIn>[4]) => {
+    if (!selected) return;
+    await clockIn(selected, myShift?.site_id === selected ? myShift.id : null, acceptedAt, here, gps);
+    toast(gps?.overrideReason ? 'Clocked in with owner override (logged). Stay safe.' : 'Clocked in. Stay safe.');
+    // Item 24: first shift at this site → read and acknowledge the post orders first.
+    navigate((await hasAcked(selected)) ? '/g' : `/g/post-orders/${selected}?first=1`, { replace: true });
+  };
+
   const doClockIn = async (acceptedAt: string) => {
     if (!selected) return;
     setBusy(true);
-    setBlocked(null);
+    setBlocked(null); setOverride(null);
     try {
-      // Item 18: guards can only clock in at the site (owners/supervisors are exempt).
+      // Item 18 + pass 9 A1: everyone must be at the site with a GPS fix. Never silently proceed.
       const here = await getFix(8000);
       const site = sites.data?.find((s) => s.id === selected);
-      if (role.value === 'guard' && site) {
-        const g = geofenceCheck(site, here);
-        if (!g.ok) {
-          setBlocked(g.distance == null
-            ? 'Turn on location for Lion Patrol. You can only clock in when your phone shows you’re at the site.'
-            : `You’re ${g.distance < 1000 ? `${Math.round(g.distance)} m` : `${(g.distance / 1609).toFixed(1)} mi`} from ${site.name}. Clock in when you’re at the site (within ${site.geofence_m} m).`);
-          void reportGeofenceBlock(site.id, here);
-          return;
-        }
+      const g = site ? gpsStatusFor(site, here) : { status: here ? 'ok' as const : 'unavailable' as const, distance: null };
+      if (site && site.lat != null && site.lng != null && g.status !== 'ok') {
+        const why = g.status === 'unavailable'
+          ? `GPS unavailable. Lion Patrol could not get your location, so it can’t confirm you’re at ${site.name}. Turn on Location for this browser/app and try again.`
+          : `You’re ${fmtDistance(g.distance ?? 0)} from ${site.name}. Clock in when you’re at the site (within ${site.geofence_m} m).`;
+        setBlocked(why);
+        if (isStaff.value) setOverride({ fix: here, status: g.status as 'outside' | 'unavailable', distance: g.distance, acceptedAt });
+        else void reportGeofenceBlock(site.id, here);
+        return;
       }
-      await clockIn(selected, myShift?.site_id === selected ? myShift.id : null, acceptedAt, here);
-      toast('Clocked in. Stay safe.');
-      // Item 24: first shift at this site → read and acknowledge the post orders first.
-      navigate((await hasAcked(selected)) ? '/g' : `/g/post-orders/${selected}?first=1`, { replace: true });
+      await finish(acceptedAt, here, { status: g.status, distance: g.distance });
     } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
+  };
+  const doOverride = async () => {
+    if (!override) return;
+    if (reason.trim().length < 3) { toast('Write the reason for the override (it is logged).', 'error'); return; }
+    setBusy(true);
+    try { await finish(override.acceptedAt, override.fix, { status: override.status, distance: override.distance, overrideReason: reason }); }
+    catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
   };
   const start = async () => {
     if (!(await hasConsent('gps_notice'))) { setNotice(true); return; }
     await doClockIn(new Date().toISOString());
   };
-  const [blocked, setBlocked] = useState<string | null>(null);
 
   return (
     <Screen>
@@ -92,7 +108,7 @@ export function ClockScreen() {
                   <span class="list-icon" style={{ background: 'var(--gold-soft)', color: 'var(--gold)', width: 44, height: 44, borderRadius: 12 }}><Icon name={s.kind === 'apartment' ? 'building' : 'store'} /></span>
                   <span class="grow">
                     <span style={{ display: 'block', fontWeight: 600 }}>{s.name}</span>
-                    <span class="foot muted">{[s.address, s.city].filter(Boolean).join(', ')}{dist != null ? ` · ${dist < 1000 ? `${Math.round(dist)} m` : `${(dist / 1609).toFixed(1)} mi`} away` : ''}</span>
+                    <span class="foot muted">{[s.address, s.city].filter(Boolean).join(', ')}{dist != null ? ` · ${fmtDistance(dist)} away` : ''}</span>
                     {myShift?.site_id === s.id && <span class="pill pill-gold" style={{ marginTop: 6 }}>Scheduled {fmtTime(myShift.starts_at)}–{fmtTime(myShift.ends_at)}</span>}
                   </span>
                   {selected === s.id && <Icon name="check-circle" class="gold" size={24} />}
@@ -104,6 +120,15 @@ export function ClockScreen() {
       </div>
       <div class="sticky-bar">
         {blocked && <div class="form-error" role="alert" data-testid="geofence-blocked" style={{ marginBottom: 10 }}>{blocked}</div>}
+        {override && (
+          <div class="card stack" data-testid="geofence-override" style={{ marginBottom: 10 }}>
+            <div class="foot muted">Owner override: clock in anyway. Your reason, the {override.status === 'unavailable' ? 'missing GPS' : 'distance'} and your name are logged in Activity and on the timesheet. Live will not show you as on site.</div>
+            <Field label="Reason for override (required, logged)">
+              <input class="input" value={reason} onInput={(e) => setReason((e.target as HTMLInputElement).value)} placeholder="e.g. desktop at the office, phone GPS off" data-testid="override-reason" />
+            </Field>
+            <Button variant="outline" block loading={busy} disabled={reason.trim().length < 3} onClick={() => void doOverride()} data-testid="override-clock-in">Override and clock in (logged)</Button>
+          </div>
+        )}
         {blocked && <Button variant="ghost" block onClick={() => navigate('/g', { replace: true })} data-testid="clock-back-home" style={{ marginBottom: 8 }}>Back to Home</Button>}
         <Button variant="primary" size="lg" block disabled={!selected} loading={busy} onClick={() => void start()} data-testid="clock-in-btn">Clock in</Button>
       </div>
@@ -133,9 +158,15 @@ export function ClockOutSheet({ open, onClose }: { open: boolean; onClose: () =>
   const minutes = te ? Math.max(0, Math.round((now - Date.parse(te.clock_in_at)) / 60000)) : 0;
   return (
     <Sheet open={open} onClose={onClose} title="Clock out" testid="clock-out-sheet"
-      footer={<Button variant="primary" size="lg" block loading={busy} data-testid="clock-out-confirm" onClick={async () => {
-        if (note.trim().length < 3) { setErr('Add a short shift note for the next guard and the owners.'); return; }
-        if (!confirmed && !(wrong && sheetNote.trim().length >= 3)) { setErr('Confirm your hours, or tell the owner what’s wrong with them.'); return; }
+      footer={<>{err && <div class="form-error" data-testid="clock-out-error" style={{ marginBottom: 8 }}>Not clocked out yet — fix the highlighted item above.</div>}<Button variant="primary" size="lg" block loading={busy} data-testid="clock-out-confirm" onClick={async () => {
+        // A6: say clearly why nothing happened (inline + toast + focus); the note is typed text only.
+        if (note.trim().length < 3) {
+          const m = 'Add a short shift note for the next guard and the owners — it’s required for the daily report.';
+          setErr(m); toast('Shift note required — you’re still clocked in.', 'error', 4000);
+          document.querySelector<HTMLTextAreaElement>('[data-testid="shift-note"]')?.focus();
+          return;
+        }
+        if (!confirmed && !(wrong && sheetNote.trim().length >= 3)) { setErr('Confirm your hours, or tell the owner what’s wrong with them.'); toast('Hours not confirmed yet — you’re still clocked in.', 'error', 4000); return; }
         setBusy(true);
         try {
           const teId = await clockOut(note, note, { confirmed, note: wrong ? sheetNote : '' });
@@ -145,12 +176,12 @@ export function ClockOutSheet({ open, onClose }: { open: boolean; onClose: () =>
           if (teId) void import('../../pdf').then((m) => m.endOfShiftPdf(teId, { save: true })).then((r) => showPdf(r.bytes, r.filename, r.pages)).catch((e) => toast(`Shift PDF: ${(e as Error).message}`, 'error', 4000));
         }
         finally { setBusy(false); }
-      }}>Clock out and submit DAR</Button>}>
+      }}>Clock out and submit DAR</Button></>}>
       <div class="stack">
         <p class="muted sub">Your daily activity report ({entries.data?.length ?? 0} log entr{entries.data?.length === 1 ? 'y' : 'ies'}) will be submitted with this note. Location tracking stops now.</p>
-        <Field label="Shift note" error={err}>
-          <textarea class="input" rows={4} value={note} onInput={(e) => { setNote((e.target as HTMLTextAreaElement).value); setErr(null); }}
-            placeholder="Quiet night. All doors secured at 05:40. Light out by the east lot." data-testid="shift-note" />
+        <Field label="Shift note (required for DAR)" error={err} hint="Required. A few words for the next guard and the owners: what happened, anything left open.">
+          <textarea class="input" rows={4} value={note} required aria-required="true" onInput={(e) => { setNote((e.target as HTMLTextAreaElement).value); setErr(null); }}
+            placeholder="Type your shift note here" data-testid="shift-note" />
         </Field>
         {te && (
           <div class="card stack" data-testid="timesheet-confirm">

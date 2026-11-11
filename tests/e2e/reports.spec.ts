@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { openApp, login, dismissEnroll, USERS, emailRequests } from './helpers';
+import { openApp, login, dismissEnroll, USERS, emailRequests, mutateServer } from './helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 type Server = { tables: Record<string, Array<Record<string, any>>> };
@@ -108,7 +108,7 @@ test('email: owners-only guard in settings; incident + SOS emails go only to own
   await page.getByRole('link', { name: 'More' }).click();
   await page.getByTestId('more-settings').click();
   await expect(page.getByTestId('testing-guard')).toContainText('Testing: owners only');
-  await page.getByRole('switch', { name: 'Email notifications' }).click({ force: true });
+  await expect(page.getByRole('switch', { name: 'Email notifications' })).toBeChecked(); // pass 9 B11: on by default
   await page.getByTestId('recipient-input').fill('manager@kentstationmarket.demo');
   await page.getByTestId('recipient-add').click();
   await expect(page.getByText('only owner or admin account emails')).toBeVisible();
@@ -123,8 +123,10 @@ test('email: owners-only guard in settings; incident + SOS emails go only to own
   await page.getByTestId('add-person').click();
   await page.getByTestId('person-name').fill('Unknown male');
   await page.getByTestId('inc-submit').click();
-  await expect.poll(() => emailRequests(page).length, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
-  const first = emailRequests(page)[0]!;
+  // B11: email is on by default, so the generic "N new owner alerts" email may go out too — look at report emails.
+  const reportEmails = () => emailRequests(page).filter((r) => !/owner alert/.test(String(r.template_params.subject)));
+  await expect.poll(() => reportEmails().length, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
+  const first = reportEmails()[0]!;
   expect(first.service_id).toBe('service_49ltt4f');
   expect(first.template_id).toBe('template_n369iwa');
   expect(first.user_id).toBe('hF1r9AflJq5A0MSR6');
@@ -139,14 +141,16 @@ test('email: owners-only guard in settings; incident + SOS emails go only to own
   const b = (await sos.boundingBox())!;
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
   await page.mouse.down(); await page.waitForTimeout(2300); await page.mouse.up();
-  await expect.poll(() => emailRequests(page).length, { timeout: 20_000 }).toBe(2);
-  const second = emailRequests(page)[1]!;
+  await expect.poll(() => reportEmails().length, { timeout: 20_000 }).toBe(2);
+  const second = reportEmails()[1]!;
   expect(second.template_params.subject).toMatch(/^SOS — Karim Daher at /);
   for (const r of emailRequests(page)) expect(String(r.template_params.to_email)).not.toMatch(/kentstationmarket|willowcreek/);
 });
 
-test('no email is sent when notifications are off (default)', async ({ page }) => {
+test('no email is sent when notifications are off', async ({ page }) => {
   await signIn(page, USERS.marcus);
+  await mutateServer(page, 'for (const x of s.tables.patrol_org_settings) x.email_enabled = false;'); // B11: on by default now
+  await page.reload();
   await page.getByRole('button', { name: 'Report' }).click();
   await page.getByTestId('cat-search').fill('theft');
   await page.getByTestId('category-tile').first().click();

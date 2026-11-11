@@ -62,7 +62,7 @@ function CreateCompany({ onBack }: { onBack: () => void }) {
       <div class="screen-body">
         <form class="stack" onSubmit={submit} style={{ maxWidth: 480 }}>
           <p class="muted sub">This creates a new, separate company with you as the owner. We’ll add a full set of report categories you can customize later.</p>
-          <Field label="Company name"><input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} name="org" placeholder="Lion Security Services" /></Field>
+          <Field label="Company name"><input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} name="org" placeholder="e.g. Lion Security Services" /></Field>
           <Field label="Your name (as shown on reports)"><input class="input" value={display} onInput={(e) => setDisplay((e.target as HTMLInputElement).value)} autoComplete="name" name="display" /></Field>
           {error && <div class="form-error">{error}</div>}
           <Button type="submit" variant="primary" size="lg" block loading={busy}>Create organization</Button>

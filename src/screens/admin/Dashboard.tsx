@@ -2,12 +2,15 @@ import { Screen, TopBar, SyncPill, List, Row, SectionLabel, Empty, Avatar, Butto
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
 import { currentOrgId, orgName, isAdmin } from '../../auth/session';
-import { listOwnerAlerts, ackOwnerAlert, type OwnerAlert } from '../../data/ownerAlerts';
+import { listOwnerAlerts, ackOwnerAlert, alertCleared, type OwnerAlert } from '../../data/ownerAlerts';
+import { useEffect } from 'preact/hooks';
 import { loadOps, completionBySite } from './ops';
 import { setAlertStatus } from '../../data/admin';
-import { relTime, fmtTime } from '../../lib/format';
+import { relTime, fmtTime, fmtDay } from '../../lib/format';
+import { gpsLine } from '../../lib/geo';
 import { navigate } from '../../router';
 import type { Row as R } from '../../data/db';
+import { listClientReports } from '../../data/clientLogs';
 
 export function AlertBanner({ alerts, members, sites }: { alerts: R[]; members: { id: string; display_name: string }[]; sites: { id: string; name: string }[] }) {
   const live = alerts.filter((a) => a.status === 'open' || a.status === 'acknowledged').sort((a, b) => String(b.triggered_at).localeCompare(String(a.triggered_at)));
@@ -40,6 +43,18 @@ export function AlertBanner({ alerts, members, sites }: { alerts: R[]; members: 
   );
 }
 
+/** Pass 9 Client logs: nightly client reports held for the owner's OK. Hidden until the server migration exists. */
+function WaitingForOk() {
+  const org = currentOrgId.value;
+  const n = useData(async () => (org ? (await listClientReports(org).catch(() => null))?.filter((r) => r.status === 'ready').length ?? null : null), [org]);
+  if (n.data == null) return null;
+  return (
+    <List>
+      <Row icon="mail" title={n.data ? `${n.data} client report${n.data === 1 ? '' : 's'} waiting for your OK` : 'Client logs: nothing waiting for your OK'} sub="Nightly combined reports — preview and send" chevron onClick={() => navigate('/a/client-logs')} testid="waiting-for-ok" />
+    </List>
+  );
+}
+
 export function Dashboard() {
   const org = currentOrgId.value;
   const d = useData(() => loadOps(org), [org]);
@@ -53,7 +68,8 @@ export function Dashboard() {
       <TopBar title="Live" large sub={orgName.value} right={<SyncPill />} action={isAdmin.value ? <Button icon="map" onClick={() => navigate('/a/map')} data-testid="open-map">Map</Button> : undefined} />
       <div class="screen-body stack-lg">
         {data && <AlertBanner alerts={data.alerts} members={data.members} sites={data.sites} />}
-        {isAdmin.value && <OwnerAlerts />}
+        {isAdmin.value && <OwnerAlerts times={data?.times} />}
+        {isAdmin.value && <WaitingForOk />}
         {data && <GettingStarted d={data} />}
         <div class="grid-3">
           <Stat label="On duty" value={String(onDuty.length)} testid="stat-onduty" />
@@ -61,6 +77,7 @@ export function Dashboard() {
           <Stat label="Patrols 24h" value={`${totalPct}%`} tone={totalPct < 80 ? 'warning' : 'success'} />
         </div>
 
+        <div class="desk-2">
         <div>
           <SectionLabel>On shift now</SectionLabel>
           {onDuty.length ? (
@@ -70,19 +87,26 @@ export function Dashboard() {
                 const site = data!.sites.find((x) => x.id === s.site_id);
                 const run = data!.runs.filter((r) => r.member_id === s.member_id && !r.completed_at).sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)))[0];
                 const stale = !s.last_ping_at || Date.now() - Date.parse(s.last_ping_at) > 15 * 60e3;
+                // A1: never imply "on site" without GPS — show how the clock-in location was recorded.
+                const te = data!.times.find((t) => t.id === s.time_entry_id);
+                const inLat = te?.clock_in_lat ?? null;
+                const inStatus = String(te?.clock_in_gps_status ?? (te ? (inLat == null ? 'unavailable' : '') : ''));
                 return (
                   <Row key={s.member_id} testid="onshift-row"
                     title={<span class="row" style={{ gap: 10 }}><Avatar name={m?.display_name ?? '?'} gold />{m?.display_name ?? 'Guard'}</span>}
-                    sub={`${site?.name ?? ''} · on since ${fmtTime(s.on_duty_since)} · ping ${relTime(s.last_ping_at)}`}
+                    sub={`${site?.name ?? ''} · on since ${fmtTime(s.on_duty_since)} · GPS ${s.last_ping_at ? relTime(s.last_ping_at) : 'never recorded'}${te ? ` · clock-in: ${gpsLine({ lat: inLat, lng: te.clock_in_lng, accuracy: te.clock_in_accuracy_m }, site)}` : ''}`}
                     right={<span class="stack" style={{ gap: 4, alignItems: 'flex-end' }}>
                       {run && <span class="pill pill-gold tnum">{String(run.scanned_count ?? 0)}/{String(run.expected_count)}</span>}
+                      {inStatus === 'unavailable' && <span class="pill pill-danger" data-testid="onshift-nogps">GPS unavailable at clock-in</span>}
+                      {inStatus === 'outside' && <span class="pill pill-danger" data-testid="onshift-outside">Clocked in outside geofence</span>}
+                      {te?.clock_in_override_reason ? <span class="pill pill-warning">Owner override</span> : null}
                       {stale && <span class="pill pill-warning">No recent GPS</span>}
                     </span>} />
                 );
               })}
             </List>
           ) : <Empty icon="shield" title="No one is on shift" body="Guards appear here when they clock in." />}
-          <p class="foot faint" style={{ padding: '6px 4px' }}>Locations update while a guard has Lion Patrol open; iPhone pauses web apps in the background.</p>
+          <p class="foot faint" style={{ padding: '6px 4px' }}>GPS is recorded at clock-in, each checkpoint scan, log entries and clock-out, and every few minutes only while Lion Patrol is open on screen. iPhone pauses web apps when locked or in the background, so “No recent GPS” is expected then — it does not mean the guard left.</p>
         </div>
 
         <div>
@@ -111,6 +135,7 @@ export function Dashboard() {
             <List>{review.slice(0, 5).map((i) => <Row key={i.id} icon="alert" iconBg="var(--warning-soft)" iconColor="var(--warning)" title={String(i.title || i.category_name)} sub={`${i.author_name} · ${relTime(i.occurred_at as string)}`} chevron href={`/a/incidents/${i.id}`} />)}</List>
           ) : <Empty icon="check-circle" title="All caught up" body="New incident reports appear here for review." />}
           <Button variant="ghost" block onClick={() => navigate('/a/feed')}>Open activity feed</Button>
+        </div>
         </div>
       </div>
     </Screen>
@@ -149,20 +174,27 @@ function GettingStarted({ d }: { d: import('./ops').OpsData }) {
   );
 }
 
-const ALERT_ICON: Record<string, string> = { missed_checkpoint: 'qr', overdue_patrol: 'clock', no_show: 'user-x', geofence: 'pin', guard_card: 'key' };
+const ALERT_ICON: Record<string, string> = { missed_checkpoint: 'qr', overdue_patrol: 'clock', no_show: 'user-x', geofence: 'pin', guard_card: 'key', long_shift: 'clock' };
 /** Item 18: owners/admins only (RLS returns no rows to anyone else). */
-function OwnerAlerts() {
+function OwnerAlerts({ times }: { times?: R[] }) {
   const org = currentOrgId.value;
   const list = useData(() => listOwnerAlerts(org), [org]);
-  const open = (list.data ?? []).filter((a) => !a.acknowledged_at).slice(0, 8);
+  const unacked = (list.data ?? []).filter((a) => !a.acknowledged_at);
+  const cleared = times ? unacked.filter((a) => alertCleared(a, times)) : [];
+  // B9: auto-clear (e.g. the no-show guard clocked in) — acknowledge so it stays cleared everywhere.
+  useEffect(() => { for (const a of cleared) void ackOwnerAlert(a).catch(() => {}); }, [cleared.map((a) => a.id).join()]);
+  const open = unacked.filter((a) => !cleared.includes(a)).slice(0, 8);
   if (!open.length) return null;
   return (
     <div data-testid="owner-alerts">
       <SectionLabel>Owner alerts</SectionLabel>
       <List>
         {open.map((a: OwnerAlert) => (
-          <Row key={a.id} testid="owner-alert" icon={ALERT_ICON[a.kind] ?? 'alert'} iconBg="var(--warning-soft)" iconColor="var(--warning)" title={a.title} sub={`${a.body} · ${relTime(a.created_at)}`}
-            right={<Button variant="ghost" onClick={async () => { await ackOwnerAlert(a); toast('Alert dismissed'); }} data-testid="owner-alert-ack">Dismiss</Button>} />
+          <Row key={a.id} testid="owner-alert" icon={ALERT_ICON[a.kind] ?? 'alert'} iconBg="var(--warning-soft)" iconColor="var(--warning)" title={a.title} sub={<>{a.body}<br /><span class="faint" data-testid="owner-alert-time">{fmtDay(a.created_at)} · {fmtTime(a.created_at)} PT ({relTime(a.created_at)})</span></>}
+            right={<span class="row" style={{ gap: 4 }}>
+              {a.kind === 'long_shift' && a.time_entry_id ? <Button variant="outline" onClick={() => navigate(`/a/timesheets/shift/${String(a.time_entry_id)}`)} data-testid="owner-alert-review">Review</Button> : null}
+              <Button variant="ghost" onClick={async () => { await ackOwnerAlert(a); toast('Alert dismissed'); }} data-testid="owner-alert-ack">Dismiss</Button>
+            </span>} />
         ))}
       </List>
     </div>

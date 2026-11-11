@@ -88,6 +88,7 @@ function InviteSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
         <div class="stack">
           <div class="code-big" data-testid="invite-code">{code}</div>
           <p class="muted sub" style={{ textAlign: 'center' }}>Valid for 7 days, one use. Share it yourself — Lion Patrol doesn’t send emails or texts.</p>
+          <p class="foot faint" style={{ textAlign: 'center' }} data-testid="invite-needs-server">Emailing the invite automatically needs the server (not set up yet), so nothing was emailed{email.trim() ? ` to ${email.trim()}` : ''}. The code above is all they need.</p>
           {typeof navigator.share === 'function' && <Button variant="primary" size="lg" block icon="share" onClick={() => void navigator.share({ title: 'Lion Patrol invite', text: message }).catch(() => undefined)}>Share invite</Button>}
           <Button size="lg" block icon="copy" onClick={async () => { try { await navigator.clipboard.writeText(message); toast('Invite copied'); } catch { toast('Copy failed — long-press the code to copy', 'error'); } }}>Copy message</Button>
           <p class="foot faint" style={{ wordBreak: 'break-all' }}>{link}</p>
@@ -103,8 +104,8 @@ function InviteSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
           <div class="field"><span class="field-label">{role === 'client' ? 'Client’s site(s) — required' : 'Sites (recommended for guards)'}</span>
             <div class="chip-row">{(sites.data ?? []).map((s) => <button key={s.id} class={`chip ${chosen.includes(s.id) ? 'active' : ''}`} onClick={() => setChosen(chosen.includes(s.id) ? chosen.filter((x) => x !== s.id) : [...chosen, s.id])} data-testid="invite-site">{s.name}</button>)}</div>
           </div>
-          <Field label="Name (optional)"><input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="Jordan Ellis" /></Field>
-          <Field label="Lock to email (optional)" hint="Only this email can redeem the code."><input class="input" type="email" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} autoCapitalize="off" /></Field>
+          <Field label="Name (optional)"><input class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="e.g. first and last name" /></Field>
+          <Field label="Lock to email (optional)" hint="Only this email can redeem the code. It is not emailed — you share the code."><input class="input" type="email" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} autoCapitalize="off" /></Field>
           {err && <div class="form-error">{err}</div>}
           <Button variant="primary" size="lg" block loading={busy} data-testid="invite-create" onClick={async () => {
             if (role === 'client' && !chosen.length) { setErr('Pick the client’s site.'); return; }

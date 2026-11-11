@@ -71,3 +71,20 @@ export function fmtHours(minutes: number): string {
   const m = Math.max(0, Math.round(minutes));
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
+
+/** Pass 9: `<input type="datetime-local">` value (YYYY-MM-DDTHH:mm) in Pacific time for an instant. */
+export function toPacificInput(iso: string, tz = TZ): string {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+/** Inverse of toPacificInput: a Pacific wall-clock value → ISO instant (DST-aware). */
+export function fromPacificInput(v: string, tz = TZ): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v);
+  if (!m) throw new Error('Enter a date and time.');
+  const wall = Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!);
+  const offsetAt = (t: number) => { const s = toPacificInput(new Date(t).toISOString(), tz); return Date.parse(`${s}:00Z`) - t; };
+  let t = wall - offsetAt(wall);
+  t = wall - offsetAt(t);
+  return new Date(t).toISOString();
+}

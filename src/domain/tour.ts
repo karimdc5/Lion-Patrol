@@ -37,3 +37,6 @@ export function parseCheckpointCode(raw: string): string {
   const code = (m ? m[1]! : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
   return code.replace(/O/g, '0').replace(/[IL]/g, '1');
 }
+
+/** Printed/typed form of a checkpoint code: 8 chars → "ABCD-EFGH" (shared by the QR sheet and Scan). */
+export const formatCode = (c: string) => (c.length === 8 ? `${c.slice(0, 4)}-${c.slice(4)}` : c);

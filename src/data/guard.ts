@@ -2,9 +2,9 @@ import { signal } from '@preact/signals';
 import { enqueue, getOp, discardOp } from './outbox/queue';
 import { kick } from './sync/engine';
 import { db, kvGet, kvSet, type Row } from './db';
-import { listRecords, getRecord, bumpData } from './repos/records';
+import { listRecords, getRecord, bumpData, putLocalMirror } from './repos/records';
 import { uuidv7 } from '../lib/uuid';
-import { getFix, startWatch, stopWatch, distanceM, type Fix } from '../lib/geo';
+import { getFix, startWatch, stopWatch, distanceM, gpsStatusFor, type Fix, type GpsStatus } from '../lib/geo';
 import { siteLocalDate } from '../lib/format';
 import { identity, currentOrgId, memberId, membership } from '../auth/session';
 import { NOTICE_VERSIONS } from '../config';
@@ -81,22 +81,30 @@ export async function openDar(): Promise<(Row & { status: string }) | null> {
   return dars.find((d) => d.time_entry_id === te.id) ?? null;
 }
 
-export async function clockIn(siteId: string, shiftId: string | null, gpsAcceptedAt: string, knownFix?: Fix | null): Promise<TimeEntry> {
+/** Pass 9 A1: GPS status of the clock-in + an owner override reason when it was outside/unavailable. */
+export interface ClockInGps { status: GpsStatus; distance: number | null; overrideReason?: string | null }
+
+export async function clockIn(siteId: string, shiftId: string | null, gpsAcceptedAt: string, knownFix?: Fix | null, gps?: ClockInGps): Promise<TimeEntry> {
   const { userId, orgId, memberId: mid, name } = ctx();
   const fix = knownFix !== undefined ? knownFix : await getFix(8000);
   const at = nowIso();
+  const override = gps?.overrideReason?.trim() || null;
   const te: TimeEntry & Row = {
     id: uuidv7(), org_id: orgId, site_id: siteId, member_id: mid, shift_id: shiftId, clock_in_at: at,
     clock_in_lat: fix?.lat ?? null, clock_in_lng: fix?.lng ?? null, clock_in_accuracy_m: fix?.accuracy ?? null,
     clock_out_at: null, shift_note: null, gps_notice_accepted_at: gpsAcceptedAt, client_created_at: at, device_id: deviceId(),
+    ...(gps ? { clock_in_gps_status: gps.status, clock_in_distance_m: gps.distance, clock_in_override_reason: override } : {}),
   } as TimeEntry & Row;
-  const teOp = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_time_entries', payload: te, entityKey: `patrol_time_entries:${te.id}`, label: 'Clock in' },
+  const teOp = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_time_entries', payload: te, entityKey: `patrol_time_entries:${te.id}`, label: 'Clock in',
+    optional: ['clock_in_gps_status', 'clock_in_distance_m', 'clock_in_override_reason'] },
     [{ table: 'patrol_time_entries', row: te, orgId }]);
+  if (override) void logAudit('clock_in_override', { table: 'patrol_time_entries', id: te.id, siteId, detail: `${gps?.status === 'unavailable' ? 'GPS unavailable' : `${gps?.distance ?? '?'} m from site`} · ${override}` });
   await rememberOp('patrol_time_entries', te.id, teOp);
   const dar = { id: uuidv7(), org_id: orgId, site_id: siteId, member_id: mid, time_entry_id: te.id, report_date: siteLocalDate(at), status: 'open', client_rev: clientRev(), client_created_at: at, device_id: deviceId() };
   const darOp = await enqueue({ userId, orgId, kind: 'insert', table: 'patrol_dars', payload: dar, entityKey: `patrol_dars:${dar.id}`, dependsOn: [teOp], label: 'Daily activity report' },
     [{ table: 'patrol_dars', row: { ...dar, author_name: name }, orgId }]);
   await rememberOp('patrol_dars', dar.id, darOp);
+  await putLocalMirror('patrol_member_status', { id: mid, member_id: mid, org_id: orgId, on_duty: true, time_entry_id: te.id, site_id: siteId, lat: te.clock_in_lat, lng: te.clock_in_lng, last_ping_at: fix ? at : null, on_duty_since: at, updated_at: at }, orgId);
   onShift.value = te;
   lastPing = { at: Date.now(), fix };
   ensureWatching();
@@ -111,11 +119,13 @@ export async function clockOut(note: string, summary: string, sheet?: TimesheetC
   const te = onShift.value;
   if (!te) return null;
   const fix = await getFix(6000);
+  const site = await getRecord<{ lat: number | null; lng: number | null; geofence_m: number }>('patrol_sites', te.site_id);
+  const outStatus = site ? gpsStatusFor(site, fix).status : (fix ? 'ok' : 'unavailable');
   const at = nowIso();
   const minutes = Math.max(0, Math.round((Date.parse(at) - Date.parse(te.clock_in_at)) / 60000));
   const confirm = sheet ? { confirmed_at: sheet.confirmed ? at : null, confirmed_minutes: sheet.confirmed ? minutes : null, timesheet_note: sheet.note?.trim() || null } : {};
-  const patch = { clock_out_at: at, clock_out_lat: fix?.lat ?? null, clock_out_lng: fix?.lng ?? null, clock_out_accuracy_m: fix?.accuracy ?? null, shift_note: note.trim() || null, ...confirm };
-  await enqueue({ userId, orgId, kind: 'update', table: 'patrol_time_entries', payload: patch, match: { id: te.id }, entityKey: `patrol_time_entries:${te.id}`, label: 'Clock out', optional: ['confirmed_at', 'confirmed_minutes', 'timesheet_note'] },
+  const patch = { clock_out_at: at, clock_out_lat: fix?.lat ?? null, clock_out_lng: fix?.lng ?? null, clock_out_accuracy_m: fix?.accuracy ?? null, clock_out_gps_status: outStatus, shift_note: note.trim() || null, ...confirm };
+  await enqueue({ userId, orgId, kind: 'update', table: 'patrol_time_entries', payload: patch, match: { id: te.id }, entityKey: `patrol_time_entries:${te.id}`, label: 'Clock out', optional: ['confirmed_at', 'confirmed_minutes', 'timesheet_note', 'clock_out_gps_status'] },
     [{ table: 'patrol_time_entries', row: { id: te.id, ...patch }, orgId }]);
   const dar = await openDar();
   if (dar) {
@@ -123,10 +133,25 @@ export async function clockOut(note: string, summary: string, sheet?: TimesheetC
     await enqueue({ userId, orgId, kind: 'update', table: 'patrol_dars', payload: darPatch, match: { id: dar.id }, entityKey: `patrol_dars:${dar.id}`, label: 'Submit daily activity report' },
       [{ table: 'patrol_dars', row: { id: dar.id, ...darPatch, submitted_at: at }, orgId }]);
   }
+  await putLocalMirror('patrol_member_status', { id: te.member_id, member_id: te.member_id, org_id: orgId, on_duty: false, time_entry_id: null, updated_at: at }, orgId);
   stopWatch();
   onShift.value = null;
   bumpData(); void kick();
   return te.id;
+}
+
+export type AuditKind = 'clock_in_override' | 'timesheet_confirm' | 'timesheet_edit' | 'timesheet_void' | 'timesheet_unvoid' | 'codes_viewed' | 'dar_shared' | 'dar_unshared' | 'dar_autoshare' | 'pin_admin_switch';
+/**
+ * Pass 9: append to the owners-only audit log (actor is set server-side). Best effort, online only:
+ * the action itself is also recorded on its own row (override reason, void reason, etc.).
+ */
+export async function logAudit(kind: AuditKind, o: { table?: string; id?: string; siteId?: string | null; detail?: string } = {}) {
+  try {
+    const orgId = currentOrgId.value;
+    if (!orgId) return;
+    const { getBackend } = await import('../auth/session');
+    await getBackend().rpc('patrol_log_audit', { p_org: orgId, p_kind: kind, p_entity_table: o.table ?? null, p_entity_id: o.id ?? null, p_site: o.siteId ?? null, p_detail: o.detail ?? '' });
+  } catch { /* offline or not migrated yet */ }
 }
 
 /** Tell owners a guard was blocked from clocking in outside the geofence (best effort, online only). */
@@ -304,8 +329,23 @@ export async function saveDraftLocal(f: IncidentForm) {
   const uid = ctx().userId;
   await (await db()).put('drafts', { id: f.id, userId: uid, kind: 'incident', data: f, updatedAt: Date.now() });
 }
+/**
+ * A10: "Delete draft" removes it everywhere: this phone's draft, any not-yet-sent upload, and the
+ * server copy (drafts auto-sync once they have a site + category; RLS lets the author delete own drafts).
+ */
 export async function discardDraft(id: string) {
-  await (await db()).delete('drafts', id);
+  const d = await db();
+  await d.delete('drafts', id);
+  const opId = await kvGet<string>(`op:patrol_incidents:${id}`);
+  const op = opId ? await getOp(opId) : null;
+  if (op && op.status === 'pending') await discardOp(op.id);
+  const deps = op && op.status !== 'pending' && op.status !== 'done' ? [op.id] : [];
+  await d.delete('records', ['patrol_incidents', id]);
+  try {
+    const { userId, orgId } = ctx();
+    await enqueue({ userId, orgId, kind: 'delete', table: 'patrol_incidents', payload: null, match: { id, status: 'draft' }, entityKey: `patrol_incidents:${id}:delete`, dependsOn: deps, label: 'Delete draft' });
+    void kick();
+  } catch { /* signed out: the local draft is gone; nothing was synced for another account */ }
   bumpData();
 }
 

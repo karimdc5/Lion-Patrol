@@ -1,6 +1,8 @@
 import { durableStorage } from '../../auth/storage-adapter';
 import { uuidv7 } from '../../lib/uuid';
 import seedCategories from '../../domain/categories.seed.json';
+import { clientProofRpcs, siteProof } from './memoryClient';
+import { clientLogRpcs, onTimeEntryWrite, onIncidentSent, onDarShared } from './memoryClientLogs';
 import { BackendError, type AuthApi, type AuthEvent, type Backend, type SelectQuery, type StoredSession } from './types';
 
 /**
@@ -146,8 +148,10 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       case 'patrol_owner_alerts': case 'patrol_guard_cards': case 'patrol_site_billing': case 'patrol_org_billing': case 'patrol_invoices': return c.adminOrgs.includes(r.org_id);
       case 'patrol_site_codes': return staff || c.workable.includes(r.site_id);
       case 'patrol_post_order_acks': return mine || staff;
-      case 'patrol_invites': return c.adminOrgs.includes(r.org_id);
+      case 'patrol_invites': case 'patrol_audit_log': return c.adminOrgs.includes(r.org_id);
       case 'patrol_share_links': case 'patrol_portal_links': return staff;
+      case 'patrol_client_requests': return staff;
+      case 'patrol_client_reports': case 'patrol_client_emails': case 'patrol_site_client_email': return c.adminOrgs.includes(r.org_id);
       default: return false;
     }
   }
@@ -166,7 +170,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       return c.staffOrgs.includes(r.org_id) || c.memberIds.includes(r.created_by);
     }
     if (table === 'patrol_owner_alerts') return op === 'update' && c.adminOrgs.includes(r.org_id);
-    if (['patrol_guard_cards', 'patrol_site_billing', 'patrol_org_billing', 'patrol_invoices', 'patrol_site_codes'].includes(table)) return c.adminOrgs.includes(r.org_id);
+    if (['patrol_guard_cards', 'patrol_site_billing', 'patrol_org_billing', 'patrol_invoices', 'patrol_site_codes', 'patrol_site_client_email'].includes(table)) return c.adminOrgs.includes(r.org_id);
     if (table === 'patrol_post_order_acks') return op === 'insert' && r.member_id === c.memberIn(r.org_id) && c.workable.includes(r.site_id);
     if (ADMIN_TABLES.has(table)) return c.adminOrgs.includes(r.org_id ?? r.id);
     if (STAFF_TABLES.has(table)) return c.staffOrgs.includes(r.org_id);
@@ -192,10 +196,16 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       if (table === 'patrol_time_entries') {
         const m = (s.tables.patrol_members ?? []).find((x) => x.id === t.member_id);
         const site = (s.tables.patrol_sites ?? []).find((x) => x.id === t.site_id);
-        if (m?.role === 'guard' && site?.lat != null && site.lng != null) {
-          if (t.clock_in_lat == null) throw new BackendError('23514', 'clock_in_gps_required', 400);
-          if (haversine(t.clock_in_lat, t.clock_in_lng, site.lat, site.lng) > site.geofence_m + Math.min(t.clock_in_accuracy_m ?? 0, 100)) throw new BackendError('23514', 'outside_geofence', 400);
-        }
+        // Pass 9 A1 (mirrors patrol_time_entries_geofence): everyone inside the fence; staff may override with a reason.
+        if (site?.lat != null && site.lng != null) {
+          const d = t.clock_in_lat == null ? null : haversine(t.clock_in_lat, t.clock_in_lng, site.lat, site.lng);
+          const inside = d != null && d <= site.geofence_m + Math.min(t.clock_in_accuracy_m ?? 0, 100);
+          t.clock_in_gps_status = d == null ? 'unavailable' : inside ? 'ok' : 'outside';
+          t.clock_in_distance_m = d == null ? null : Math.round(d);
+          if (inside) t.clock_in_override_reason = null;
+          else if (!m || m.role === 'guard') throw new BackendError('23514', d == null ? 'clock_in_gps_required' : 'outside_geofence', 400);
+          else if (String(t.clock_in_override_reason ?? '').trim().length < 3) throw new BackendError('23514', 'geofence_override_required', 400);
+        } else t.clock_in_gps_status ??= 'no_site_pin';
       }
       if (table === 'patrol_bolos') { t.status = 'active'; t.resolved_at = null; t.visible_to_client ??= false; }
     } else {
@@ -219,7 +229,8 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const code = String(site?.code ?? 'SITE').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'SITE';
       merged.report_no = `${settings?.report_prefix ?? 'LSS'}-${code}-${new Date().getFullYear()}-${String(s.counters[merged.org_id]).padStart(5, '0')}`;
       merged.submitted_at = nowIso();
-      merged.client_visible = !!settings?.auto_share_with_client;
+      merged.client_visible = !!settings?.auto_share_with_client || (table === 'patrol_dars' && !!site?.auto_share_dars);
+      if (merged.client_visible) merged.sent_to_client_at ??= nowIso();
       if (table === 'patrol_incidents') {
         merged.category_name = (s.tables.patrol_categories ?? []).find((x) => x.id === merged.category_id)?.name ?? null;
         merged.subtype_name = (s.tables.patrol_subtypes ?? []).find((x) => x.id === merged.subtype_id)?.name ?? null;
@@ -237,6 +248,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         : { member_id: row.member_id, org_id: row.org_id, on_duty: true, time_entry_id: row.id, site_id: row.site_id, lat: row.clock_in_lat, lng: row.clock_in_lng, last_ping_at: row.clock_in_lat != null ? row.clock_in_at : existing?.last_ping_at ?? null, on_duty_since: row.clock_in_at };
       const next = { ...(existing ?? {}), ...status, id: row.member_id, updated_at: nowIso() } as R;
       if (existing) Object.assign(existing, next); else st.push(next);
+      onTimeEntryWrite(s, row);
     }
     if (table === 'patrol_location_pings') {
       const existing = st.find((x) => x.member_id === row.member_id && x.time_entry_id === row.time_entry_id);
@@ -331,6 +343,8 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
   }
 
   const rpcs: Record<string, (s: MockState, c: Ctx, a: Record<string, any>) => unknown> = {
+    ...clientProofRpcs,
+    ...clientLogRpcs,
     patrol_bootstrap(s, c) {
       const vis = (t: string) => (s.tables[t] ?? []).filter((r) => visible(s, c, t, r));
       const now = Date.now();
@@ -418,11 +432,13 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
     patrol_set_incident_status(s, c, a) {
       const inc = (s.tables.patrol_incidents ?? []).find((x) => x.id === a.p_id);
       if (!inc || !c.staffOrgs.includes(inc.org_id) || inc.status === 'draft') throw new BackendError('42501', 'not_found', 403);
+      const wasSent = inc.status === 'sent_to_client';
       inc.status = a.p_status;
       if (a.p_severity) inc.severity = a.p_severity;
       if (['reviewed', 'sent_to_client', 'closed'].includes(a.p_status)) { inc.reviewed_by ??= c.memberIn(inc.org_id); inc.reviewed_at ??= nowIso(); }
       if (a.p_status === 'sent_to_client') { inc.client_visible = true; inc.sent_to_client_at ??= nowIso(); }
       inc.updated_at = nowIso();
+      if (a.p_status === 'sent_to_client' && !wasSent) onIncidentSent(s, inc);
       (s.tables.patrol_incident_events ??= []).push({ id: uuidv7(), org_id: inc.org_id, incident_id: inc.id, actor_id: c.memberIn(inc.org_id), actor_name: c.members.find((m) => m.org_id === inc.org_id)?.display_name ?? '', kind: 'status', to_status: a.p_status, body: a.p_note ?? null, created_at: nowIso() });
       return inc;
     },
@@ -445,9 +461,27 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const d = (s.tables.patrol_dars ?? []).find((x) => x.id === a.p_id);
       if (!d || !c.staffOrgs.includes(d.org_id) || d.status === 'open') throw new BackendError('42501', 'not_found', 403);
       d.status = a.p_status; d.reviewed_at ??= nowIso();
+      const wasVisible = !!d.client_visible;
       if (a.p_status === 'sent_to_client') { d.client_visible = true; d.sent_to_client_at ??= nowIso(); }
       d.updated_at = nowIso();
+      if (d.client_visible && !wasVisible) onDarShared(s, d);
       return d;
+    },
+    patrol_set_dar_client_visible(s, c, a) {
+      const d = (s.tables.patrol_dars ?? []).find((x) => x.id === a.p_id);
+      if (!d || !c.staffOrgs.includes(d.org_id) || d.status === 'open') throw new BackendError('42501', 'not_found', 403);
+      const wasVisible = !!d.client_visible;
+      d.client_visible = !!a.p_visible; if (a.p_visible) d.sent_to_client_at ??= nowIso(); d.updated_at = nowIso();
+      if (d.client_visible && !wasVisible) onDarShared(s, d);
+      rpcs.patrol_log_audit!(s, c, { p_org: d.org_id, p_kind: a.p_visible ? 'dar_shared' : 'dar_unshared', p_entity_table: 'patrol_dars', p_entity_id: d.id, p_site: d.site_id, p_detail: d.report_no ?? d.report_date });
+      return null;
+    },
+    patrol_log_audit(s, c, a) {
+      if (!c.workerOrgs.includes(a.p_org)) throw new BackendError('42501', 'not_allowed', 403);
+      const actor = c.memberIn(a.p_org);
+      const id = uuidv7();
+      (s.tables.patrol_audit_log ??= []).push({ id, org_id: a.p_org, actor_id: actor, actor_name: c.members.find((m) => m.id === actor)?.display_name ?? null, kind: a.p_kind, entity_table: a.p_entity_table ?? null, entity_id: a.p_entity_id ?? null, site_id: a.p_site ?? null, detail: String(a.p_detail ?? '').slice(0, 1000), created_at: nowIso() });
+      return id;
     },
     patrol_create_portal_link(s, c, a) {
       const site = (s.tables.patrol_sites ?? []).find((x) => x.id === a.p_site);
@@ -476,7 +510,8 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
         org: { name: o.name, phone: o.phone, email: o.email, license_no: o.license_no },
         site: { id: site.id, name: site.name, address: site.address, city: site.city, state: site.state },
         incidents: (s.tables.patrol_incidents ?? []).filter((i) => i.site_id === l.site_id && i.client_visible && i.status !== 'draft').sort((x, y) => y.occurred_at.localeCompare(x.occurred_at))
-          .map((i) => ({ ...strip(i), field_config: (s.tables.patrol_categories ?? []).find((x) => x.id === i.category_id)?.field_config ?? null })),
+          .map((i) => ({ ...strip(i), field_config: (s.tables.patrol_categories ?? []).find((x) => x.id === i.category_id)?.field_config ?? null,
+            photos: (s.tables.patrol_attachments ?? []).filter((x) => x.parent_type === 'incident' && x.parent_id === i.id && x.kind === 'image' && x.upload_status === 'uploaded').map((x) => ({ path: x.storage_path, thumb: x.thumb_path ?? null })) })),
         dars: (s.tables.patrol_dars ?? []).filter((d) => d.site_id === l.site_id && d.client_visible).sort((x, y) => String(y.report_date).localeCompare(String(x.report_date))).map((d) => ({
           id: d.id, report_no: d.report_no, report_date: d.report_date, author_name: d.author_name, summary: d.summary, status: d.status,
           entries: (s.tables.patrol_dar_entries ?? []).filter((e) => e.dar_id === d.id && !e.deleted_at).sort((x, y) => x.occurred_at.localeCompare(y.occurred_at)).map((e) => ({ occurred_at: e.occurred_at, category_name: e.category_name, body: e.body })),
@@ -486,6 +521,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
           .sort((x, y) => y.created_at.localeCompare(x.created_at))
           .map((b) => ({ id: b.id, title: b.title, description: b.description, person_desc: b.person_desc, vehicle_desc: b.vehicle_desc, expires_at: b.expires_at, created_at: b.created_at, photos: bolosPhotos(s, b.id) })),
         runs: (s.tables.patrol_tour_runs ?? []).filter((r) => r.site_id === l.site_id && Date.parse(r.started_at) > Date.now() - 14 * 864e5).map((r) => ({ started_at: r.started_at, expected_count: r.expected_count, scanned_count: r.scanned_count, completed_at: r.completed_at })),
+        proof: siteProof(s, l.site_id),
       };
     },
     patrol_notify_targets(s, c, a) {
@@ -531,6 +567,10 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       for (const sh of (s.tables.patrol_shifts ?? []).filter((x) => x.org_id === a.p_org && x.member_id && !x.cancelled_at && Date.parse(x.starts_at) + 10 * 60e3 < now && Date.parse(x.ends_at) > now)) {
         const came = (s.tables.patrol_time_entries ?? []).some((t) => t.member_id === sh.member_id && Date.parse(t.clock_in_at) > Date.parse(sh.starts_at) - 2 * 3600e3 && Date.parse(t.clock_in_at) < Date.parse(sh.ends_at));
         if (!came) add(`noshow:${sh.id}`, { kind: 'no_show', site_id: sh.site_id, member_id: sh.member_id, shift_id: sh.id, title: `No-show at ${siteOf(sh.site_id)?.name ?? 'site'}`, body: `${name(sh.member_id)} has not clocked in for the shift that started ${new Date(sh.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.` });
+      }
+      for (const t of (s.tables.patrol_time_entries ?? []).filter((x) => x.org_id === a.p_org && !x.clock_out_at && !x.voided_at && Date.parse(x.clock_in_at) < now - 16 * 3600e3)) {
+        const at = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }).format(new Date(t.clock_in_at));
+        add(`long:${t.id}`, { kind: 'long_shift', site_id: t.site_id, member_id: t.member_id, time_entry_id: t.id, title: `Shift open over 16 hours at ${siteOf(t.site_id)?.name ?? 'site'}`, body: `${name(t.member_id)} clocked in ${at} PT and has not clocked out. Forgot to clock out? Fix or void it in Timesheets.` });
       }
       const today = new Date().toISOString().slice(0, 10);
       const soon = new Date(now + 30 * 864e5).toISOString().slice(0, 10);
@@ -692,7 +732,7 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
     },
     async rpc<T>(fn: string, args: Record<string, unknown> = {}) {
       await net('rpc', fn, fn === 'patrol_bootstrap' ? 'read' : 'write');
-      const anonOk = fn === 'patrol_get_portal' || fn === 'patrol_get_shared_report';
+      const anonOk = fn === 'patrol_get_portal' || fn === 'patrol_get_shared_report' || fn === 'patrol_portal_request';
       const userId = anonOk ? await uid() : await requireUser();
       const s = load();
       const handler = rpcs[fn];
@@ -700,6 +740,11 @@ export function createMemoryBackend(opts: { storageKey: string; authKey?: string
       const out = handler(s, ctx(s, userId), args);
       save(s);
       return out as T;
+    },
+    // Demo/test mode has no edge functions: report "not deployed" honestly (never a fake send).
+    async invoke() {
+      await net('rpc', 'invoke', 'write');
+      throw new BackendError('404', 'function_not_deployed', 404);
     },
     storage: {
       async upload(path, bytes, mime) {
@@ -726,7 +771,7 @@ function memId(table: string, r: R | Record<string, any>): string {
     case 'patrol_post_order_acks': return `${r.member_id}:${r.site_id}`;
     case 'patrol_org_settings': case 'patrol_org_billing': return String(r.org_id);
     case 'patrol_guard_cards': return String(r.member_id);
-    case 'patrol_site_codes': case 'patrol_site_billing': return String(r.site_id);
+    case 'patrol_site_codes': case 'patrol_site_billing': case 'patrol_site_client_email': return String(r.site_id);
     default: return uuidv7();
   }
 }
@@ -743,5 +788,5 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
 }
 
 export function defaultSettings(orgId: string, emails: string[]): R {
-  return { id: orgId, org_id: orgId, notify_emails: emails, client_notifications_enabled: false, auto_share_with_client: false, report_prefix: 'LSS', next_report_no: 1, gps_ping_interval_s: 120, ping_retention_days: 30, max_video_mb: 50, max_video_s: 60, tour_interval_min: 60, tour_max_duration_min: 30, email_enabled: false, email_min_severity: 'medium', email_owners_only: true, updated_at: new Date().toISOString() };
+  return { id: orgId, org_id: orgId, notify_emails: emails, client_notifications_enabled: false, auto_share_with_client: false, report_prefix: 'LSS', next_report_no: 1, gps_ping_interval_s: 120, ping_retention_days: 30, max_video_mb: 50, max_video_s: 60, tour_interval_min: 60, tour_max_duration_min: 30, email_enabled: true, email_min_severity: 'medium', email_owners_only: true, updated_at: new Date().toISOString() };
 }

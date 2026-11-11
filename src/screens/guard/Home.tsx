@@ -8,6 +8,8 @@ import { sitesFor, shiftsFor, checkpointsFor, siteLabels } from '../../data/repo
 import { onShift, openRun, listDrafts } from '../../data/guard';
 import { fmtDay, fmtTime, hms, relTime } from '../../lib/format';
 import { navigate } from '../../router';
+import { isIOS } from '../../lib/platform';
+import { requestAdmin } from '../../ui/AdminGate';
 import { GuardRight } from './common';
 import { fireSos } from './Sos';
 import { ClockOutSheet } from './Clock';
@@ -37,7 +39,7 @@ export function GuardHome() {
       <TopBar title={`Hi, ${first}`} large right={<GuardRight />} />
       <div class="screen-body stack-lg">
         {staff && (
-          <Button variant="outline" icon="layers" block onClick={async () => { navigate('/a'); await setUiMode('admin'); }} data-testid="back-to-admin">
+          <Button variant="outline" icon="layers" block onClick={() => requestAdmin('/a')} data-testid="back-to-admin">
             Back to admin{te ? ' (you stay clocked in)' : ''}
           </Button>
         )}
@@ -69,6 +71,19 @@ export function GuardHome() {
         </div>
 
         {te && (
+          // A1: honest and persistent — web apps can't track location in the background.
+          <div class="card row" data-testid="gps-background-warning" style={{ alignItems: 'flex-start', gap: 10, borderColor: 'var(--warning)' }}>
+            <Icon name="pin" class="warning-text" />
+            <div class="foot">
+              <b>Location only updates while Lion Patrol is open on screen.</b>{' '}
+              {isIOS() ? 'iPhone pauses it when the screen locks or you switch apps.' : 'Your phone may pause it when the screen locks or you switch apps.'}{' '}
+              Owners see “No recent GPS” until you open the app again. GPS is always recorded at each checkpoint scan, log entry and clock-out.
+              {te.clock_in_lat == null && <div class="warning-text" style={{ marginTop: 4 }} data-testid="clockin-nogps">GPS was unavailable at clock-in — the owners see “Site address (GPS unavailable)”.</div>}
+            </div>
+          </div>
+        )}
+
+        {te && (
           <div class="qa-grid">
             <QA icon="scan" label="Scan" href="/g/scan" />
             <QA icon="note" label="Log entry" href="/g/dar" />
@@ -93,7 +108,7 @@ export function GuardHome() {
           <HoldButton label="Hold for SOS" onConfirm={() => void fireSos()} class="hold-sos" size={76} testid="home-sos"><b style={{ fontSize: 17 }}>SOS</b></HoldButton>
           <div class="grow">
             <div class="headline">Emergency</div>
-            <div class="foot muted">Press and hold 2 seconds to alert the owners with your location. Call 911 first if anyone is in danger.</div>
+            <div class="foot muted">Press and hold 2 seconds to alert the owners (with your GPS location if available). Call 911 first if anyone is in danger.</div>
           </div>
         </div>
 

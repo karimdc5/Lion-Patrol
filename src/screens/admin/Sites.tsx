@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { phoneInput, phoneError } from '../../lib/phone';
 import { Screen, TopBar, SyncPill, List, Row, Empty, SkeletonList, Button, Field, Toggle, Sheet, toast, SectionLabel, Avatar } from '../../ui/kit';
 import { Icon } from '../../ui/icons';
 import { useData } from '../../ui/useData';
@@ -21,7 +22,9 @@ import { BoloCard } from '../../ui/BoloCard';
 import { AttachmentTray } from '../../ui/Attachments';
 import { SiteThumb, SiteHeaderPhoto, siteCover } from '../../ui/SitePhoto';
 import { siteCodes, saveSiteCodes, listAcks } from '../../data/postOrders';
+import { MaskedCodes } from '../../ui/MaskedCodes';
 import { fetchBilling, siteBilling, saveSiteBilling } from '../../data/owner';
+import { listSiteClientEmail, saveSiteClientEmail, defaultSiteClientEmail, isNotInstalled, type SiteClientEmail } from '../../data/clientLogs';
 
 const MapView = lazyScreen(() => import('../../ui/MapView'), () => <div class="map-box skel" />);
 
@@ -48,7 +51,7 @@ export function SitesList() {
   );
 }
 
-type Tab = 'details' | 'orders' | 'checkpoints' | 'contacts' | 'access' | 'bolos' | 'portal';
+type Tab = 'details' | 'orders' | 'checkpoints' | 'contacts' | 'access' | 'bolos' | 'portal' | 'email';
 
 export function SiteEditor({ id }: { id: string }) {
   const isNew = id === 'new';
@@ -64,6 +67,8 @@ export function SiteEditor({ id }: { id: string }) {
   const up = (p: Partial<Site>) => { setSite({ ...site, ...p }); setDirty(true); };
   const save = async () => {
     if (!site.name.trim()) { setErr('Give the site a name.'); setTab('details'); return; }
+    const badPhone = (site.contacts ?? []).map((c) => phoneError(c.phone)).find(Boolean);
+    if (badPhone) { setTab('contacts'); toast(`Contact phone: ${badPhone}`, 'error'); return; }
     await saveSite(site, ordersChanged);
     setDirty(false); setOrdersChanged(false);
     toast(isNew ? 'Site created' : 'Site saved');
@@ -76,16 +81,16 @@ export function SiteEditor({ id }: { id: string }) {
         {!isNew && <SiteHeaderPhoto siteId={site.id} />}
         {!isNew && (
           <div class="tabs" role="tablist">
-            {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People'], ['bolos', 'BOLOs'], ['portal', 'Client portal']] as Array<[Tab, string]>).map(([k, l]) => (
+            {([['details', 'Details'], ['orders', 'Post orders'], ['checkpoints', 'Checkpoints'], ['contacts', 'Contacts'], ['access', 'People'], ['bolos', 'BOLOs'], ['portal', 'Client portal'], ...(admin ? [['email', 'Client email']] : [])] as Array<[Tab, string]>).map(([k, l]) => (
               <button key={k} class={tab === k ? 'active' : ''} onClick={() => setTab(k)} data-testid={`site-tab-${k}`}>{l}</button>
             ))}
           </div>
         )}
         {tab === 'details' && (
           <div class="stack">
-            <Field label="Site name" error={err}><input class="input" value={site.name} disabled={!admin} onInput={(e) => { up({ name: (e.target as HTMLInputElement).value }); setErr(null); }} placeholder="Kent Station Market" data-testid="site-name" /></Field>
+            <Field label="Site name" error={err}><input class="input" value={site.name} disabled={!admin} onInput={(e) => { up({ name: (e.target as HTMLInputElement).value }); setErr(null); }} placeholder="e.g. Kent Station Market" data-testid="site-name" /></Field>
             <div class="grid-2">
-              <Field label="Short code" hint="Used in report numbers"><input class="input input-code" value={site.code ?? ''} disabled={!admin} maxLength={6} onInput={(e) => up({ code: (e.target as HTMLInputElement).value.toUpperCase() })} placeholder="KSM" data-testid="site-code" /></Field>
+              <Field label="Short code" hint="Used in report numbers"><input class="input input-code" value={site.code ?? ''} disabled={!admin} maxLength={6} onInput={(e) => up({ code: (e.target as HTMLInputElement).value.toUpperCase() })} placeholder="e.g. KSM" data-testid="site-code" /></Field>
               <Field label="Type"><select class="input" value={site.kind} disabled={!admin} onChange={(e) => up({ kind: (e.target as HTMLSelectElement).value as Site['kind'] })}><option value="retail">Retail store</option><option value="apartment">Apartments</option><option value="other">Other</option></select></Field>
             </div>
             <Field label="Street address"><input class="input" value={site.address ?? ''} disabled={!admin} onInput={(e) => up({ address: (e.target as HTMLInputElement).value })} autoComplete="street-address" /></Field>
@@ -117,12 +122,13 @@ export function SiteEditor({ id }: { id: string }) {
         {tab === 'orders' && !isNew && <SiteCodesEditor siteId={site.id} admin={admin} />}
         {tab === 'orders' && !isNew && <AckList siteId={site.id} />}
         {tab === 'checkpoints' && <CheckpointsTab site={site} />}
-        {tab === 'contacts' && <ContactsTab site={site} disabled={!admin} onChange={(contacts) => up({ contacts })} />}
+        {tab === 'contacts' && <ContactsTab site={site} disabled={!admin} onChange={(contacts) => up({ contacts })} dirty={dirty} isNew={isNew} onSave={save} />}
         {tab === 'access' && <AccessTab site={site} disabled={!admin} />}
         {tab === 'bolos' && <BolosTab site={site} />}
         {tab === 'portal' && <PortalTab site={site} />}
+        {tab === 'email' && admin && <ClientEmailTab site={site} />}
       </div>
-      {admin && (dirty || isNew) && (tab === 'details' || tab === 'orders' || tab === 'contacts') && (
+      {admin && (dirty || isNew) && (tab === 'details' || tab === 'orders') && (
         <div class="sticky-bar"><Button variant="primary" size="lg" block onClick={() => void save()} disabled={!dirty && !isNew} data-testid="site-save">{isNew ? 'Create site' : 'Save changes'}</Button></div>
       )}
       <Sheet open={mapOpen} onClose={() => setMapOpen(false)} title="Tap to place the pin">
@@ -212,8 +218,8 @@ function CheckpointSheet({ cp, onClose, disabled }: { cp: Checkpoint | null; onC
         await saveCheckpoint(c); toast('Checkpoint saved'); onClose();
       }}>Save checkpoint</Button>}>
       <div class="stack">
-        <Field label="Name" error={err}><input class="input" value={c.name} disabled={disabled} onInput={(e) => setC({ ...c, name: (e.target as HTMLInputElement).value })} placeholder="Loading dock door" data-testid="cp-name" /></Field>
-        <Field label="Instructions for guards (optional)"><textarea class="input" rows={2} value={c.instructions ?? ''} disabled={disabled} onInput={(e) => setC({ ...c, instructions: (e.target as HTMLTextAreaElement).value })} placeholder="Check roll-up door is down and padlocked." /></Field>
+        <Field label="Name" error={err}><input class="input" value={c.name} disabled={disabled} onInput={(e) => setC({ ...c, name: (e.target as HTMLInputElement).value })} placeholder="e.g. Loading dock door" data-testid="cp-name" /></Field>
+        <Field label="Instructions for guards (optional)"><textarea class="input" rows={2} value={c.instructions ?? ''} disabled={disabled} onInput={(e) => setC({ ...c, instructions: (e.target as HTMLTextAreaElement).value })} placeholder="e.g. check the roll-up door is padlocked" /></Field>
         <div class="grid-2">
           <Field label="Code"><input class="input input-code" value={`${c.code.slice(0, 4)}-${c.code.slice(4)}`} disabled /></Field>
           <Field label="Radius (m)"><input class="input" inputMode="numeric" value={String(c.radius_m)} disabled={disabled} onInput={(e) => setC({ ...c, radius_m: Number((e.target as HTMLInputElement).value) || 40 })} /></Field>
@@ -225,7 +231,8 @@ function CheckpointSheet({ cp, onClose, disabled }: { cp: Checkpoint | null; onC
   );
 }
 
-function ContactsTab({ site, disabled, onChange }: { site: Site; disabled: boolean; onChange: (c: Site['contacts']) => void }) {
+/** B13: contacts get an explicit Save button and a saved / unsaved indicator (no silent inline edits). */
+function ContactsTab({ site, disabled, onChange, dirty, isNew, onSave }: { site: Site; disabled: boolean; onChange: (c: Site['contacts']) => void; dirty: boolean; isNew: boolean; onSave: () => Promise<void> }) {
   const list = site.contacts ?? [];
   const set = (i: number, p: Partial<Site['contacts'][number]>) => onChange(list.map((c, j) => (j === i ? { ...c, ...p } : c)));
   return (
@@ -236,13 +243,19 @@ function ContactsTab({ site, disabled, onChange }: { site: Site; disabled: boole
           <div class="grid-2">
             <input class="input" placeholder="Name" value={c.name} disabled={disabled} onInput={(e) => set(i, { name: (e.target as HTMLInputElement).value })} />
             <input class="input" placeholder="Role" value={c.role ?? ''} disabled={disabled} onInput={(e) => set(i, { role: (e.target as HTMLInputElement).value })} />
-            <input class="input" type="tel" placeholder="Phone" value={c.phone ?? ''} disabled={disabled} onInput={(e) => set(i, { phone: (e.target as HTMLInputElement).value })} />
+            <input class="input" type="tel" inputMode="tel" placeholder="Phone" value={c.phone ?? ''} disabled={disabled} onInput={(e) => set(i, { phone: phoneInput((e.target as HTMLInputElement).value) })} />
             <input class="input" type="email" placeholder="Email" value={c.email ?? ''} disabled={disabled} onInput={(e) => set(i, { email: (e.target as HTMLInputElement).value })} />
           </div>
         </div>
       ))}
       {!list.length && <Empty icon="phone" title="No contacts" body="Add the store manager, property office and police non-emergency line." />}
       {!disabled && <Button icon="plus" block onClick={() => onChange([...list, { name: '', role: '', phone: '', email: '' }])}>Add contact</Button>}
+      {!disabled && (
+        <div class="sticky-bar stack" style={{ gap: 6 }}>
+          <span class={`foot ${dirty ? 'muted' : ''}`} style={{ textAlign: 'center', color: dirty ? undefined : 'var(--success)' }} data-testid="contacts-state">{dirty ? 'Unsaved changes' : isNew ? 'Not saved yet' : '✓ All contacts saved'}</span>
+          <Button variant="primary" size="lg" block disabled={!dirty && !isNew} onClick={() => void onSave()} data-testid="contacts-save">{isNew ? 'Create site' : 'Save contacts'}</Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -284,7 +297,8 @@ function BolosTab({ site }: { site: Site }) {
       <p class="foot muted">Be On the Lookout alerts guards post for this site. Active ones are pinned for guards (and on the client portal when shared).</p>
       {!rows.length ? <Empty icon="eye" title="No BOLOs" body="Guards post BOLOs from their Home screen." /> : rows.map((b) => (
         <div key={b.id} class="stack" data-testid="admin-bolo">
-          <BoloCard b={b}><AttachmentTray parentType="bolo" parentId={b.id} editable={false} label="Photos" /></BoloCard>
+          {/* B13: staff can add a photo to any active BOLO (same media pipeline as reports; needs migration 300 on the server). */}
+          <BoloCard b={b}><AttachmentTray parentType="bolo" parentId={b.id} editable={b.status === 'active'} label="Photos" /></BoloCard>
           <div class="row" style={{ gap: 8 }}>
             <span class={`pill ${b.status === 'active' ? 'pill-danger' : 'pill-muted'}`}>{b.status === 'active' ? 'Active' : 'Resolved'}</span>
             {b.visible_to_client && <span class="pill pill-muted">On client portal</span>}
@@ -310,7 +324,7 @@ function PortalTab({ site }: { site: Site }) {
   const active = (links.data ?? []).filter((l) => !l.revoked_at && (!l.expires_at || Date.parse(String(l.expires_at)) > Date.now()));
   return (
     <div class="stack">
-      <p class="foot muted">A read-only page for this site’s client: shared incident reports, daily reports and patrol proof, with PDF downloads. No login needed. Internal notes are never included. Copy or share it yourself; Lion Patrol never sends it.</p>
+      <p class="foot muted">A private page for this site’s client: shared incident and daily reports (readable in the page and as PDFs), live guard status, patrol proof, sent invoices and a request thread. No login needed. Guard names, pay, schedules and internal notes are never included. Copy or share the link yourself; Lion Patrol never sends it. Revoke a link below at any time.</p>
       {fresh ? (
         <div class="card stack" data-testid="portal-link-ready">
           <b>Link ready</b>
@@ -346,6 +360,51 @@ function PortalTab({ site }: { site: Site }) {
 }
 
 export { sitesFor };
+
+/** Pass 9 A12 + Client logs: per-site client email recipients, hold-for-OK vs auto-send, per-type toggles (owners/admins). */
+function ClientEmailTab({ site }: { site: Site }) {
+  const [row, setRow] = useState<SiteClientEmail | null>(null);
+  const [text, setText] = useState('');
+  const [state, setState] = useState<'loading' | 'ok' | 'not_installed' | 'error'>('loading');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void listSiteClientEmail(site.org_id).then((rows) => {
+      const r = rows.find((x) => x.site_id === site.id) ?? defaultSiteClientEmail(site.id, site.org_id);
+      setRow(r); setText((r.recipients ?? []).join('\n')); setState('ok');
+    }).catch((e) => setState(isNotInstalled(e) ? 'not_installed' : 'error'));
+  }, [site.id]);
+  if (state === 'loading') return <SkeletonList rows={2} />;
+  if (state === 'not_installed') return <div class="card" data-testid="client-email-not-installed"><b>Needs the server update</b><p class="foot muted">Client email settings need migration 20261110000200_patrol_client_proof.sql on the server. Until then Lion Patrol does not email clients.</p></div>;
+  if (state === 'error' || !row) return <p class="muted">Could not load client email settings. Check your connection.</p>;
+  const set = (p: Partial<SiteClientEmail>) => setRow({ ...row, ...p });
+  const toggles: Array<[keyof SiteClientEmail, string, string]> = [
+    ['notify_incident', 'Incident sent to client', 'When you mark an incident “Sent to client”.'],
+    ['notify_missed_patrol', 'Missed patrol', 'When the server detects a missed or late patrol round (no guard names).'],
+    ['notify_dar', 'Daily report shared', 'When a daily activity report is shared with the client.'],
+    ['notify_invoice', 'Invoice sent', 'Lets you press “Send to client” on an invoice.'],
+  ];
+  return (
+    <div class="stack" data-testid="client-email-tab">
+      <p class="foot muted">Emails are sent by the server from contact@lionofseattle.com once email sending is set up. Until then nothing is emailed and Client logs shows “Email sending not configured”.</p>
+      <Field label="Client email addresses" hint="One per line, up to 10."><textarea class="input" rows={3} value={text} onInput={(e) => setText(e.currentTarget.value)} placeholder="e.g. manager@client-company.com" data-testid="client-email-recipients" /></Field>
+      <SectionLabel>Nightly report (Client logs)</SectionLabel>
+      <div class="card row-between">
+        <span>{row.auto_send_logs ? 'Auto-send' : 'Hold for my OK'}<div class="foot muted">{row.auto_send_logs ? 'Sent when the last guard of the night clocks out (or at 8:00 AM PT).' : 'Default for the first week: you preview and press Send in Client logs.'}</div></span>
+        <Toggle label="Auto-send nightly report" checked={row.auto_send_logs} onChange={(v) => set({ auto_send_logs: v })} />
+      </div>
+      <SectionLabel>Other client emails</SectionLabel>
+      {toggles.map(([k, l, sub]) => (
+        <div class="card row-between" key={k}><span>{l}<div class="foot muted">{sub}</div></span><Toggle label={l} checked={!!row[k]} onChange={(v) => set({ [k]: v } as Partial<SiteClientEmail>)} /></div>
+      ))}
+      <Button variant="primary" block loading={busy} data-testid="client-email-save" onClick={async () => {
+        setBusy(true);
+        try { await saveSiteClientEmail({ ...row, recipients: text.split(/[\s,;]+/).filter(Boolean) }); toast('Client email settings saved'); }
+        catch (e) { toast(isNetworkError(e) ? 'Saving needs an internet connection.' : (e as Error).message, 'error'); }
+        finally { setBusy(false); }
+      }}>Save client email settings</Button>
+    </div>
+  );
+}
 
 function SitePhotoField({ siteId, admin }: { siteId: string; admin: boolean }) {
   const cover = useData(() => siteCover(siteId), [siteId]);
@@ -383,14 +442,23 @@ function SiteCodesEditor({ siteId, admin }: { siteId: string; admin: boolean }) 
   return (
     <div class="card stack" data-testid="site-codes-editor">
       <div class="row-between"><b>Codes & guard notes</b><span class="pill pill-muted"><Icon name="lock" size={14} /> Guards only</span></div>
-      <Field label="Gate / door / alarm codes"><textarea class="input" rows={3} value={c} disabled={!admin} placeholder="Rear gate keypad: 4417#" onInput={(e) => setCodes((e.target as HTMLTextAreaElement).value)} data-testid="site-codes" style={{ fontFamily: 'ui-monospace, Menlo, monospace' }} /></Field>
-      <Field label="Notes for guards"><textarea class="input" rows={2} value={n} disabled={!admin} placeholder="Where the keys are, who to call after hours…" onInput={(e) => setNotes((e.target as HTMLTextAreaElement).value)} data-testid="site-guard-notes" /></Field>
-      <p class="foot muted">Never shown to clients (not in the portal or client app). Guards read and acknowledge post orders on their first shift here.</p>
-      {admin && <Button disabled={!dirty} onClick={async () => { await saveSiteCodes(siteId, c, n); setCodes(null); setNotes(null); toast('Codes saved'); }} data-testid="site-codes-save">Save codes</Button>}
+      {/* A8: masked until tapped; each reveal is logged. Empty → nothing to hide, show the editor. */}
+      {cur.loading ? null : (cur.data?.codes || cur.data?.guard_notes) ? (
+        <MaskedCodes siteId={siteId} label="Codes hidden — tap to view or edit" keepOpen={dirty}>{() => codesFields()}</MaskedCodes>
+      ) : codesFields()}
+      <p class="foot muted">Never shown to clients and never printed in PDFs or the portal. Guards read and acknowledge post orders on their first shift here.</p>
     </div>
   );
+  function codesFields() {
+    return (
+      <>
+        <Field label="Gate / door / alarm codes"><textarea class="input" rows={3} value={c} disabled={!admin} placeholder="e.g. Rear gate keypad: ____#" onInput={(e) => setCodes((e.target as HTMLTextAreaElement).value)} data-testid="site-codes" style={{ fontFamily: 'ui-monospace, Menlo, monospace' }} /></Field>
+        <Field label="Notes for guards"><textarea class="input" rows={2} value={n} disabled={!admin} placeholder="e.g. where the keys are, who to call after hours" onInput={(e) => setNotes((e.target as HTMLTextAreaElement).value)} data-testid="site-guard-notes" /></Field>
+        {admin && <Button disabled={!dirty} onClick={async () => { await saveSiteCodes(siteId, c, n); setCodes(null); setNotes(null); toast('Codes saved'); }} data-testid="site-codes-save">Save codes</Button>}
+      </>
+    );
+  }
 }
-
 function AckList({ siteId }: { siteId: string }) {
   const org = currentOrgId.value;
   const acks = useData(async () => (await listAcks(org)).filter((a) => a.site_id === siteId), [org, siteId]);
@@ -419,7 +487,7 @@ function SiteBillingField({ siteId }: { siteId: string }) {
         <Field label="Client (bill to)"><input class="input" value={v.client} onInput={(e) => setF({ ...v, client: (e.target as HTMLInputElement).value })} data-testid="site-bill-client" /></Field>
       </div>
       <Field label="Billing address"><input class="input" value={v.address} onInput={(e) => setF({ ...v, address: (e.target as HTMLInputElement).value })} /></Field>
-      <Field label="Accounts-payable email (reference only)" hint="Lion Patrol never emails clients."><input class="input" type="email" value={v.email} onInput={(e) => setF({ ...v, email: (e.target as HTMLInputElement).value })} /></Field>
+      <Field label="Accounts-payable email" hint="Invoice emails also go here when 'Invoice sent' is on under Client email (server email must be set up)."><input class="input" type="email" value={v.email} onInput={(e) => setF({ ...v, email: (e.target as HTMLInputElement).value })} /></Field>
       <Button disabled={!f} data-testid="site-billing-save" onClick={async () => {
         const rate = v.rate.trim() === '' ? null : Number(v.rate.replace(/[$,]/g, ''));
         if (rate != null && (Number.isNaN(rate) || rate < 0)) { toast('Enter the rate as a number, e.g. 38.00', 'error'); return; }

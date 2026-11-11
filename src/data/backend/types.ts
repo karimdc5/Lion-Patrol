@@ -47,6 +47,8 @@ export interface Backend {
   update(table: string, patch: object, eq: Record<string, string | number | boolean>): Promise<void>;
   remove(table: string, eq: Record<string, string | number | boolean>): Promise<void>;
   rpc<T = unknown>(fn: string, args?: Record<string, unknown>): Promise<T>;
+  /** POST to a Supabase edge function with the user's session. Throws BackendError (404 when not deployed). */
+  invoke?<T = unknown>(fn: string, body: object): Promise<T>;
   storage: StorageApi;
 }
 

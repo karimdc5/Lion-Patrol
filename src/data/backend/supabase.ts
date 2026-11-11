@@ -160,6 +160,19 @@ export function createSupabaseBackend(): Backend {
     async rpc<T>(fn: string, args: Record<string, unknown> = {}) {
       return (await check(rest.rpc(fn, args))) as T;
     },
+    async invoke<T>(fn: string, body: object) {
+      let res: Response;
+      try {
+        res = await authedFetch(`${SUPABASE_URL}/functions/v1/${fn}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      } catch (e) {
+        throw new BackendError('network', (e as Error).message, undefined, true);
+      }
+      const text = await res.text();
+      let json: unknown = null;
+      try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+      if (!res.ok) throw new BackendError(String(res.status), (json as { error?: string } | null)?.error ?? (text.slice(0, 200) || res.statusText), res.status);
+      return json as T;
+    },
     storage: {
       async upload(path, bytes, mime) {
         const { error } = await storage.from(STORAGE_BUCKET).upload(path, bytes, { contentType: mime, upsert: true, cacheControl: '3600' });

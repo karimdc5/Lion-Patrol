@@ -5,6 +5,13 @@ import { scanCheckpoint, onShift, addDarEntry, type ScanResult } from '../../dat
 import { navigate, query } from '../../router';
 import { AttachmentTray } from '../../ui/Attachments';
 import { FlagPills } from './Patrol';
+import { backendMode, currentOrgId } from '../../auth/session';
+import { listRecords } from '../../data/repos/records';
+import { formatCode } from '../../domain/tour';
+import type { Checkpoint } from '../../data/types';
+
+/** B5: camera help shown whenever the camera can't run — manual entry always works. */
+const CAM_HELP = 'Camera access is off or blocked. To scan, allow the camera for this site (iPhone: Settings › Safari › Camera; Android/Chrome: tap the lock icon › Permissions › Camera), then reopen. Or enter the code printed under the QR.';
 
 type Detector = { detect: (src: CanvasImageSource) => Promise<Array<{ rawValue: string }>> };
 
@@ -47,14 +54,16 @@ export function ScanScreen() {
   useEffect(() => {
     let stopped = false, timer = 0;
     void (async () => {
-      if (!navigator.mediaDevices?.getUserMedia) { setCamErr('Camera not available. Enter the code instead.'); return; }
+      if (!navigator.mediaDevices?.getUserMedia) { setCamErr('Camera not available on this device. Enter the code printed under the QR.'); return; }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false });
         if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         const v = video.current!;
         v.srcObject = stream;
-        await v.play().catch(() => undefined);
+        // B5: a stream that can't play ("Unable to play media") is a camera failure, not a silent black box.
+        const played = await v.play().then(() => true, () => false);
+        if (!played && !stopped) { setCamErr('The camera started but the video can’t play here. Enter the code printed under the QR.'); }
         const track = stream.getVideoTracks()[0];
         const caps = (track?.getCapabilities?.() ?? {}) as { torch?: boolean };
         if (caps.torch) setTorch(false);
@@ -84,7 +93,8 @@ export function ScanScreen() {
         };
         void loop();
       } catch (e) {
-        setCamErr((e as Error).name === 'NotAllowedError' ? 'Camera access is off. Allow it in Settings, or enter the code printed under the QR.' : 'Couldn’t start the camera. Enter the code instead.');
+        const name = (e as Error).name;
+        setCamErr(name === 'NotAllowedError' || name === 'SecurityError' ? CAM_HELP : name === 'NotFoundError' || name === 'OverconstrainedError' ? 'No camera found on this device. Enter the code printed under the QR.' : 'Couldn’t start the camera. Enter the code printed under the QR.');
       }
     })();
     return () => { stopped = true; clearTimeout(timer); streamRef.current?.getTracks().forEach((t) => t.stop()); };
@@ -119,11 +129,13 @@ export function ScanScreen() {
 
       <Sheet open={manual} onClose={() => setManual(false)} title="Enter checkpoint code" testid="manual-sheet"
         footer={<Button variant="primary" size="lg" block onClick={() => void submit(code, 'manual')} disabled={code.replace(/[^A-Za-z0-9]/g, '').length < 4} data-testid="manual-submit">Log checkpoint</Button>}>
-        <Field label="Code printed under the QR" error={err}>
-          <input class="input input-code" value={code} autoCapitalize="characters" spellcheck={false} autoComplete="off" placeholder="7K4Q-9XW2" data-testid="manual-code"
+        {camErr && <p class="foot muted" data-testid="camera-help">{camErr}</p>}
+        <Field label="Code printed under the QR" hint="Dashes and capitals don’t matter." error={err}>
+          <input class="input input-code" value={code} autoCapitalize="characters" spellcheck={false} autoComplete="off" placeholder="Code from the sticker" data-testid="manual-code"
             onInput={(e) => { setCode((e.target as HTMLInputElement).value.toUpperCase()); setErr(null); }}
             onKeyDown={(e) => { if (e.key === 'Enter') void submit(code, 'manual'); }} />
         </Field>
+        {backendMode.value === 'demo' && <DemoCode onPick={(c) => { setCode(c); setErr(null); }} />}
       </Sheet>
 
       <Sheet open={!!result} onClose={() => void finish(true)} testid="scan-result">
@@ -134,7 +146,7 @@ export function ScanScreen() {
             <div class="muted sub tnum">{result.done} of {result.total} checkpoints · {new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
             {result.flags.length > 0 && <div class="chip-row" style={{ justifyContent: 'center' }}><FlagPills flags={result.flags} /></div>}
             <div style={{ textAlign: 'left' }} class="stack">
-              <Field label="Note (optional)"><input class="input" value={note} onInput={(e) => setNote((e.target as HTMLInputElement).value)} placeholder="Door secure, lights on" /></Field>
+              <Field label="Note (optional)"><input class="input" value={note} onInput={(e) => setNote((e.target as HTMLInputElement).value)} placeholder="e.g. door secure, lights on" /></Field>
               <AttachmentTray parentType="scan" parentId={result.scanId} label="Checkpoint photos" />
             </div>
             <div class="grid-2">
@@ -146,4 +158,16 @@ export function ScanScreen() {
       </Sheet>
     </div>
   );
+}
+
+/** B5, demo only: load a REAL checkpoint code of your current site (the next one not yet scanned). */
+function DemoCode({ onPick }: { onPick: (code: string) => void }) {
+  const pick = async () => {
+    const te = onShift.value;
+    const cps = (await listRecords<Checkpoint>('patrol_checkpoints', currentOrgId.value)).filter((c) => c.active && c.site_id === te?.site_id).sort((a, b) => a.seq - b.seq);
+    const scanned = new Set((await listRecords<{ checkpoint_id: string; time_entry_id: string }>('patrol_scans', currentOrgId.value)).filter((x) => x.time_entry_id === te?.id).map((x) => x.checkpoint_id));
+    const cp = cps.find((c) => !scanned.has(c.id)) ?? cps[0];
+    if (cp) onPick(formatCode(cp.code)); else toast('This site has no checkpoints yet.', 'info');
+  };
+  return <Button variant="ghost" block onClick={() => void pick()} data-testid="demo-code">Demo: use a real checkpoint code from this site</Button>;
 }
